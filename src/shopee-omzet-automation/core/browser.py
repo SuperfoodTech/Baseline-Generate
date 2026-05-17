@@ -645,7 +645,8 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
         time.sleep(4)
         
         is_logged_in = False
-        if "/login" not in driver.current_url:
+        current_url = driver.current_url.lower()
+        if "dashboard" in current_url or "merchant-selector" in current_url:
             log.info("✅ [SESSION] Browser is already logged in.")
             is_logged_in = True
         else:
@@ -664,7 +665,8 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
                 
                 driver.refresh()
                 time.sleep(4)
-                if "/login" not in driver.current_url:
+                current_url = driver.current_url.lower()
+                if "dashboard" in current_url or "merchant-selector" in current_url:
                     log.info("✅ [SESSION] Restored from saved tokens.")
                     is_logged_in = True
 
@@ -674,8 +676,9 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
             driver.get("https://partner.shopee.co.id/login")
             time.sleep(5)
             
-            # Check if we are still on login page
-            if "/login" in driver.current_url:
+            # Check if we are still on login/auth page or about:blank
+            current_url = driver.current_url.lower()
+            if "login" in current_url or "authenticate" in current_url or "about:blank" in current_url:
                 success = _perform_login(driver, wait, username, password, phone)
                 if not success: return None
                 
