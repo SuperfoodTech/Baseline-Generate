@@ -1,0 +1,78 @@
+# ── Python ─────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+
+# ── Virtual Environments ────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+.env.bak
+
+# ── uv ─────────────────────────────────────────────────────────────────────
+# Keep uv.lock committed (reproducible installs), ignore cache
+.uv/
+
+# ── Environment & Secrets ───────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+token.json
+service_account*.json
+
+# ── Playwright / Browser Automation ────────────────────────────────────────
+browser_data/
+sessions/
+playwright-report/
+test-results/
+*.trace
+*.webm
+*.zip            # Playwright traces
+
+# ── Screenshot / Debug images ──────────────────────────────────────────────
+*.png
+*.jpg
+*.jpeg
+!docs/**/*.png   # allow docs screenshots
+
+# ── Downloads & Raw Data ───────────────────────────────────────────────────
+downloads/
+backups/
+scratch/
+
+# ── Reports & Output (generated files) ─────────────────────────────────────
+laporan/
+data/reports/
+*.csv
+*.xlsx
+*.xls
+
+# ── Logs ───────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── IDE & Editor ───────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Python version file (keep for reference) ───────────────────────────────
+# ── Shopee Specific ────────────────────────────────────────────────────────
+shopee-omzet-automation/data/
+shopee-omzet-automation/logs/

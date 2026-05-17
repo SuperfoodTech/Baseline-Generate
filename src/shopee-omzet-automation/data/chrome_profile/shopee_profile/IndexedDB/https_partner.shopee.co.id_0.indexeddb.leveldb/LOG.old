@@ -1,0 +1,10 @@
+2026/05/15-14:49:46.832 4d24 Reusing MANIFEST /home/akbarhann/project/task-weekly/shopee-omzet-automation/data/chrome_profile/shopee_profile/IndexedDB/https_partner.shopee.co.id_0.indexeddb.leveldb/MANIFEST-000001
+2026/05/15-14:49:46.833 4d24 Recovering log #45
+2026/05/15-14:49:46.917 4d24 Reusing old log /home/akbarhann/project/task-weekly/shopee-omzet-automation/data/chrome_profile/shopee_profile/IndexedDB/https_partner.shopee.co.id_0.indexeddb.leveldb/000045.log 
+2026/05/15-14:50:48.245 4d25 Level-0 table #50: started
+2026/05/15-14:50:48.342 4d25 Level-0 table #50: 1072977 bytes OK
+2026/05/15-14:50:48.346 4d25 Delete type=0 #45
+2026/05/15-14:50:54.988 4d24 Compacting 1@1 + 1@2 files
+2026/05/15-14:50:55.052 4d24 Generated table #51@1: 208 keys, 12252 bytes
+2026/05/15-14:50:55.054 4d24 Compacted 1@1 + 1@2 files => 12252 bytes
+2026/05/15-14:50:55.056 4d24 compacted to: files[ 0 0 1 0 0 0 0 ]

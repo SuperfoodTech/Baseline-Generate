@@ -1,0 +1,6 @@
+2026/05/15-14:49:10.910 5 Reusing MANIFEST /home/akbarhann/project/task-weekly/shopee-omzet-automation/data/chrome_profile/shopee_profile/Local Storage/leveldb/MANIFEST-000001
+2026/05/15-14:49:10.928 5 Recovering log #72
+2026/05/15-14:49:10.931 5 Reusing old log /home/akbarhann/project/task-weekly/shopee-omzet-automation/data/chrome_profile/shopee_profile/Local Storage/leveldb/000072.log 
+2026/05/15-14:51:11.877 7 Level-0 table #75: started
+2026/05/15-14:51:11.888 7 Level-0 table #75: 15723 bytes OK
+2026/05/15-14:51:11.891 7 Delete type=0 #72

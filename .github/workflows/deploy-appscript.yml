@@ -1,0 +1,79 @@
+name: Deploy Apps Script
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy-otp:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: appscriptOFD/otp
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install clasp
+        run: npm install -g @google/clasp
+
+      - name: Setup clasp auth
+        run: echo "$CLASPRC_JSON" > ~/.clasprc.json
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+
+      - name: Push OTP to Apps Script
+        run: clasp push -f
+
+  deploy-omzet:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: appscriptOFD/omzet
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install clasp
+        run: npm install -g @google/clasp
+
+      - name: Setup clasp auth
+        run: echo "$CLASPRC_JSON" > ~/.clasprc.json
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+
+      - name: Push Omzet to Apps Script
+        run: clasp push -f
+
+  deploy-master-report:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: appscriptOFD/master-report
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install clasp
+        run: npm install -g @google/clasp
+
+      - name: Setup clasp auth
+        run: echo "$CLASPRC_JSON" > ~/.clasprc.json
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+
+      - name: Push Master Report to Apps Script
+        run: clasp push -f
