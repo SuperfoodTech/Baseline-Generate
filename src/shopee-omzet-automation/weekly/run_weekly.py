@@ -124,7 +124,19 @@ def run_pipeline():
     phone    = os.getenv("SHOPEE_PHONE", "").strip()
     username = os.getenv("SHOPEE_USERNAME", "").strip()
     password = os.getenv("SHOPEE_PASSWORD", "").strip()
-    headless = os.getenv("HEADLESS", "false").lower() == "true"
+    # Load headless setting from config.json walk-up
+    headless = True
+    try:
+        from pathlib import Path
+        import json
+        for parent in Path(__file__).resolve().parents:
+            config_file = parent / "config.json"
+            if config_file.exists():
+                with open(config_file, "r") as f:
+                    headless = json.load(f).get("headless_shopee", True)
+                break
+    except Exception:
+        pass
 
     # ── 1. Determine Merchants to Process (Data-Driven via G-Sheets) ────
     target_merchants = get_live_merchants(app_name="ShopeeFood", max_age_hours=24)
@@ -396,7 +408,7 @@ def run_pipeline():
         log.info(f"   Total rows: {len(master_df)}")
 
         # ── 6. Phase 5: Distribution to Google Sheets ──────────────────────
-        apps_script_url = os.getenv("APPS_SCRIPT_URL")
+        apps_script_url = "https://script.google.com/macros/s/AKfycbxuqQ72VfP-5f-h-ud1XZDgG47KDwyP8gDg2AFzIjq6JrnZnWGenRs50G06RxsPiSxj/exec"
         if apps_script_url:
             log.info("📤 [PROGRESS] PHASE 5: Sending data to Google Sheets...")
             

@@ -88,7 +88,7 @@ GRAB_COLUMN_MAP = {
 
 def upload_to_gsheets(file_path, sheet_name="Grab", clear=True):
     load_dotenv()
-    apps_script_url = os.getenv("APPS_SCRIPT_URL")
+    apps_script_url = "https://script.google.com/macros/s/AKfycbxuqQ72VfP-5f-h-ud1XZDgG47KDwyP8gDg2AFzIjq6JrnZnWGenRs50G06RxsPiSxj/exec"
     
     if not apps_script_url:
         print("Error: APPS_SCRIPT_URL not found in .env")

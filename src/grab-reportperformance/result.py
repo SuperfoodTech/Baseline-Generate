@@ -133,11 +133,7 @@ def print_summary(summary: pd.DataFrame) -> None:
 
 
 def push_to_gsheet(username: str, wide_summary: pd.DataFrame, outlet: str = "", branch: str = "") -> None:
-	url = os.getenv("GSHEET_WEBAPP_URL")
-	if not url:
-		print("\n[SKIP] GSHEET_WEBAPP_URL tidak ditemukan di .env")
-		return
-
+	url = "https://script.google.com/macros/s/AKfycbz8zCLNqDnVaz6Iau7uD-hZiynpaHigjtElk6Wlb5onr_Y9pRgfjtEkYm9unr1cNxkq/exec"
 	if wide_summary.empty:
 		return
 

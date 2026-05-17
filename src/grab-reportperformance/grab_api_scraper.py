@@ -346,7 +346,19 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
         try:
             if browser is None and managed_browser is None:
                 p = await async_playwright().start()
-                headless_env = os.getenv("HEADLESS", "true").lower() == "true"
+                # Load headless setting from config.json walk-up
+                headless_env = True
+                try:
+                    from pathlib import Path
+                    import json
+                    for parent in Path(__file__).resolve().parents:
+                        config_file = parent / "config.json"
+                        if config_file.exists():
+                            with open(config_file, "r") as f:
+                                headless_env = json.load(f).get("headless_grab", True)
+                            break
+                except Exception:
+                    pass
                 managed_browser = await p.chromium.launch(headless=headless_env)
                 browser = managed_browser
             

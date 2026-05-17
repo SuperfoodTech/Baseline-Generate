@@ -57,7 +57,19 @@ def run_pipeline():
     phone    = os.getenv("SHOPEE_PHONE", "").strip()
     username = os.getenv("SHOPEE_USERNAME", "").strip()
     password = os.getenv("SHOPEE_PASSWORD", "").strip()
-    headless = os.getenv("HEADLESS", "false").lower() == "true"
+    # Load headless setting from config.json walk-up
+    headless = True
+    try:
+        from pathlib import Path
+        import json
+        for parent in Path(__file__).resolve().parents:
+            config_file = parent / "config.json"
+            if config_file.exists():
+                with open(config_file, "r") as f:
+                    headless = json.load(f).get("headless_shopee", True)
+                break
+    except Exception:
+        pass
 
     # ── 1. Determine Merchants to Process ───────────────────────────────
     merchants_env = os.getenv("SHOPEE_MERCHANTS", "").strip()

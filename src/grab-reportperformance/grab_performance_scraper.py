@@ -412,7 +412,18 @@ async def grab_dashboard_login(user=None, pwd=None):
     
     async with async_playwright() as p:
         # Launch browser
-        headless_env = os.getenv("HEADLESS", "true").lower() == "true"
+        # Load headless setting from config.json walk-up
+        headless_env = True
+        try:
+            import json
+            for parent in Path(__file__).resolve().parents:
+                config_file = parent / "config.json"
+                if config_file.exists():
+                    with open(config_file, "r") as f:
+                        headless_env = json.load(f).get("headless_grab", True)
+                    break
+        except Exception:
+            pass
         browser = await p.chromium.launch(headless=headless_env)
         page = await browser.new_page()
         

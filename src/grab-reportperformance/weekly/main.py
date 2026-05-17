@@ -129,9 +129,20 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     from playwright.async_api import async_playwright
     
     async with async_playwright() as p:
-        headless_env = os.getenv("HEADLESS", "true").lower() == "true"
+        # Load headless setting from config.json walk-up
+        headless_env = True
+        try:
+            import json
+            for parent in Path(__file__).resolve().parents:
+                config_file = parent / "config.json"
+                if config_file.exists():
+                    with open(config_file, "r") as f:
+                        headless_env = json.load(f).get("headless_grab", True)
+                    break
+        except Exception:
+            pass
         browser = await p.chromium.launch(headless=headless_env)
-        semaphore = asyncio.Semaphore(1)
+        semaphore = asyncio.Semaphore(3)
         failures = []
 
         async def process_user(username, info):
@@ -245,7 +256,7 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     log.info(f"  Total baris : {len(master_df):,} | Merchant: {master_df['Merchant'].nunique()}")
 
     # --- Distribusi ke Google Sheets via Apps Script ---
-    apps_script_url = os.getenv("APPS_SCRIPT_URL")
+    apps_script_url = "https://script.google.com/macros/s/AKfycbxuqQ72VfP-5f-h-ud1XZDgG47KDwyP8gDg2AFzIjq6JrnZnWGenRs50G06RxsPiSxj/exec"
     if apps_script_url:
         log.info("\n📤 [PROGRESS] Mengirim data ke Google Sheets...")
         
