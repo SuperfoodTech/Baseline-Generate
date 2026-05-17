@@ -16,7 +16,6 @@ from core.logger import get_logger
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
-from database.db_manager import DatabaseManager
 
 # Load environment variables
 load_dotenv()
@@ -498,6 +497,7 @@ def run_pipeline():
         # ── 7. Phase 6: Sync to PostgreSQL ──────────────────────────────────
         try:
             log.info("🐘 [PROGRESS] PHASE 6: Syncing data to PostgreSQL...")
+            from database.db_manager import DatabaseManager
             db = DatabaseManager()
             db.ingest_shopee(final_df)
             db.refresh_master()

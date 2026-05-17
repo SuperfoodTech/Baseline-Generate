@@ -11,7 +11,6 @@ from dotenv import load_dotenv
 
 # Path to root for database manager
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
-from database.db_manager import DatabaseManager
 
 # Load environment variables
 load_dotenv()
@@ -240,6 +239,7 @@ def main(username: str = None, outlet: str = "", branch: str = "") -> None:
 	# 🐘 SYNC KE POSTGRESQL (NEW)
 	try:
 		print("\n🐘 Syncing raw transactions to PostgreSQL...")
+		from database.db_manager import DatabaseManager
 		db = DatabaseManager()
 		db.ingest_grab(df)
 		db.refresh_master()
