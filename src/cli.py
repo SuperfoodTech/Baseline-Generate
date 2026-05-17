@@ -31,12 +31,99 @@ DIM    = "\033[2m"
 
 
 def banner():
-    print(f"""
-{CYAN}{BOLD}╔══════════════════════════════════════════════════════════╗
-║          TASK WEEKLY — OFD Transaction Pipeline          ║
-║               Grab · Shopee  ·  Unified CLI              ║
-╚══════════════════════════════════════════════════════════╝{RESET}
-""")
+    # Solid 3D Rounded Gradient Banner
+    FONT = {
+        'T': ["█████████", "    ██   ", "    ██   ", "    ██   ", "    ██   "],
+        'A': [" ▄██████▄ ", "██▀    ▀██", "██████████", "██      ██", "██      ██"],
+        'S': [" ▄███████ ", "██▀       ", " ▀██████▄ ", "      ▀██ ", "████████▀ "],
+        'K': ["██      ██", "██    ▄██ ", "███████   ", "██    ▀██ ", "██      ██"],
+        'W': ["██     ██", "██     ██", "██  █  ██", "█████████", "█▀     ▀█"],
+        'E': ["██████████", "██        ", "███████   ", "██        ", "██████████"],
+        'L': ["██        ", "██        ", "██        ", "██        ", "██████████"],
+        'Y': ["██      ██", "██  ▄▄  ██", " ████████ ", "    ██    ", "    ██    "]
+    }
+
+    def get_word_lines(word):
+        widths = [len(FONT[char][0]) for char in word]
+        letter_grids = []
+        for char in word:
+            grid = FONT[char]
+            width = len(grid[0])
+            comp_grid = [[' ' for _ in range(width + 1)] for _ in range(6)]
+            for r in range(5):
+                for c in range(width):
+                    val = grid[r][c]
+                    if val != ' ':
+                        comp_grid[r][c] = val
+            for r in range(5):
+                for c in range(width):
+                    val = grid[r][c]
+                    if val != ' ':
+                        if comp_grid[r+1][c+1] == ' ':
+                            comp_grid[r+1][c+1] = '▒'
+            letter_grids.append(comp_grid)
+        return letter_grids, widths
+
+    gradient_colors = [196, 197, 203, 204, 209, 210, 215, 216, 217, 223, 224, 225, 230, 231]
+    
+    # Render TASK
+    t_grids, t_widths = get_word_lines("TASK")
+    t_total = sum(t_widths) + 3 * 2
+    
+    # Render WEEKLY
+    w_grids, w_widths = get_word_lines("WEEKLY")
+    w_total = sum(w_widths) + 5 * 2
+
+    print(f"  \033[90m=================================================================\033[0m")
+    
+    # Print TASK
+    for r in range(6):
+        line = "   "
+        curr_col = 0
+        for l_idx, grid in enumerate(t_grids):
+            width = len(grid[0])
+            for c in range(width):
+                char = grid[r][c]
+                factor = curr_col / max(1, t_total - 1)
+                color_idx = min(len(gradient_colors) - 1, max(0, int(factor * (len(gradient_colors) - 1))))
+                color_code = gradient_colors[color_idx]
+                if char == '▒':
+                    line += "\033[38;5;238m█\033[0m"
+                elif char != ' ':
+                    line += f"\033[38;5;{color_code}m{char}\033[0m"
+                else:
+                    line += ' '
+                curr_col += 1
+            line += "  "
+            curr_col += 2
+        print(line)
+        
+    print()
+    
+    # Print WEEKLY
+    for r in range(6):
+        line = "  "
+        curr_col = 0
+        for l_idx, grid in enumerate(w_grids):
+            width = len(grid[0])
+            for c in range(width):
+                char = grid[r][c]
+                factor = curr_col / max(1, w_total - 1)
+                color_idx = min(len(gradient_colors) - 1, max(0, int(factor * (len(gradient_colors) - 1))))
+                color_code = gradient_colors[color_idx]
+                if char == '▒':
+                    line += "\033[38;5;238m█\033[0m"
+                elif char != ' ':
+                    line += f"\033[38;5;{color_code}m{char}\033[0m"
+                else:
+                    line += ' '
+                curr_col += 1
+            line += "  "
+            curr_col += 2
+        print(line)
+        
+    print(f"  \033[90m=================================================================\033[0m")
+    print()
 
 
 # ── Helpers ────────────────────────────────────────────────────────────
@@ -154,6 +241,8 @@ def run_shopee(start_date: str, end_date: str):
 
 def interactive_mode():
     """Let the user pick platform & dates interactively."""
+    # Clear screen to hide dependency check details
+    os.system('cls' if os.name == 'nt' else 'clear')
     banner()
 
     # ─ Platform selection ─
