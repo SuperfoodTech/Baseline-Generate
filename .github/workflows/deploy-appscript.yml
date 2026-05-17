@@ -23,7 +23,7 @@ jobs:
         run: npm install -g @google/clasp
 
       - name: Setup clasp auth
-        run: echo "$CLASPRC_JSON" > ~/.clasprc.json
+        run: node -e 'require("fs").writeFileSync(require("os").homedir() + "/.clasprc.json", process.env.CLASPRC_JSON)'
         env:
           CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
 
@@ -50,7 +50,7 @@ jobs:
         run: npm install -g @google/clasp
 
       - name: Setup clasp auth
-        run: echo "$CLASPRC_JSON" > ~/.clasprc.json
+        run: node -e 'require("fs").writeFileSync(require("os").homedir() + "/.clasprc.json", process.env.CLASPRC_JSON)'
         env:
           CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
 
@@ -77,7 +77,7 @@ jobs:
         run: npm install -g @google/clasp
 
       - name: Setup clasp auth
-        run: echo "$CLASPRC_JSON" > ~/.clasprc.json
+        run: node -e 'require("fs").writeFileSync(require("os").homedir() + "/.clasprc.json", process.env.CLASPRC_JSON)'
         env:
           CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
 
