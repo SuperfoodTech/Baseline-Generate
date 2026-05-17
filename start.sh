@@ -82,15 +82,30 @@ fi
 # Force Headful mode for local run (so staff can solve OTP/CAPTCHAs)
 export HEADLESS=false
 
-echo "================================================================="
-echo "                   MENJALANKAN INTERAKTIF CLI"
-echo "================================================================="
-echo ""
-uv run python cli.py
+while true; do
+    echo "================================================================="
+    echo "                   MENJALANKAN INTERAKTIF CLI"
+    echo "================================================================="
+    echo ""
+    uv run python cli.py
 
-echo ""
-echo "================================================================="
-echo "                     PROSES SELESAI"
-echo "================================================================="
-echo ""
-read -p "Tekan [Enter] untuk keluar..."
+    echo ""
+    echo "================================================================="
+    echo "                     PROSES SELESAI"
+    echo "================================================================="
+    echo ""
+    
+    read -p "Apakah Anda ingin Lanjut (l) atau Keluar (k)? [L/K]: " choice
+    case "$choice" in
+        [lL]|[yY]*)
+            echo ""
+            echo "[INFO] Memulai kembali program..."
+            echo ""
+            clear
+            ;;
+        *)
+            echo "[INFO] Keluar dari program. Sampai jumpa!"
+            break
+            ;;
+    esac
+done

@@ -88,6 +88,7 @@ if not exist .venv\.installed (
 :: Force Headful mode for local run (so staff can solve OTP/CAPTCHAs)
 set HEADLESS=false
 
+:loop
 echo =================================================================
 echo                    MENJALANKAN INTERAKTIF CLI
 echo =================================================================
@@ -99,4 +100,16 @@ echo =================================================================
 echo                      PROSES SELESAI
 echo =================================================================
 echo.
-pause
+
+set /p choice="Apakah Anda ingin Lanjut (l) atau Keluar (k)? [L/K]: "
+if /i "%choice%"=="l" (
+    cls
+    goto loop
+)
+if /i "%choice%"=="y" (
+    cls
+    goto loop
+)
+
+echo [INFO] Keluar dari program. Sampai jumpa!
+timeout /t 3 >nul
