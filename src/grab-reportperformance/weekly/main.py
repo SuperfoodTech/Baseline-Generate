@@ -9,6 +9,10 @@ import pandas as pd
 import requests
 from dotenv import load_dotenv
 import sys
+import os
+# Add parent directory to sys.path to allow importing grab_api_scraper
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import logging
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
