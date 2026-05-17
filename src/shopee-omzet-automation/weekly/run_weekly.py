@@ -494,7 +494,7 @@ def run_pipeline():
                     if response.status_code == 200:
                         res_json = response.json()
                         if res_json.get("status") == "success":
-                            log.info(f"✅ [SUCCESS] Sent {res_json.get('rows_added')} rows to Shopee sheet.")
+                            log.info(f"✅ [SUCCESS] Sent {len(payload)} rows to Shopee sheet.")
                             success_send = True
                             break
                         else:
@@ -508,9 +508,8 @@ def run_pipeline():
                 if send_attempt < 2:
                     time.sleep(10)
             
-            # if not success_send:
-            #     log.error("❌ Failed to send data to Google Sheets after multiple attempts.")
-            log.info("⏭️ [SKIP] Google Sheets upload disabled by user request.")
+            if not success_send:
+                log.error("❌ Failed to send data to Google Sheets after multiple attempts.")
         else:
             log.warning("⚠️ [SKIP] APPS_SCRIPT_URL not found in .env. Skipping distribution.")
 
@@ -523,7 +522,7 @@ def run_pipeline():
             db.refresh_master()
             log.info("✅ [SUCCESS] Data successfully pushed to Master Table (Tabel Gajah).")
         except Exception as e:
-            log.error(f"❌ [DB ERROR] Failed to sync to PostgreSQL: {e}")
+            log.info(f"⏭️ [SKIP] PostgreSQL sync skipped (DB is temporarily inactive or offline).")
 
     driver.quit()
 

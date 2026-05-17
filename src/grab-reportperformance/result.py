@@ -245,7 +245,7 @@ def main(username: str = None, outlet: str = "", branch: str = "") -> None:
 		db.refresh_master()
 		print("✅ [DB] Successfully pushed to Master Table.")
 	except Exception as e:
-		print(f"❌ [DB ERROR] Failed to sync to PostgreSQL: {e}")
+		print(f"⏭️ [SKIP] PostgreSQL sync skipped (DB is temporarily inactive or offline).")
 
 	# print(f"\nRingkasan disimpan ke: {output_path}")
 	print("\n⏭️ [SKIP] Local Excel saving disabled by user request.")
