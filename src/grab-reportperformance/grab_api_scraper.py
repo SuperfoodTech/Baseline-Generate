@@ -271,12 +271,40 @@ async def perform_login(page, user, pwd):
             user_field = await find_username_field()
 
         if user_field:
-            await user_field.click()
-            await user_field.fill("")
-            await user_field.fill(user)
-            await page.wait_for_timeout(500)
-            await page.keyboard.press("Enter")
-            await page.wait_for_timeout(2000)
+            # Focus, clear, and fill with re-verification loop
+            for fill_attempt in range(3):
+                await user_field.click()
+                await user_field.fill("")
+                await user_field.fill(user)
+                await page.wait_for_timeout(500)
+                
+                # Check value
+                val = await user_field.input_value()
+                if val.strip() == user.strip():
+                    break
+                
+                # Alternate method if simple fill fails: keyboard typing simulation
+                logger.warning(f"  [Login] Field value mismatch for {user} (got '{val}'), using keyboard simulation... ({fill_attempt+1})")
+                await user_field.click()
+                # Select all and delete
+                await page.keyboard.press("Control+A")
+                await page.keyboard.press("Backspace")
+                await page.keyboard.type(user, delay=50)
+                await page.wait_for_timeout(500)
+                
+                val = await user_field.input_value()
+                if val.strip() == user.strip():
+                    break
+                await page.wait_for_timeout(1000)
+
+            # Click the Continue button explicitly to trigger event listeners properly,
+            # or press Enter if button not found
+            continue_btn = page.locator('button:has-text("Continue"), button:has-text("Lanjut")').first
+            if await continue_btn.count() > 0 and await continue_btn.is_visible():
+                await continue_btn.click()
+            else:
+                await page.keyboard.press("Enter")
+            await page.wait_for_timeout(2500)
 
         # Password field
         pwd_selector = 'input[type="password"], #password'
