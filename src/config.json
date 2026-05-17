@@ -1,4 +1,5 @@
 {
   "headless_grab": false,
-  "headless_shopee": false
+  "headless_shopee": false,
+  "max_concurrency": 3
 }

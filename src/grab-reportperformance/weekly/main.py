@@ -129,20 +129,23 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     from playwright.async_api import async_playwright
     
     async with async_playwright() as p:
-        # Load headless setting from config.json walk-up
+        # Load headless setting and concurrency from config.json walk-up
         headless_env = True
+        concurrency_limit = 3
         try:
             import json
             for parent in Path(__file__).resolve().parents:
                 config_file = parent / "config.json"
                 if config_file.exists():
                     with open(config_file, "r") as f:
-                        headless_env = json.load(f).get("headless_grab", True)
+                        config_data = json.load(f)
+                        headless_env = config_data.get("headless_grab", True)
+                        concurrency_limit = config_data.get("max_concurrency", 3)
                     break
         except Exception:
             pass
         browser = await p.chromium.launch(headless=headless_env)
-        semaphore = asyncio.Semaphore(3)
+        semaphore = asyncio.Semaphore(concurrency_limit)
         failures = []
 
         async def process_user(username, info):
