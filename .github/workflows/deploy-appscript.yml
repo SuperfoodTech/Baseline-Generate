@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: appscriptOFD/otp
+        working-directory: src/appscriptOFD/otp
 
     steps:
       - uses: actions/checkout@v4
@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: appscriptOFD/omzet
+        working-directory: src/appscriptOFD/omzet
 
     steps:
       - uses: actions/checkout@v4
@@ -58,7 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: appscriptOFD/master-report
+        working-directory: src/appscriptOFD/master-report
 
     steps:
       - uses: actions/checkout@v4
