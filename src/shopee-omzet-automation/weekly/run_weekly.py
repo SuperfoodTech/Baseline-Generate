@@ -123,6 +123,26 @@ def run_pipeline():
     phone    = os.getenv("SHOPEE_PHONE", "").strip()
     username = os.getenv("SHOPEE_USERNAME", "").strip()
     password = os.getenv("SHOPEE_PASSWORD", "").strip()
+
+    # Fallback: Load Shopee credentials from credentials.json in parent directories if not in env
+    if not username or not password:
+        try:
+            from pathlib import Path
+            import json
+            for parent in Path(__file__).resolve().parents:
+                cred_file = parent / "credentials.json"
+                if cred_file.exists():
+                    with open(cred_file, "r") as f:
+                        creds = json.load(f)
+                        if not username:
+                            username = creds.get("shopee_username", "").strip()
+                        if not password:
+                            password = creds.get("shopee_password", "").strip()
+                        if not phone:
+                            phone = creds.get("shopee_phone", "").strip()
+                    break
+        except Exception:
+            pass
     # Load headless setting from config.json walk-up
     headless = True
     try:
