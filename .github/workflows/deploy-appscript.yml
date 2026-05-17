@@ -30,6 +30,9 @@ jobs:
       - name: Push OTP to Apps Script
         run: clasp push -f
 
+      - name: Deploy OTP to Production
+        run: clasp deploy -i AKfycby39J6Ds4SsjozVzknHHGvCgItNwlzgqj7wxYuxc4TDjratQbnJ-FLbNj7_QLvNv7HR -d "Auto-deployed via GitHub Actions"
+
   deploy-omzet:
     runs-on: ubuntu-latest
     defaults:
@@ -54,6 +57,9 @@ jobs:
       - name: Push Omzet to Apps Script
         run: clasp push -f
 
+      - name: Deploy Omzet to Production
+        run: clasp deploy -i AKfycbz8zCLNqDnVaz6Iau7uD-hZiynpaHigjtElk6Wlb5onr_Y9pRgfjtEkYm9unr1cNxkq -d "Auto-deployed via GitHub Actions"
+
   deploy-master-report:
     runs-on: ubuntu-latest
     defaults:
@@ -77,3 +83,6 @@ jobs:
 
       - name: Push Master Report to Apps Script
         run: clasp push -f
+
+      - name: Deploy Master Report to Production
+        run: clasp deploy -i AKfycbxUrtHCcuPpUiB95IGSotccsK-C2bWk-MVgsW3aK6-qK9eRUrENiTot-Jvv6_iPsNs5 -d "Auto-deployed via GitHub Actions"

@@ -40,7 +40,7 @@ var MAPPING_CONFIG = {
 };
 
 // Version: 1.3.1 - Support Hardcoded Spreadsheet ID
-var SPREADSHEET_ID = "12YHdwDUnXsvMMNnoRaShDmaCfhVIu8t0XnOdbUDCm9E"; // ID Spreadsheet yang Anda berikan
+var SPREADSHEET_ID = "1T2XIobyaNmcuWczUsIArb3f_d1Qnst4-BRL0KS5bS8o"; // ID Spreadsheet yang Anda berikan
 
 function doPost(e) {
   var sheetName = e.parameter.sheet;
