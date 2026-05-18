@@ -429,14 +429,17 @@ def run_pipeline():
                         'Januari': 'January', 'Februari': 'February', 'Maret': 'March', 
                         'April': 'April', 'Mei': 'May', 'Juni': 'June', 'Juli': 'July', 
                         'Agustus': 'August', 'September': 'September', 'Oktober': 'October', 
-                        'November': 'November', 'Desember': 'December'
+                        'November': 'November', 'Desember': 'December',
+                        'Jan ': 'Jan ', 'Feb ': 'Feb ', 'Mar ': 'Mar ', 'Apr ': 'Apr ',
+                        'Mei ': 'May ', 'Jun ': 'Jun ', 'Jul ': 'Jul ', 'Ags ': 'Aug ', 'Agu ': 'Aug ',
+                        'Sep ': 'Sep ', 'Okt ': 'Oct ', 'Nov ': 'Nov ', 'Des ': 'Dec '
                     }
                     temp_dates = df["Waktu Penyelesaian"].astype(str)
                     for indo, eng in indo_months.items():
-                        temp_dates = temp_dates.str.replace(indo, eng, case=False)
+                        temp_dates = temp_dates.str.replace(indo, eng, case=False, regex=False)
                     
-                    # Parse to datetime and format
-                    parsed_dates = pd.to_datetime(temp_dates, format="%d %B %Y %H:%M", errors='coerce')
+                    # Parse to datetime robustly (infer format)
+                    parsed_dates = pd.to_datetime(temp_dates, errors='coerce')
                     
                     # Where parsing succeeded, apply the new format. Where it failed, keep original.
                     df["Waktu Penyelesaian"] = parsed_dates.dt.strftime('%Y-%m-%d at %H:%M').fillna(df["Waktu Penyelesaian"])
