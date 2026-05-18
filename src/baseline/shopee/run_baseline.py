@@ -1,0 +1,588 @@
+import os
+import time
+import json
+import pandas as pd
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../shopee-omzet-automation'))) # Path to core
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))) # Path to database manager
+
+from datetime import datetime, timedelta
+from dotenv import load_dotenv
+import requests
+
+from core.browser import get_session, return_to_selector, refresh_tokens, auto_switch_merchant
+from core.client import ShopeeClient
+from core.logger import get_logger
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
+
+# Load environment variables
+load_dotenv()
+log = get_logger("omzet_pipeline")
+
+# --- Toggle Konfigurasi Global ---
+ENABLE_GSHEETS_PUSH = False   # Set ke True untuk mengizinkan unggah ke Google Sheets
+ENABLE_POSTGRES_PUSH = False  # Set ke True untuk mengizinkan unggah ke PostgreSQL (Tabel Gajah)
+
+def subtract_months(dt, months):
+    """Helper to subtract calendar months."""
+    for _ in range(months):
+        dt = (dt - timedelta(days=1)).replace(day=1)
+    return dt
+
+def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=None):
+    """
+    Fetches live merchants from Google Sheets and caches them locally.
+    Uses cached data if it's less than max_age_hours old.
+    """
+    import os
+    from datetime import datetime
+    
+    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv"
+    cache_path = "data/master_merchants_cache.csv"
+    os.makedirs("data", exist_ok=True)
+    
+    # Cek cache
+    if os.path.exists(cache_path):
+        mtime = os.path.getmtime(cache_path)
+        age_hours = (time.time() - mtime) / 3600
+        if age_hours < max_age_hours:
+            log.info(f"🔄 [DATA] Using cached merchant list (Age: {age_hours:.1f}h)")
+            df = pd.read_csv(cache_path)
+            sf_df = df[(df['Aplikasi'] == app_name) & (df['Status'] == 'Live')]
+            
+            if merchant_filter:
+                sf_df = sf_df[sf_df['Merchant Name'].str.strip().str.lower() == merchant_filter.strip().lower()]
+                
+            sf_df = sf_df[(sf_df['Merchant Name'] != '-') & (sf_df['Merchant Name'].notna())]
+            sf_df = sf_df.drop_duplicates(subset=['Merchant Name'])
+            return sf_df['Merchant Name'].tolist()
+            
+    # Jika tidak ada cache atau sudah usang, download ulang
+    log.info("🌐 [DATA] Downloading fresh merchant list from Google Sheets...")
+    try:
+        df = pd.read_csv(url)
+        df.to_csv(cache_path, index=False)
+        
+        sf_df = df[(df['Aplikasi'] == app_name) & (df['Status'] == 'Live')]
+        
+        if merchant_filter:
+            sf_df = sf_df[sf_df['Merchant Name'].str.strip().str.lower() == merchant_filter.strip().lower()]
+            
+        sf_df = sf_df[(sf_df['Merchant Name'] != '-') & (sf_df['Merchant Name'].notna())]
+        sf_df = sf_df.drop_duplicates(subset=['Merchant Name'])
+        
+        return sf_df['Merchant Name'].tolist()
+    except Exception as e:
+        log.error(f"⚠️ Failed to fetch/parse merchants: {e}")
+        return []
+
+def download_file(url, filename, cookies=None, max_retries=3):
+    """Downloads a file from a URL with optional cookies and retries."""
+    import requests
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+    }
+    
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(url, stream=True, cookies=cookies, headers=headers, timeout=30)
+            response.raise_for_status()
+            with open(filename, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            return True
+        except Exception as e:
+            if attempt < max_retries - 1:
+                log.warning(f"⚠️ Download attempt {attempt+1} failed for {filename}: {e}. Retrying in 5s...")
+                time.sleep(5)
+            else:
+                log.error(f"❌ Failed to download {filename} after {max_retries} attempts: {e}")
+    return False
+
+
+def run_pipeline():
+    import argparse
+    parser = argparse.ArgumentParser(description="Shopee Omzet Weekly Pipeline")
+    parser.add_argument("--start", type=str, help="Start date (YYYY-MM-DD)", default=None)
+    parser.add_argument("--end", type=str, help="End date (YYYY-MM-DD)", default=None)
+    parser.add_argument("--output-dir", type=str, help="Override output directory for reports", default=None)
+    parser.add_argument("--skip-download", action="store_true", help="Skip browser automation and only process/merge raw files in output directory")
+    parser.add_argument("--merchant", type=str, help="Filter specific merchant name to run", default=None)
+    args = parser.parse_args()
+
+    # Determine output directory
+    report_dir = args.output_dir or "data/reports/weekly"
+
+    # Pre-run cleanup of old Excel files in custom or download runs to ensure clean master aggregation
+    import glob
+    if not args.skip_download and os.path.exists(report_dir):
+        old_excels = glob.glob(os.path.join(report_dir, "*.xlsx"))
+        if old_excels:
+            log.info(f"🧹 Clearing {len(old_excels)} old Excel files in {report_dir} to prepare for fresh run...")
+            for f in old_excels:
+                try: os.unlink(f)
+                except Exception as e: log.debug(f"Failed to delete {f}: {e}")
+
+    # Determine date range
+    now = datetime.now()
+    if args.start and args.end:
+        start_dt = datetime.strptime(args.start, "%Y-%m-%d")
+        end_dt = datetime.strptime(args.end, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+        label = f"{start_dt.strftime('%d %b %Y')} - {end_dt.strftime('%d %b %Y')}"
+    else:
+        # Default to last 7 days (including today)
+        end_dt = now.replace(hour=23, minute=59, second=59)
+        start_dt = (end_dt - timedelta(days=6)).replace(hour=0, minute=0, second=0)
+        label = f"{start_dt.strftime('%d %b %Y')} - {end_dt.strftime('%d %b %Y')} (Last 7 Days)"
+        
+    global_ranges = [{"start": int(start_dt.timestamp()), "end": int(end_dt.timestamp()), "label": label}]
+    
+    print("\n" + "=" * 60)
+    print(f"  Shopee Omzet - WEEKLY Report Pipeline")
+    print(f"  Range: {label}")
+    print("=" * 60)
+
+    phone    = os.getenv("SHOPEE_PHONE", "").strip()
+    username = os.getenv("SHOPEE_USERNAME", "").strip()
+    password = os.getenv("SHOPEE_PASSWORD", "").strip()
+
+    # Fallback: Load Shopee credentials from credentials.json in parent directories if not in env
+    if not username or not password:
+        try:
+            from pathlib import Path
+            import json
+            for parent in Path(__file__).resolve().parents:
+                cred_file = parent / "credentials.json"
+                if cred_file.exists():
+                    with open(cred_file, "r") as f:
+                        creds = json.load(f)
+                        if not username:
+                            username = creds.get("shopee_username", "").strip()
+                        if not password:
+                            password = creds.get("shopee_password", "").strip()
+                        if not phone:
+                            phone = creds.get("shopee_phone", "").strip()
+                    break
+        except Exception:
+            pass
+    # Load headless setting from config.json walk-up
+    headless = True
+    try:
+        from pathlib import Path
+        import json
+        for parent in Path(__file__).resolve().parents:
+            config_file = parent / "config.json"
+            if config_file.exists():
+                with open(config_file, "r") as f:
+                    headless = json.load(f).get("headless_shopee", True)
+                break
+    except Exception:
+        pass
+
+    # ── 1. Determine Merchants to Process (Data-Driven via G-Sheets) ────
+    target_merchants = get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=args.merchant)
+    log.info(f"📋 [PROGRESS] Found {len(target_merchants)} live merchants ready to process.")
+
+    if not target_merchants:
+        log.error("❌ No merchants to process. Aborting.")
+        return
+
+    driver = None
+    if args.skip_download:
+        log.info("⏭️ [SKIP] Bypassing browser download phase (Phases 1 & 2) as --skip-download is enabled.")
+    else:
+        # ── 2. Phase 1: Rapid Trigger (Trigger exports for all) ────────────
+        log.info(f"🚀 [PROGRESS] PHASE 1: Triggering Exports for {len(target_merchants)} merchants...")
+        
+        # Initialize session
+        session_data = get_session(username=username or None, password=password or None, phone=phone or None, 
+                                   headless=headless, close_browser=False, target_name=target_merchants[0])
+        if not session_data: return
+        driver = session_data.get("driver")
+
+        merchants_context = {} # Store tokens/ids for each merchant
+        start_time_all = int(time.time())
+
+        for i, merchant_name in enumerate(target_merchants):
+            log.info(f"  [{i+1}/{len(target_merchants)}] Triggering: {merchant_name}")
+            
+            # Switch if not already there
+            if i > 0:
+                switch_success = False
+                for retry in range(2):
+                    if auto_switch_merchant(driver, merchant_name):
+                        switch_success = True
+                        break
+                    else:
+                        log.warning(f"  ⚠️ Retrying switch for {merchant_name} (Attempt {retry+2}/2)...")
+                        time.sleep(3)
+                
+                if not switch_success:
+                    log.warning(f"  ❌ Skipping {merchant_name} after 2 failed switch attempts.")
+                    continue
+                time.sleep(3) # Wait for cookies to sync
+            
+            # Get tokens and VERIFY ID
+            session = refresh_tokens(driver)
+            active_id = str(session.get("shopee_tob_entity_id") or "")
+            
+            # Double check if the ID actually changed from previous
+            if i > 0 and active_id == merchants_context.get(target_merchants[i-1], {}).get("entity_id"):
+                 log.warning("  ⚠️ ID hasn't changed yet. Retrying token refresh...")
+                 time.sleep(3)
+                 session = refresh_tokens(driver)
+                 active_id = str(session.get("shopee_tob_entity_id") or "")
+
+            log.debug(f"  📍 Confirmed ID for {merchant_name}: {active_id}")
+            
+            # Store context for polling
+            merchants_context[merchant_name] = {
+                "entity_id": active_id,
+                "tob_token": session["shopee_tob_token"],
+                "cookies": session.get("extra_cookies", {}),
+                "start_trigger_time": int(time.time())
+            }
+
+            # Initialize client and trigger
+            client = ShopeeClient(tob_token=session["shopee_tob_token"], entity_id=active_id, extra_cookies=session.get("extra_cookies", {}))
+            
+            # Assign ranges based on CLI arguments
+            ranges = global_ranges
+            
+            merchants_context[merchant_name]["ranges"] = ranges
+            merchants_context[merchant_name]["downloaded"] = []
+
+            # Trigger with retry on network error
+            for r in ranges:
+                success = False
+                for trigger_retry in range(3):
+                    res = client.export_transaction_report(merchant_ids=[active_id], start_time=r["start"], end_time=r["end"])
+                    if res is True:
+                        success = True
+                        break
+                    elif res is None: # Network Error
+                        log.warning(f"  ⚠️ Network error during trigger for {merchant_name}. Retrying in 10s... ({trigger_retry+1}/3)")
+                        time.sleep(10)
+                    else: # API Error (res is False)
+                        break
+                
+                if not success:
+                    log.error(f"  ❌ Failed to trigger export for {merchant_name} range {r.get('label')}")
+                time.sleep(1)
+
+        # ── 3. Phase 2: Global Polling & Download ──────────────────────────
+        log.info(f"⏳ [PROGRESS] PHASE 2: Global Polling for all reports...")
+        os.makedirs(report_dir, exist_ok=True)
+        
+        total_expected = len(merchants_context) * len(global_ranges)
+        download_count = 0
+        start_poll = time.time()
+        
+        consecutive_network_errors = 0
+        poll_iteration = 0
+        while download_count < total_expected and (time.time() - start_poll) < 1800: # Increased timeout to 30m
+            found_new = False
+            poll_iteration += 1
+            has_network_issue = False
+            
+            for m_name, ctx in merchants_context.items():
+                if len(ctx["downloaded"]) >= len(global_ranges): continue
+                
+                client = ShopeeClient(tob_token=ctx["tob_token"], entity_id=ctx["entity_id"], extra_cookies=ctx["cookies"])
+                reports = client.get_report_list()
+                
+                if reports is None: # Network/Connection Error
+                    has_network_issue = True
+                    continue
+                    
+                consecutive_network_errors = 0 # Reset on any successful API response
+                
+                for rep in reports:
+                    # Match: status ready (2 or 3), has download URL, created after our trigger
+                    if rep.get("status") in [2, 3] and rep.get("download_url"):
+                        if rep.get("create_time", 0) and rep["create_time"] >= ctx["start_trigger_time"]:
+                            # Use report name for file naming (e.g. "Transactions_01022026_28022026_ShopeeFood.xlsx")
+                            report_name = rep.get("name", f"report_{rep.get('id')}.xlsx")
+                            target_path = os.path.join(report_dir, f"{m_name.replace(' ', '_')}_{report_name}")
+                            
+                            if target_path not in [d[0] for d in ctx["downloaded"]]:
+                                if download_file(rep.get("download_url"), target_path):
+                                    log.info(f"  ✅ [DOWNLOAD] SUCCESS: {m_name} -> {report_name}")
+                                    ctx["downloaded"].append((target_path, report_name))
+                                    download_count += 1
+                                    found_new = True
+                
+                # Log progress every 3 iterations (~30 seconds)
+                if not found_new and poll_iteration % 3 == 0:
+                     log.info(f"  ⏳ [PROGRESS] Waiting for {m_name}... ({len(ctx['downloaded'])}/{len(global_ranges)} ready)")
+            
+            if has_network_issue:
+                consecutive_network_errors += 1
+                wait_time = min(10 * (2 ** (consecutive_network_errors - 1)), 60) # Exp backoff: 10, 20, 40, 60s
+                log.warning(f"🌐 [NETWORK] API connection issues detected. Waiting {wait_time}s before next poll...")
+                time.sleep(wait_time)
+            elif download_count < total_expected:
+                time.sleep(10)
+
+        # ── Summary ──────────────────────────────────────────────────────────
+        log.info("📋 [PROGRESS] Download Phase Complete. Summary:")
+        for m_name, ctx in merchants_context.items():
+            log.info(f"  🏪 {m_name}: {len(ctx['downloaded'])}/{len(global_ranges)} files")
+            for fpath, label in ctx["downloaded"]:
+                log.info(f"     📄 {fpath}")
+
+    # ── 4. Phase 3: Scanning and Validating ALL Raw Files in report folder ──
+    log.info("📊 [PROGRESS] PHASE 3: Scanning and Validating ALL Raw Files in report folder...")
+    all_analyzed_data = []
+    
+    # Get all xlsx files in report_dir
+    import glob
+    xlsx_files = glob.glob(os.path.join(report_dir, "*.xlsx"))
+    
+    # Sort files to ensure deterministic merging order
+    xlsx_files.sort()
+    
+    for fpath in xlsx_files:
+        filename = os.path.basename(fpath)
+        
+        # Skip Master and Analyzed reports
+        if filename.startswith("Master_") or filename.endswith("_Analyzed.xlsx"):
+            continue
+            
+        # Determine Merchant Name from filename
+        matched_merchant = None
+        for m in target_merchants:
+            m_underscored = m.replace(' ', '_')
+            # Check if filename starts with underscored merchant name followed by underscore
+            if filename.startswith(m_underscored + "_"):
+                matched_merchant = m
+                break
+                
+        if not matched_merchant:
+            if '_Transactions_' in filename:
+                matched_merchant = filename.split('_Transactions_')[0].replace('_', ' ')
+            elif '_report_' in filename:
+                matched_merchant = filename.split('_report_')[0].replace('_', ' ')
+            else:
+                matched_merchant = filename.split('_')[0].replace('_', ' ')
+                
+        try:
+            # Pengecekan apakah file memiliki data (tidak kosong)
+            df = pd.read_excel(fpath, dtype=str)
+            
+            if df.empty or len(df) == 0:
+                log.warning(f"  ⚠️ [CHECK] Raw file '{filename}' is EMPTY (no transaction rows). Skipping merger.")
+                continue
+                
+            if "Nilai Transaksi" in df.columns and "Harga Makanan" in df.columns:
+                log.info(f"  🔍 [CHECK] Raw file '{filename}' has {len(df)} rows. Processing & including in MASTER...")
+                # List of exact monetary columns in ShopeeFood reports
+                monetary_cols = [
+                    'Harga Makanan', 'Diskon', 'Diskon Flash Sale', 'Biaya Tambahan', 
+                    'Subsidi Merchant untuk Voucher Deals', 'Subsidi Platform untuk Flash Sale', 
+                    'Subsidi Voucher Makanan', 'Diskon Langsung', 'Nilai Transaksi', 
+                    'Harga Checkout Murah'
+                ]
+                
+                # Fix monetary columns: handle Shopee's inconsistent thousand separator/decimal format
+                def clean_shopee_monetary(val):
+                    if pd.isna(val) or str(val).lower() == 'nan': return 0
+                    s = str(val).strip()
+                    if not s or s == '-': return 0
+                    
+                    has_dot = '.' in s
+                    try:
+                        num = float(s.replace(',', '.'))
+                        if has_dot:
+                            return int(round(num * 1000))
+                        else:
+                            return int(num)
+                    except:
+                        return 0
+
+                for col in monetary_cols:
+                    if col in df.columns:
+                        df[col] = df[col].apply(clean_shopee_monetary)
+                
+                # Calculate new metrics based on corrected raw values (allow decimals for Commission)
+                commission_real = df['Nilai Transaksi'] * 0.25
+                revenue_real = df['Nilai Transaksi'] - commission_real
+                ofd_fees_real = df['Harga Makanan'] - revenue_real
+                
+                # Insert new columns
+                df['Commission'] = commission_real
+                df['Revenue'] = revenue_real
+                df['OFD Fees'] = ofd_fees_real
+                
+                # Add Merchant Name column at the beginning
+                df.insert(0, "Merchant Name", matched_merchant)
+                
+                # Fix scientific notation for Order IDs
+                if "No. Pesanan" in df.columns:
+                    df["No. Pesanan"] = df["No. Pesanan"].astype(str).str.replace(r'\.0$', '', regex=True)
+                    
+                # Reformat Waktu Penyelesaian from "07 Mei 2026 23:16" to "2026-05-07 at 23:16"
+                if "Waktu Penyelesaian" in df.columns:
+                    indo_months = {
+                        'Januari': 'January', 'Februari': 'February', 'Maret': 'March', 
+                        'April': 'April', 'Mei': 'May', 'Juni': 'June', 'Juli': 'July', 
+                        'Agustus': 'August', 'September': 'September', 'Oktober': 'October', 
+                        'November': 'November', 'Desember': 'December'
+                    }
+                    temp_dates = df["Waktu Penyelesaian"].astype(str)
+                    for indo, eng in indo_months.items():
+                        temp_dates = temp_dates.str.replace(indo, eng, case=False)
+                    
+                    # Parse to datetime and format
+                    parsed_dates = pd.to_datetime(temp_dates, format="%d %B %Y %H:%M", errors='coerce')
+                    
+                    # Where parsing succeeded, apply the new format. Where it failed, keep original.
+                    df["Waktu Penyelesaian"] = parsed_dates.dt.strftime('%Y-%m-%d at %H:%M').fillna(df["Waktu Penyelesaian"])
+                    
+                # Reorder columns to match Google Sheets format
+                desired_order = [
+                    'Merchant Name', 'Store ID', 'Nama Toko', 'Tipe Transaksi', 'No. Pesanan', 
+                    'Waktu Penyelesaian', 'Status', 'Harga Makanan', 'Diskon', 'Diskon Flash Sale', 
+                    'Biaya Tambahan', 'Subsidi Merchant untuk Voucher Deals', 
+                    'Subsidi Platform untuk Flash Sale', 'Subsidi Voucher Makanan', 
+                    'Diskon Langsung', 'Nilai Transaksi', 'Harga Checkout Murah', 'Notes', 
+                    'Commission', 'OFD Fees', 'Revenue'
+                ]
+                final_cols = [c for c in desired_order if c in df.columns] + [c for c in df.columns if c not in desired_order]
+                df = df[final_cols]
+                
+                # Save individual analyzed report
+                out_path = fpath.replace(".xlsx", "_Analyzed.xlsx")
+                df.to_excel(out_path, index=False)
+                log.info(f"     ✅ [DATA] Saved analyzed data: {os.path.basename(out_path)}")
+                
+                all_analyzed_data.append(df)
+            else:
+                log.warning(f"  ⚠️ [CHECK] Raw file '{filename}' is missing required columns. Skipping.")
+        except Exception as e:
+            log.error(f"  ❌ Error processing '{filename}': {e}")
+
+    # ── 5. Phase 4: Master Aggregation (Baseline Logic) ───────────────────────────────────
+    if all_analyzed_data:
+        log.info("📑 [PROGRESS] PHASE 4: Combining all analyzed reports and applying Baseline Pivot...")
+        master_df = pd.concat(all_analyzed_data, ignore_index=True)
+        
+        # --- APPLY BASELINE LOGIC ---
+        working = master_df.copy()
+
+        if "Waktu Penyelesaian" in working.columns:
+            working["Updated On"] = pd.to_datetime(working["Waktu Penyelesaian"], format="%Y-%m-%d at %H:%M", errors="coerce")
+        else:
+            working["Updated On"] = pd.NaT
+
+        if "No. Pesanan" in working.columns:
+            working["Long Order ID"] = working["No. Pesanan"].fillna("").astype(str).str.strip()
+        else:
+            working["Long Order ID"] = ""
+            
+        if "Status" in working.columns:
+            working["Status"] = working["Status"].fillna("").astype(str).str.strip().str.casefold()
+        else:
+            working["Status"] = ""
+            
+        if "Net Sales" not in working.columns:
+            if "Harga Makanan" in working.columns and "Diskon" in working.columns:
+                working["Net Sales"] = pd.to_numeric(working["Harga Makanan"], errors="coerce").fillna(0) - pd.to_numeric(working["Diskon"], errors="coerce").fillna(0)
+            else:
+                working["Net Sales"] = pd.to_numeric(working["Nilai Transaksi"], errors="coerce").fillna(0)
+        else:
+            working["Net Sales"] = pd.to_numeric(working["Net Sales"], errors="coerce").fillna(0)
+        
+        # Aturan validasi: ID pesanan valid dan bukan dibatalkan
+        valid_long_order_id = working["Long Order ID"].str.match(r"^[A-Za-z0-9-]+$", na=False)
+        is_not_cancelled = working["Status"].ne("dibatalkan") & working["Status"].ne("cancelled")
+        
+        valid_orders = working.loc[valid_long_order_id & is_not_cancelled].copy()
+        
+        if "Updated On" in valid_orders.columns:
+            valid_orders = valid_orders.loc[valid_orders["Updated On"].notna()].copy()
+
+        # Filter Custom Date Range
+        if args.start and "Updated On" in valid_orders.columns:
+            valid_orders = valid_orders.loc[valid_orders["Updated On"] >= pd.Timestamp(args.start)].copy()
+        if args.end and "Updated On" in valid_orders.columns:
+            end_ts = pd.Timestamp(args.end).replace(hour=23, minute=59, second=59)
+            valid_orders = valid_orders.loc[valid_orders["Updated On"] <= end_ts].copy()
+
+        if valid_orders.empty:
+            log.warning("⚠️ Tidak ada transaksi valid yang masuk dalam range tanggal dan filter ini untuk dihitung baseline-nya.")
+            return
+
+        valid_orders["Month"] = valid_orders["Updated On"].dt.to_period("M").dt.to_timestamp()
+
+        # Aggregate by Merchant and Month
+        summary = (
+            valid_orders.groupby(["Merchant Name", "Month"], as_index=False)
+            .agg(
+                Order_Count=("Long Order ID", "count"),
+                Omzet_Net_Sales=("Net Sales", "sum"),
+            )
+            .sort_values(["Merchant Name", "Month"])
+            .reset_index(drop=True)
+        )
+
+        # Convert to Wide Format
+        months = sorted(summary["Month"].unique())
+        wide_rows = []
+        
+        for merchant, group in summary.groupby("Merchant Name"):
+            row = {"Merchant": merchant}
+            total_omzet = 0.0
+            total_order = 0
+            
+            for idx, month in enumerate(months, start=1):
+                month_data = group[group["Month"] == month]
+                if not month_data.empty:
+                    omzet = float(month_data["Omzet_Net_Sales"].iloc[0])
+                    order = int(month_data["Order_Count"].iloc[0])
+                else:
+                    omzet = 0.0
+                    order = 0
+                    
+                row[f"Omzet Bulan ke-{idx}"] = omzet
+                row[f"Order Bulan ke-{idx}"] = order
+                
+                total_omzet += omzet
+                total_order += order
+                
+            num_months = len(months)
+            row["Rata-rata Omzet"] = total_omzet / num_months if num_months > 0 else 0.0
+            row["Rata-rata Order"] = round(total_order / num_months, 2) if num_months > 0 else 0
+            
+            wide_rows.append(row)
+
+        wide_summary = pd.DataFrame(wide_rows)
+        wide_summary.insert(1, "Aplikasi", "Shopee")
+
+        # Output logic
+        if args.merchant:
+            merchant_safe = str(args.merchant).strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
+            master_filename = f"BASELINE_CUSTOM_{merchant_safe}.xlsx"
+        else:
+            master_filename = f"BASELINE_MASTER_SHOPEE.xlsx"
+            
+        master_filepath = os.path.join(report_dir, master_filename)
+        
+        # Save with formatting
+        with pd.ExcelWriter(master_filepath, engine="openpyxl") as writer:
+            wide_summary.to_excel(writer, index=False, sheet_name="Baseline Summary")
+            
+        log.info(f"✓ Laporan Baseline Excel: {master_filepath}")
+        log.info(f"  Total merchant diproses: {len(wide_summary)}")
+
+        # Skip push
+        log.info("⏭️ [SKIP] Push ke Google Sheets dan database dimatikan secara global untuk mode Baseline.")
+
+    if not args.skip_download and driver is not None:
+        driver.quit()
+
+
+if __name__ == "__main__":
+    run_pipeline()

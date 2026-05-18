@@ -199,6 +199,47 @@ def run_grab(start_date: str, end_date: str, user_filter: str = None, outlet_fil
         return False
 
 
+def run_grab_baseline(start_date: str, end_date: str, user_filter: str = None, outlet_filter: str = None, branch_filter: str = None):
+    grab_baseline_dir = os.path.join(os.path.dirname(__file__), "baseline", "grab")
+    
+    if not os.path.isdir(grab_baseline_dir):
+        print(f"{RED}[ERROR]{RESET} Grab baseline directory not found: {grab_baseline_dir}")
+        return False
+
+    output_dir = _resolve_output_dir("grab_baseline", start_date, end_date)
+
+    import subprocess
+    
+    python_exe = _resolve_python_executable()
+    cmd = [
+        python_exe, "run_baseline.py",
+        "--start-date", start_date,
+        "--end-date", end_date,
+        "--output-dir", output_dir,
+    ]
+    if user_filter:
+        cmd.extend(["--user", user_filter])
+    if outlet_filter:
+        cmd.extend(["--outlet", outlet_filter])
+    if branch_filter:
+        cmd.extend(["--branch", branch_filter])
+
+    print(f"\n{GREEN}{BOLD}▶ GRAB BASELINE PIPELINE{RESET}")
+    print(f"  {DIM}Directory : {grab_baseline_dir}{RESET}")
+    print(f"  {DIM}Output    : {output_dir}{RESET}")
+    print(f"  {DIM}Date Range: {start_date} → {end_date}{RESET}")
+    print()
+
+    result = subprocess.run(cmd, cwd=grab_baseline_dir)
+    
+    if result.returncode == 0:
+        print(f"\n{GREEN}✓ Grab Baseline completed successfully.{RESET}")
+        return True
+    else:
+        print(f"\n{RED}✗ Grab Baseline exited with code {result.returncode}.{RESET}")
+        return False
+
+
 def run_shopee(start_date: str, end_date: str, merchant_filter: str = None):
     """
     Delegates to the existing Shopee weekly pipeline.
@@ -242,52 +283,70 @@ def run_shopee(start_date: str, end_date: str, merchant_filter: str = None):
         return False
 
 
+def run_shopee_baseline(start_date: str, end_date: str, merchant_filter: str = None):
+    shopee_baseline_dir = os.path.join(os.path.dirname(__file__), "baseline", "shopee")
+    
+    if not os.path.isdir(shopee_baseline_dir):
+        print(f"{RED}[ERROR]{RESET} Shopee baseline directory not found: {shopee_baseline_dir}")
+        return False
+
+    output_dir = _resolve_output_dir("shopee_baseline", start_date, end_date)
+
+    import subprocess
+    
+    python_exe = _resolve_python_executable()
+    cmd = [
+        python_exe, "run_baseline.py",
+        "--start", start_date,
+        "--end", end_date,
+        "--output-dir", output_dir,
+    ]
+    if merchant_filter:
+        cmd.extend(["--merchant", merchant_filter])
+
+    print(f"\n{MAGENTA}{BOLD}▶ SHOPEE BASELINE PIPELINE{RESET}")
+    print(f"  {DIM}Directory : {shopee_baseline_dir}{RESET}")
+    print(f"  {DIM}Output    : {output_dir}{RESET}")
+    print(f"  {DIM}Date Range: {start_date} → {end_date}{RESET}")
+    print()
+
+    result = subprocess.run(cmd, cwd=shopee_baseline_dir)
+    
+    if result.returncode == 0:
+        print(f"\n{GREEN}✓ Shopee Baseline completed successfully.{RESET}")
+        return True
+    else:
+        print(f"\n{RED}✗ Shopee Baseline exited with code {result.returncode}.{RESET}")
+        return False
+
+
 # ── Interactive Mode ──────────────────────────────────────────────────
 
 def interactive_mode():
-    """Let the user pick platform & dates interactively."""
+    """Let the user pick task, platform & dates interactively."""
     # Clear screen to hide dependency check details
     os.system('cls' if os.name == 'nt' else 'clear')
     banner()
 
-    # ─ Platform selection ─
-    print(f"  {BOLD}Pilih platform:{RESET}")
-    print(f"    {GREEN}[1]{RESET} Grab")
-    print(f"    {MAGENTA}[2]{RESET} Shopee")
-    print(f"    {CYAN}[3]{RESET} Keduanya (Grab + Shopee)")
+    # ─ Task selection ─
+    print(f"  {BOLD}Pilih Task:{RESET}")
+    print(f"    {GREEN}[1]{RESET} Baseline")
+    print(f"    {CYAN}[2]{RESET} Weekly")
     print()
 
     while True:
-        choice = input(f"  {BOLD}Pilihan (1/2/3):{RESET} ").strip()
-        if choice in ("1", "2", "3"):
-            break
-        print(f"  {RED}Input tidak valid. Masukkan 1, 2, atau 3.{RESET}")
-
-    platform_map = {"1": "grab", "2": "shopee", "3": "all"}
-    platform = platform_map[choice]
-
-    # ─ Scope selection ─
-    print(f"\n  {BOLD}Pilih cakupan outlet:{RESET}")
-    print(f"    {GREEN}[1]{RESET} Pilih semua outlet")
-    print(f"    {YELLOW}[2]{RESET} Pilih custom (Filter spesifik){RESET}")
-    print()
-
-    while True:
-        scope_choice = input(f"  {BOLD}Pilihan (1/2):{RESET} ").strip()
-        if scope_choice in ("1", "2"):
+        task_choice = input(f"  {BOLD}Pilihan (1/2):{RESET} ").strip()
+        if task_choice in ("1", "2"):
             break
         print(f"  {RED}Input tidak valid. Masukkan 1 atau 2.{RESET}")
 
-    outlet = None
-    branch = None
-    shopee_merchant = None
-
-    if scope_choice == "2":
+    if task_choice == "1":
+        print(f"\n  {GREEN}[INFO] Mengaktifkan Mode Baseline.{RESET}")
         import pandas as pd
         import requests
         import io
 
-        print(f"\n  {CYAN}[INFO] Mengunduh daftar merchant terbaru dari Google Sheets...{RESET}")
+        print(f"\n  {CYAN}[INFO] Mengunduh daftar outlet terbaru dari Google Sheets...{RESET}")
         CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv"
         try:
             resp = requests.get(CSV_URL, timeout=30)
@@ -296,63 +355,133 @@ def interactive_mode():
         except Exception as e:
             print(f"  {RED}[ERROR] Gagal mengunduh Google Sheets: {e}{RESET}")
             sys.exit(1)
+            
+        # Filter hanya outlet yang memiliki minimal 1 aplikasi berstatus "Live"
+        df_live = df[df["Status"].str.contains("Live", na=False, case=False)]
+        outlets = sorted(df_live["Nama Outlet"].dropna().unique())
+        print(f"\n  {BOLD}Pilih Outlet untuk Baseline (Menarik seluruh cabang Grab & Shopee sekaligus):{RESET}")
+        for idx, o_name in enumerate(outlets):
+            print(f"    {GREEN}[{idx + 1}]{RESET} {o_name}")
+        print()
+        while True:
+            try:
+                o_choice = int(input(f"  {BOLD}Pilih nomor outlet (1-{len(outlets)}):{RESET} ").strip())
+                if 1 <= o_choice <= len(outlets):
+                    unified_outlet = outlets[o_choice - 1]
+                    break
+            except ValueError: pass
+            print(f"  {RED}Pilihan tidak valid.{RESET}")
 
-        # --- FILTER CUSTOM GRAB ---
-        if platform in ("grab", "all"):
-            df_grab = df[df["Aplikasi"].str.contains("Grab", na=False, case=False) & df["Status"].str.contains("Live", na=False, case=False)]
-            if not df_grab.empty:
-                outlets = sorted(df_grab["Nama Outlet"].dropna().unique())
-                print(f"\n  {BOLD}Pilih Outlet Grab:{RESET}")
-                for idx, o_name in enumerate(outlets):
-                    print(f"    {GREEN}[{idx + 1}]{RESET} {o_name}")
-                print()
-                while True:
-                    try:
-                        o_choice = int(input(f"  {BOLD}Pilih nomor outlet Grab (1-{len(outlets)}):{RESET} ").strip())
-                        if 1 <= o_choice <= len(outlets):
-                            outlet = outlets[o_choice - 1]
-                            break
-                    except ValueError: pass
-                    print(f"  {RED}Pilihan tidak valid.{RESET}")
+        platform = "all"
+        scope_choice = "2"
+        outlet = unified_outlet
+        shopee_merchant = unified_outlet
+        branch = None
 
-                df_branch = df_grab[df_grab["Nama Outlet"] == outlet]
-                branches = sorted(df_branch["Cabang"].dropna().unique())
-                print(f"\n  {BOLD}Pilih Cabang Grab untuk '{outlet}':{RESET}")
-                for idx, b_name in enumerate(branches):
-                    print(f"    {GREEN}[{idx + 1}]{RESET} {b_name}")
-                print()
-                while True:
-                    try:
-                        b_choice = int(input(f"  {BOLD}Pilih nomor cabang Grab (1-{len(branches)}):{RESET} ").strip())
-                        if 1 <= b_choice <= len(branches):
-                            branch = branches[b_choice - 1]
-                            break
-                    except ValueError: pass
-                    print(f"  {RED}Pilihan tidak valid.{RESET}")
-            else:
-                print(f"  {RED}[ERROR] Tidak ada outlet Grab yang berstatus Live di Google Sheets.{RESET}")
+    else:
+        # ─ Platform selection ─
+        print(f"\n  {BOLD}Pilih platform:{RESET}")
+        print(f"    {GREEN}[1]{RESET} Grab")
+        print(f"    {MAGENTA}[2]{RESET} Shopee")
+        print(f"    {CYAN}[3]{RESET} Keduanya (Grab + Shopee)")
+        print()
+
+        while True:
+            choice = input(f"  {BOLD}Pilihan (1/2/3):{RESET} ").strip()
+            if choice in ("1", "2", "3"):
+                break
+            print(f"  {RED}Input tidak valid. Masukkan 1, 2, atau 3.{RESET}")
+
+        platform_map = {"1": "grab", "2": "shopee", "3": "all"}
+        platform = platform_map[choice]
+
+        # ─ Scope selection ─
+        print(f"\n  {BOLD}Pilih cakupan outlet:{RESET}")
+        print(f"    {GREEN}[1]{RESET} Pilih semua outlet")
+        print(f"    {YELLOW}[2]{RESET} Pilih custom (Filter spesifik){RESET}")
+        print()
+
+        while True:
+            scope_choice = input(f"  {BOLD}Pilihan (1/2):{RESET} ").strip()
+            if scope_choice in ("1", "2"):
+                break
+            print(f"  {RED}Input tidak valid. Masukkan 1 atau 2.{RESET}")
+
+        outlet = None
+        branch = None
+        shopee_merchant = None
+
+        if scope_choice == "2":
+            import pandas as pd
+            import requests
+            import io
+
+            print(f"\n  {CYAN}[INFO] Mengunduh daftar merchant terbaru dari Google Sheets...{RESET}")
+            CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv"
+            try:
+                resp = requests.get(CSV_URL, timeout=30)
+                resp.raise_for_status()
+                df = pd.read_csv(io.StringIO(resp.text))
+            except Exception as e:
+                print(f"  {RED}[ERROR] Gagal mengunduh Google Sheets: {e}{RESET}")
                 sys.exit(1)
 
-        # --- FILTER CUSTOM SHOPEE ---
-        if platform in ("shopee", "all"):
-            df_shopee = df[df["Aplikasi"].str.contains("Shopee", na=False, case=False) & df["Status"].str.contains("Live", na=False, case=False)]
-            if not df_shopee.empty:
-                merchants = sorted(df_shopee["Merchant Name"].dropna().unique())
-                print(f"\n  {BOLD}Pilih Merchant ShopeeFood:{RESET}")
-                for idx, m_name in enumerate(merchants):
-                    print(f"    {GREEN}[{idx + 1}]{RESET} {m_name}")
-                print()
-                while True:
-                    try:
-                        m_choice = int(input(f"  {BOLD}Pilih nomor merchant Shopee (1-{len(merchants)}):{RESET} ").strip())
-                        if 1 <= m_choice <= len(merchants):
-                            shopee_merchant = merchants[m_choice - 1]
-                            break
-                    except ValueError: pass
-                    print(f"  {RED}Pilihan tidak valid.{RESET}")
-            else:
-                print(f"  {RED}[ERROR] Tidak ada merchant Shopee yang berstatus Live di Google Sheets.{RESET}")
-                sys.exit(1)
+            # --- FILTER CUSTOM GRAB ---
+            if platform in ("grab", "all"):
+                df_grab = df[df["Aplikasi"].str.contains("Grab", na=False, case=False) & df["Status"].str.contains("Live", na=False, case=False)]
+                if not df_grab.empty:
+                    outlets = sorted(df_grab["Nama Outlet"].dropna().unique())
+                    print(f"\n  {BOLD}Pilih Outlet Grab:{RESET}")
+                    for idx, o_name in enumerate(outlets):
+                        print(f"    {GREEN}[{idx + 1}]{RESET} {o_name}")
+                    print()
+                    while True:
+                        try:
+                            o_choice = int(input(f"  {BOLD}Pilih nomor outlet Grab (1-{len(outlets)}):{RESET} ").strip())
+                            if 1 <= o_choice <= len(outlets):
+                                outlet = outlets[o_choice - 1]
+                                break
+                        except ValueError: pass
+                        print(f"  {RED}Pilihan tidak valid.{RESET}")
+
+                    df_branch = df_grab[df_grab["Nama Outlet"] == outlet]
+                    branches = sorted(df_branch["Cabang"].dropna().unique())
+                    print(f"\n  {BOLD}Pilih Cabang Grab untuk '{outlet}':{RESET}")
+                    for idx, b_name in enumerate(branches):
+                        print(f"    {GREEN}[{idx + 1}]{RESET} {b_name}")
+                    print()
+                    while True:
+                        try:
+                            b_choice = int(input(f"  {BOLD}Pilih nomor cabang Grab (1-{len(branches)}):{RESET} ").strip())
+                            if 1 <= b_choice <= len(branches):
+                                branch = branches[b_choice - 1]
+                                break
+                        except ValueError: pass
+                        print(f"  {RED}Pilihan tidak valid.{RESET}")
+                else:
+                    print(f"  {RED}[ERROR] Tidak ada outlet Grab yang berstatus Live di Google Sheets.{RESET}")
+                    sys.exit(1)
+
+            # --- FILTER CUSTOM SHOPEE ---
+            if platform in ("shopee", "all"):
+                df_shopee = df[df["Aplikasi"].str.contains("Shopee", na=False, case=False) & df["Status"].str.contains("Live", na=False, case=False)]
+                if not df_shopee.empty:
+                    merchants = sorted(df_shopee["Merchant Name"].dropna().unique())
+                    print(f"\n  {BOLD}Pilih Merchant ShopeeFood:{RESET}")
+                    for idx, m_name in enumerate(merchants):
+                        print(f"    {GREEN}[{idx + 1}]{RESET} {m_name}")
+                    print()
+                    while True:
+                        try:
+                            m_choice = int(input(f"  {BOLD}Pilih nomor merchant Shopee (1-{len(merchants)}):{RESET} ").strip())
+                            if 1 <= m_choice <= len(merchants):
+                                shopee_merchant = merchants[m_choice - 1]
+                                break
+                        except ValueError: pass
+                        print(f"  {RED}Pilihan tidak valid.{RESET}")
+                else:
+                    print(f"  {RED}[ERROR] Tidak ada merchant Shopee yang berstatus Live di Google Sheets.{RESET}")
+                    sys.exit(1)
 
     # ─ Date input ─
     print()
@@ -404,7 +533,7 @@ def interactive_mode():
         print(f"\n  {YELLOW}Dibatalkan.{RESET}")
         sys.exit(0)
 
-    return platform, start_date, end_date, outlet, branch, shopee_merchant
+    return task_choice, platform, start_date, end_date, outlet, branch, shopee_merchant
 
 
 # ── Main ──────────────────────────────────────────────────────────────
@@ -437,8 +566,10 @@ Examples:
 
     # If no platform provided or dates missing → interactive
     if args.platform is None or args.start is None or args.end is None:
-        platform, start_date, end_date, outlet, branch, shopee_merchant = interactive_mode()
+        task_choice, platform, start_date, end_date, outlet, branch, shopee_merchant = interactive_mode()
     else:
+        # Currently CLI args default to weekly (task 2)
+        task_choice = "2"
         platform   = args.platform.lower()
         start_date = args.start
         end_date   = args.end
@@ -452,10 +583,16 @@ Examples:
     start_time = datetime.now()
 
     if platform in ("grab", "all"):
-        results["Grab"] = run_grab(start_date, end_date, user_filter=args.user, outlet_filter=outlet, branch_filter=branch)
+        if task_choice == "1":
+            results["Grab"] = run_grab_baseline(start_date, end_date, user_filter=args.user, outlet_filter=outlet, branch_filter=branch)
+        else:
+            results["Grab"] = run_grab(start_date, end_date, user_filter=args.user, outlet_filter=outlet, branch_filter=branch)
 
     if platform in ("shopee", "all"):
-        results["Shopee"] = run_shopee(start_date, end_date, merchant_filter=shopee_merchant)
+        if task_choice == "1":
+            results["Shopee"] = run_shopee_baseline(start_date, end_date, merchant_filter=shopee_merchant)
+        else:
+            results["Shopee"] = run_shopee(start_date, end_date, merchant_filter=shopee_merchant)
 
     # ── Summary ──
     elapsed = datetime.now() - start_time
@@ -464,6 +601,116 @@ Examples:
 
     date_folder = f"{start_date}_to_{end_date}"
     base_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # ── Merge Baseline Outputs ──
+    if task_choice == "1" and platform == "all":
+        print(f"\n{YELLOW}{BOLD}▶ PENGGABUNGAN LAPORAN BASELINE{RESET}")
+        try:
+            import pandas as pd
+            frames = []
+            
+            outlet_safe = str(outlet or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
+            
+            # Find Grab Baseline output
+            # In run_baseline Grab, branches are appended. If branch_filter is None, it becomes an empty string.
+            # So the filename will have an underscore at the end: BASELINE_CUSTOM_{outlet_safe}_.xlsx
+            grab_filename = f"BASELINE_CUSTOM_{outlet_safe}_.xlsx"
+            grab_path = os.path.join(base_dir, "laporan", "grab_baseline", date_folder, grab_filename)
+            if os.path.exists(grab_path):
+                frames.append(pd.read_excel(grab_path))
+            
+            # Find Shopee Baseline output
+            shopee_filename = f"BASELINE_CUSTOM_{outlet_safe}.xlsx"
+            shopee_path = os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, shopee_filename)
+            if os.path.exists(shopee_path):
+                frames.append(pd.read_excel(shopee_path))
+                
+            if frames:
+                combined_df = pd.concat(frames, ignore_index=True)
+                final_baseline_dir = os.path.join(base_dir, "laporan", "baseline", date_folder)
+                os.makedirs(final_baseline_dir, exist_ok=True)
+                final_path = os.path.join(final_baseline_dir, f"BASELINE_GABUNGAN_{outlet_safe}.xlsx")
+                
+                with pd.ExcelWriter(final_path, engine="openpyxl") as writer:
+                    combined_df.to_excel(writer, index=False, sheet_name="Baseline Summary")
+                    
+                print(f"  {GREEN}✓ File gabungan berhasil dibuat: {final_path}{RESET}")
+
+                # ── Generate PDF via Webhook ──
+                print(f"\n{YELLOW}{BOLD}▶ PEMBUATAN PDF BASELINE{RESET}")
+                try:
+                    import requests
+                    import io
+                    
+                    # Hardcode URL Web App Anda di sini setelah di-deploy
+                    webhook_url = "https://script.google.com/macros/s/AKfycbxJDAcgVYQqaI2_Xy8i6ND07hVFNRuXRBw6WCbYTr6u26uQZakL0Hy1hU0lJOniCYiv/exec"
+                    if not webhook_url or "GANTI_DENGAN_URL_ANDA" in webhook_url:
+                        print(f"  {YELLOW}⚠️ URL Webhook belum di-hardcode di cli.py.{RESET}")
+                        print(f"  {DIM}Silakan deploy apps_script_pdf.js dan masukkan URL-nya ke variabel webhook_url di cli.py{RESET}")
+                    else:
+                        # 1. Fetch Owner from Credentials CSV
+                        CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv"
+                        owner_name = "-"
+                        try:
+                            resp = requests.get(CSV_URL, timeout=10)
+                            if resp.status_code == 200:
+                                df_cred = pd.read_csv(io.StringIO(resp.text))
+                                owner_row = df_cred[df_cred["Nama Outlet"].str.lower() == str(outlet).lower()].iloc[0]
+                                owner_name = str(owner_row.get("Owner", "-"))
+                        except Exception as e:
+                            print(f"  {DIM}Gagal mengambil nama Owner: {e}{RESET}")
+
+                        # 2. Extract metrics from combined DataFrame
+                        omzet_gr, order_gr = 0.0, 0.0
+                        omzet_sf, order_sf = 0.0, 0.0
+                        
+                        for _, row in combined_df.iterrows():
+                            app = str(row.get("Aplikasi", "")).lower()
+                            if "grab" in app:
+                                omzet_gr = float(row.get("Rata-rata Omzet", 0))
+                                order_gr = float(row.get("Rata-rata Order", 0))
+                            elif "shopee" in app:
+                                omzet_sf = float(row.get("Rata-rata Omzet", 0))
+                                order_sf = float(row.get("Rata-rata Order", 0))
+                                
+                        def format_rp(val):
+                            return f"Rp {int(val):,}".replace(",", ".")
+                            
+                        indo_months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
+                        now = datetime.now()
+                        
+                        payload = {
+                            "action": "generate_baseline_pdf",
+                            "tanggal": str(now.day),
+                            "bulan": indo_months[now.month - 1],
+                            "tahun": str(now.year),
+                            "owner": owner_name,
+                            "nama_outlet": str(outlet),
+                            "omzet_go": "Rp 0",
+                            "order_go": "0",
+                            "omzet_gr": format_rp(omzet_gr),
+                            "order_gr": str(round(order_gr, 1)),
+                            "omzet_sf": format_rp(omzet_sf),
+                            "order_sf": str(round(order_sf, 1))
+                        }
+                        
+                        print(f"  {CYAN}[INFO] Mengirim data agregasi ke Google Apps Script...{RESET}")
+                        res = requests.post(webhook_url, json=payload, timeout=30)
+                        if res.status_code == 200:
+                            data = res.json()
+                            if data.get("success"):
+                                print(f"  {GREEN}✓ PDF berhasil dibuat!{RESET}")
+                                print(f"  {GREEN}  URL: {data.get('pdf_url')}{RESET}")
+                            else:
+                                print(f"  {RED}✗ Gagal membuat PDF: {data.get('error')}{RESET}")
+                        else:
+                            print(f"  {RED}✗ Error HTTP {res.status_code} saat menghubungi Webhook{RESET}")
+                except Exception as e:
+                    print(f"  {RED}✗ Terjadi kesalahan saat memproses Webhook PDF: {e}{RESET}")
+            else:
+                print(f"  {RED}✗ Tidak ditemukan file baseline untuk digabung.{RESET}")
+        except Exception as e:
+            print(f"  {RED}✗ Gagal menggabungkan laporan: {e}{RESET}")
 
     print(f"\n{CYAN}{BOLD}{'═'*58}{RESET}")
     print(f"{CYAN}{BOLD}  SUMMARY{RESET}")
@@ -473,7 +720,7 @@ Examples:
     print()
     for name, success in results.items():
         status = f"{GREEN}✓ SUCCESS{RESET}" if success else f"{RED}✗ FAILED{RESET}"
-        out_path = os.path.join(base_dir, "laporan", name.lower(), date_folder)
+        out_path = os.path.join(base_dir, "laporan", name.lower() + ("_baseline" if task_choice == "1" else ""), date_folder)
         print(f"  {name:10s} : {status}")
         print(f"  {'':10s}   {DIM}→ {out_path}{RESET}")
     print(f"\n{CYAN}{'═'*58}{RESET}\n")
