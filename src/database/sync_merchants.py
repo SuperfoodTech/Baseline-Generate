@@ -5,7 +5,7 @@ from sqlalchemy import create_engine, text
 import os
 
 # Configuration
-GSHEET_MASTER_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRUOPDeyWtcCQT2OaNTmplVoIs0FxGFT-6UA3W-AJ_-RAG3H57UTADOyK2O1YnwMhphQPL2Nj86s7N6/pub?gid=0&single=true&output=csv"
+GSHEET_MASTER_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv"
 DB_URL = "postgresql://superfood_admin:superfood_password@localhost:5433/srs_db"
 
 def sync_merchants():
