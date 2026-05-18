@@ -250,8 +250,41 @@ async def perform_login(page, user, pwd):
     import random
     stagger = random.uniform(1.0, 5.0)
     await asyncio.sleep(stagger)
-    
     try:
+        async def check_block_and_errors():
+            # Check for Block Screen
+            block_texts = [
+                "temporarily blocked due to multiple invalid login attempts",
+                "try again later",
+                "coba lagi nanti",
+                "diblokir sementara"
+            ]
+            page_content = await page.content()
+            for text in block_texts:
+                if text.lower() in page_content.lower():
+                    os.makedirs("logs", exist_ok=True)
+                    ss_path = f"logs/account_blocked_{user}.png"
+                    await page.screenshot(path=ss_path)
+                    logger.error(f"  ✗ [Login] Account blocked screen detected for {user}. Screenshot saved to {ss_path}.")
+                    raise IncorrectCredentialsError(f"Account is temporarily blocked due to multiple invalid login attempts.")
+
+            # Check for Incorrect Credentials Error on screen
+            error_texts = [
+                "Make sure you have the right username",
+                "attempts left",
+                "Pastikan nama pengguna dan kata sandi",
+                "kesempatan tersisa",
+                "salah memasukkan password"
+            ]
+            for text in error_texts:
+                if text.lower() in page_content.lower():
+                    # Take screenshot of the exact failure
+                    os.makedirs("logs", exist_ok=True)
+                    ss_path = f"logs/incorrect_credentials_{user}.png"
+                    await page.screenshot(path=ss_path)
+                    logger.error(f"  ✗ [Login] Wrong credentials error screen detected for {user}. Screenshot saved to {ss_path}.")
+                    raise IncorrectCredentialsError(f"Incorrect username or password. Remaining attempts warning shown on page.")
+
         print(f"  [Login] Navigating to login page for {user}...")
         for attempt in range(3):
             try:
@@ -267,7 +300,10 @@ async def perform_login(page, user, pwd):
 
         await page.wait_for_timeout(3000)
 
-        # Check for block pages
+        # Pre-emptively check for any blocks or lockout screens already visible
+        await check_block_and_errors()
+
+        # Check for block pages (anti-bot)
         content = await page.content()
         if "Attention Required" in await page.title() or "cloudflare" in content.lower() or "distil" in content.lower():
             logger.error(f"  ✗ [BLOCK] Detected anti-bot page for {user}.")
@@ -299,6 +335,9 @@ async def perform_login(page, user, pwd):
                 await page.context.clear_cookies()
                 await page.goto(CLEAN_LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
                 await page.wait_for_timeout(2000)
+
+        # Check again if page has changed to a block screen after cookie clear/navigation
+        await check_block_and_errors()
 
         # --- Normal Login Flow ---
         user_selectors = [
@@ -358,23 +397,8 @@ async def perform_login(page, user, pwd):
                 await page.keyboard.press("Enter")
             await page.wait_for_timeout(2500)
 
-
             # Check for Block Screen immediately after username submission
-            block_texts = [
-                "temporarily blocked due to multiple invalid login attempts",
-                "try again later",
-                "coba lagi nanti",
-                "diblokir sementara"
-            ]
-            page_content = await page.content()
-            for text in block_texts:
-                if text.lower() in page_content.lower():
-                    os.makedirs("logs", exist_ok=True)
-                    ss_path = f"logs/account_blocked_{user}.png"
-                    await page.screenshot(path=ss_path)
-                    logger.error(f"  ✗ [Login] Account blocked screen detected for {user}. Screenshot saved to {ss_path}.")
-                    raise IncorrectCredentialsError(f"Account is temporarily blocked due to multiple invalid login attempts.")
-
+            await check_block_and_errors()
 
         # Password field
         pwd_selector = 'input[type="password"], #password'
@@ -387,6 +411,9 @@ async def perform_login(page, user, pwd):
                 try: await page.wait_for_selector(pwd_selector, timeout=10000)
                 except: pass
         
+        # Check again before password input to catch late lockout renders
+        await check_block_and_errors()
+
         if await page.locator(pwd_selector).count() > 0:
             await page.fill(pwd_selector, pwd)
             await page.wait_for_timeout(500)
@@ -395,25 +422,11 @@ async def perform_login(page, user, pwd):
             # Wait for a couple of seconds to see if error message or redirect happens
             await page.wait_for_timeout(3000)
             
-            # Check for error elements/texts
-            error_texts = [
-                "Make sure you have the right username",
-                "attempts left",
-                "Pastikan nama pengguna dan kata sandi",
-                "kesempatan tersisa",
-                "salah memasukkan password"
-            ]
-            page_content = await page.content()
-            for text in error_texts:
-                if text.lower() in page_content.lower():
-                    # Take screenshot of the exact failure
-                    os.makedirs("logs", exist_ok=True)
-                    ss_path = f"logs/incorrect_credentials_{user}.png"
-                    await page.screenshot(path=ss_path)
-                    logger.error(f"  ✗ [Login] Wrong credentials error screen detected for {user}. Screenshot saved to {ss_path}.")
-                    raise IncorrectCredentialsError(f"Incorrect username or password. Remaining attempts warning shown on page.")
+            # Check for error elements/texts after password submission
+            await check_block_and_errors()
                     
             try:
+
                 await page.wait_for_url(lambda u: "login" not in u.lower() and "saved-accounts" not in u, timeout=20000)
                 await page.wait_for_load_state("networkidle")
             except: pass

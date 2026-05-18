@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+from grab_api_scraper import validate_credentials
+
 async def load_credentials():
     """Load username and password from environment variables"""
     username = os.getenv('GRAB_USERNAME')
@@ -409,6 +411,12 @@ async def grab_dashboard_login(user=None, pwd=None):
     if not username or not password:
         print(f"Error: Credentials not provided and not found in .env")
         return
+        
+    is_valid, err_msg = validate_credentials(username, password)
+    if not is_valid:
+        print(f"Error: Invalid credentials for {username}: {err_msg}")
+        return
+
     
     async with async_playwright() as p:
         # Launch browser
