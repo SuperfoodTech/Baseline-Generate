@@ -197,6 +197,8 @@ def _init_driver(headless: bool):
 
 def _perform_login(driver, wait, username: str = None, password: str = None, phone: str = None) -> bool:
     log.info("➡️  [AUTH] Starting login sequence...")
+    if not phone and (not username or not password):
+        raise Exception("Shopee credentials are not configured! Please configure them in 'credentials.json' at the project root directory.")
     if phone:
         try:
             wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(text(), 'Log in dengan no. HP')]"))).click()
