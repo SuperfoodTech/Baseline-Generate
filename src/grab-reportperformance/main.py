@@ -5,7 +5,11 @@ import pandas as pd
 import requests
 import io
 from dotenv import load_dotenv
-from grab_api_scraper import run_api_download_for_portal
+
+# Add current directory to path to allow importing local modules
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from grab_api_scraper import run_api_download_for_portal, validate_credentials
 from result import main as run_result
 
 CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv"
@@ -39,13 +43,24 @@ async def run_all():
             pwd = pwd_sf if pd.notna(pwd_sf) and str(pwd_sf).strip() != "-" else pwd_mt
             
             if pd.notna(user) and pd.notna(pwd) and str(user).strip() != "-" and str(pwd).strip() != "-":
+                u_str = str(user).strip()
+                p_str = str(pwd).strip()
+                outlet = row.get("Nama Outlet", "Unknown")
+                branch = row.get("Cabang", "Unknown")
+                
+                # Smart credential validation
+                is_valid, err_msg = validate_credentials(u_str, p_str)
+                if not is_valid:
+                    print(f"⚠️  [VALIDATION WARNING] Row #{idx+1} for '{outlet} ({branch})' has invalid credentials: {err_msg}")
+                    
                 portals.append({
                     "id": len(portals) + 1,
-                    "outlet": row.get("Nama Outlet", "Unknown"),
-                    "branch": row.get("Cabang", "Unknown"),
-                    "user": str(user).strip(),
-                    "pwd": str(pwd).strip()
+                    "outlet": outlet,
+                    "branch": branch,
+                    "user": u_str,
+                    "pwd": p_str
                 })
+
         
     except Exception as e:
         print(f"[ERROR] Failed to fetch or parse spreadsheet: {e}")
