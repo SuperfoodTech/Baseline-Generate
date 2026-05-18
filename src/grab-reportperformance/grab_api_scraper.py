@@ -17,6 +17,58 @@ class SessionStuckError(Exception):
     """Custom exception when API calls are stuck due to persistent network errors"""
     pass
 
+class IncorrectCredentialsError(Exception):
+    """Custom exception when login fails due to wrong username or password"""
+    pass
+
+
+import re
+
+def validate_credentials(username, password):
+    """
+    Smarter and stricter credential validation to catch common human errors.
+    Returns (is_valid, error_message)
+    """
+    if not username or not password:
+        return False, "Username or password is empty"
+        
+    u = str(username).strip().replace('\xa0', '')
+    p = str(password).strip().replace('\xa0', '')
+    
+    if not u or not p:
+        return False, "Username or password contains only whitespace"
+        
+    # Placeholders check
+    placeholders = {'-', '--', 'null', 'none', 'n/a', 'na', 'sandi', 'password', 'username', 'pengguna'}
+    if u.lower() in placeholders or p.lower() in placeholders:
+        return False, f"Credential contains a placeholder value (user: '{u}', pwd: '{p}')"
+        
+    # Check if username and password are identical
+    if u.lower() == p.lower():
+        return False, f"Username and Password are identical (likely copy-paste error): '{u}'"
+        
+    # Check if password is too short
+    if len(p) < 6:
+        return False, f"Password is too short (less than 6 characters): '{p}'"
+        
+    # Check if password contains the username, or username contains the password
+    if len(u) > 5 and u.lower() in p.lower():
+        return False, f"Password contains the username (likely copy-paste or duplicate error): '{p}'"
+    if len(p) > 8 and p.lower() in u.lower():
+        return False, f"Password is a substring of the username (likely copy-paste or duplicate error): '{p}'"
+        
+    # Check if password looks like an email/username (usually contains @ or domain)
+    email_pattern = r'[^@\s]+@[^@\s]+\.[^@\s]+'
+    if re.search(email_pattern, p):
+        return False, f"Password looks like an email address (likely copy-paste or swap error): '{p}'"
+        
+    # Domain specific rule: Superfood usernames end with 'superfood'
+    if p.lower().endswith('superfood') and len(p) > 10:
+        return False, f"Password looks like a Superfood merchant username (ends with 'superfood'): '{p}'"
+        
+    return True, ""
+
+
 class GrabAPI:
     def __init__(self, page, username, password):
         self.page = page
@@ -306,6 +358,24 @@ async def perform_login(page, user, pwd):
                 await page.keyboard.press("Enter")
             await page.wait_for_timeout(2500)
 
+
+            # Check for Block Screen immediately after username submission
+            block_texts = [
+                "temporarily blocked due to multiple invalid login attempts",
+                "try again later",
+                "coba lagi nanti",
+                "diblokir sementara"
+            ]
+            page_content = await page.content()
+            for text in block_texts:
+                if text.lower() in page_content.lower():
+                    os.makedirs("logs", exist_ok=True)
+                    ss_path = f"logs/account_blocked_{user}.png"
+                    await page.screenshot(path=ss_path)
+                    logger.error(f"  ✗ [Login] Account blocked screen detected for {user}. Screenshot saved to {ss_path}.")
+                    raise IncorrectCredentialsError(f"Account is temporarily blocked due to multiple invalid login attempts.")
+
+
         # Password field
         pwd_selector = 'input[type="password"], #password'
         try:
@@ -322,20 +392,52 @@ async def perform_login(page, user, pwd):
             await page.wait_for_timeout(500)
             await page.keyboard.press("Enter")
             
+            # Wait for a couple of seconds to see if error message or redirect happens
+            await page.wait_for_timeout(3000)
+            
+            # Check for error elements/texts
+            error_texts = [
+                "Make sure you have the right username",
+                "attempts left",
+                "Pastikan nama pengguna dan kata sandi",
+                "kesempatan tersisa",
+                "salah memasukkan password"
+            ]
+            page_content = await page.content()
+            for text in error_texts:
+                if text.lower() in page_content.lower():
+                    # Take screenshot of the exact failure
+                    os.makedirs("logs", exist_ok=True)
+                    ss_path = f"logs/incorrect_credentials_{user}.png"
+                    await page.screenshot(path=ss_path)
+                    logger.error(f"  ✗ [Login] Wrong credentials error screen detected for {user}. Screenshot saved to {ss_path}.")
+                    raise IncorrectCredentialsError(f"Incorrect username or password. Remaining attempts warning shown on page.")
+                    
             try:
-                await page.wait_for_url(lambda u: "login" not in u.lower() and "saved-accounts" not in u, timeout=30000)
+                await page.wait_for_url(lambda u: "login" not in u.lower() and "saved-accounts" not in u, timeout=20000)
                 await page.wait_for_load_state("networkidle")
             except: pass
+
         
         return "login" not in page.url.lower() and "saved-accounts" not in page.url
+    except IncorrectCredentialsError:
+        raise
     except Exception as e:
         logger.error(f"  ✗ [Login] Failed: {e}")
         return False
 
+
 async def run_api_download_for_portal(user, pwd, start_date: str = None, end_date: str = None, browser=None):
+    # Proactively validate credentials before proceeding to run session
+    is_valid, err_msg = validate_credentials(user, pwd)
+    if not is_valid:
+        logger.error(f"  ✗ [Validation] Invalid credentials for {user}: {err_msg}")
+        return None, f"Invalid credentials: {err_msg}"
+
     session_dir = "sessions"
     os.makedirs(session_dir, exist_ok=True)
     session_path = os.path.join(session_dir, f"{user}.json")
+
     
     p = None
     managed_browser = None
@@ -433,7 +535,14 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
             await context.close()
             return (filename, None)
 
+        except IncorrectCredentialsError as ice:
+            logger.error(f"  ✗ [Fatal Login Error] Aborting immediately for {user} to prevent lockout: {ice}")
+            if 'context' in locals(): await context.close()
+            if managed_browser: await managed_browser.close()
+            if p: await p.stop()
+            return None, f"Incorrect credentials: {ice}"
         except SessionStuckError as se:
+
             logger.warning(f"  [Action] {se}. Closing and re-opening context for {user}...")
             if 'context' in locals(): await context.close()
             if run_attempt < 2: continue
