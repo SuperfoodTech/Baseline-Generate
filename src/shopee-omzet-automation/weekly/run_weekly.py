@@ -305,106 +305,131 @@ def run_pipeline():
         for fpath, label in ctx["downloaded"]:
             log.info(f"     📄 {fpath}")
 
-    # ── 4. Phase 3: Data Transformation ──────────────────────────────────
-    log.info("📊 [PROGRESS] PHASE 3: Data Transformation & Analysis...")
+    # ── 4. Phase 3: Scanning and Validating ALL Raw Files in report folder ──
+    log.info("📊 [PROGRESS] PHASE 3: Scanning and Validating ALL Raw Files in report folder...")
     all_analyzed_data = []
     
-    for m_name, ctx in merchants_context.items():
-        for fpath, label in ctx["downloaded"]:
-            try:
-                log.info(f"  📝 [DATA] Analyzing {os.path.basename(fpath)}...")
-                df = pd.read_excel(fpath, dtype=str)
+    # Get all xlsx files in report_dir
+    import glob
+    xlsx_files = glob.glob(os.path.join(report_dir, "*.xlsx"))
+    
+    # Sort files to ensure deterministic merging order
+    xlsx_files.sort()
+    
+    for fpath in xlsx_files:
+        filename = os.path.basename(fpath)
+        
+        # Skip Master and Analyzed reports
+        if filename.startswith("Master_") or filename.endswith("_Analyzed.xlsx"):
+            continue
+            
+        # Determine Merchant Name from filename
+        matched_merchant = None
+        for m in target_merchants:
+            m_underscored = m.replace(' ', '_')
+            # Check if filename starts with underscored merchant name followed by underscore
+            if filename.startswith(m_underscored + "_"):
+                matched_merchant = m
+                break
                 
-                if "Nilai Transaksi" in df.columns and "Harga Makanan" in df.columns:
-                    # List of exact monetary columns in ShopeeFood reports
-                    monetary_cols = [
-                        'Harga Makanan', 'Diskon', 'Diskon Flash Sale', 'Biaya Tambahan', 
-                        'Subsidi Merchant untuk Voucher Deals', 'Subsidi Platform untuk Flash Sale', 
-                        'Subsidi Voucher Makanan', 'Diskon Langsung', 'Nilai Transaksi', 
-                        'Harga Checkout Murah'
-                    ]
+        if not matched_merchant:
+            if '_Transactions_' in filename:
+                matched_merchant = filename.split('_Transactions_')[0].replace('_', ' ')
+            elif '_report_' in filename:
+                matched_merchant = filename.split('_report_')[0].replace('_', ' ')
+            else:
+                matched_merchant = filename.split('_')[0].replace('_', ' ')
+                
+        try:
+            # Pengecekan apakah file memiliki data (tidak kosong)
+            df = pd.read_excel(fpath, dtype=str)
+            
+            if df.empty or len(df) == 0:
+                log.warning(f"  ⚠️ [CHECK] Raw file '{filename}' is EMPTY (no transaction rows). Skipping merger.")
+                continue
+                
+            if "Nilai Transaksi" in df.columns and "Harga Makanan" in df.columns:
+                log.info(f"  🔍 [CHECK] Raw file '{filename}' has {len(df)} rows. Processing & including in MASTER...")
+                # List of exact monetary columns in ShopeeFood reports
+                monetary_cols = [
+                    'Harga Makanan', 'Diskon', 'Diskon Flash Sale', 'Biaya Tambahan', 
+                    'Subsidi Merchant untuk Voucher Deals', 'Subsidi Platform untuk Flash Sale', 
+                    'Subsidi Voucher Makanan', 'Diskon Langsung', 'Nilai Transaksi', 
+                    'Harga Checkout Murah'
+                ]
+                
+                # Fix monetary columns: handle Shopee's inconsistent thousand separator/decimal format
+                def clean_shopee_monetary(val):
+                    if pd.isna(val) or str(val).lower() == 'nan': return 0
+                    s = str(val).strip()
+                    if not s or s == '-': return 0
                     
-                    # Fix monetary columns: handle Shopee's inconsistent thousand separator/decimal format
-                    # Some values are "decimalized" (e.g., 33.558 means 33558) while others are absolute (e.g., 300 means 300).
-                    # The "decimalized" ones always contain a dot in the raw string.
-                    def clean_shopee_monetary(val):
-                        if pd.isna(val) or str(val).lower() == 'nan': return 0
-                        s = str(val).strip()
-                        if not s or s == '-': return 0
-                        
-                        has_dot = '.' in s
-                        try:
-                            # Standardize to float (handling Indonesian comma as decimal separator if any)
-                            num = float(s.replace(',', '.'))
-                            if has_dot:
-                                return int(round(num * 1000))
-                            else:
-                                return int(num)
-                        except:
-                            return 0
+                    has_dot = '.' in s
+                    try:
+                        num = float(s.replace(',', '.'))
+                        if has_dot:
+                            return int(round(num * 1000))
+                        else:
+                            return int(num)
+                    except:
+                        return 0
 
-                    for col in monetary_cols:
-                        if col in df.columns:
-                            df[col] = df[col].apply(clean_shopee_monetary)
+                for col in monetary_cols:
+                    if col in df.columns:
+                        df[col] = df[col].apply(clean_shopee_monetary)
+                
+                # Calculate new metrics based on corrected raw values (allow decimals for Commission)
+                commission_real = df['Nilai Transaksi'] * 0.25
+                revenue_real = df['Nilai Transaksi'] - commission_real
+                ofd_fees_real = df['Harga Makanan'] - revenue_real
+                
+                # Insert new columns
+                df['Commission'] = commission_real
+                df['Revenue'] = revenue_real
+                df['OFD Fees'] = ofd_fees_real
+                
+                # Add Merchant Name column at the beginning
+                df.insert(0, "Merchant Name", matched_merchant)
+                
+                # Fix scientific notation for Order IDs
+                if "No. Pesanan" in df.columns:
+                    df["No. Pesanan"] = df["No. Pesanan"].astype(str).str.replace(r'\.0$', '', regex=True)
                     
-                    # Calculate new metrics based on corrected raw values (allow decimals for Commission)
-                    commission_real = df['Nilai Transaksi'] * 0.25
-                    revenue_real = df['Nilai Transaksi'] - commission_real
-                    ofd_fees_real = df['Harga Makanan'] - revenue_real
+                # Reformat Waktu Penyelesaian from "07 Mei 2026 23:16" to "2026-05-07 at 23:16"
+                if "Waktu Penyelesaian" in df.columns:
+                    indo_months = {
+                        'Januari': 'January', 'Februari': 'February', 'Maret': 'March', 
+                        'April': 'April', 'Mei': 'May', 'Juni': 'June', 'Juli': 'July', 
+                        'Agustus': 'August', 'September': 'September', 'Oktober': 'October', 
+                        'November': 'November', 'Desember': 'December'
+                    }
+                    temp_dates = df["Waktu Penyelesaian"].astype(str)
+                    for indo, eng in indo_months.items():
+                        temp_dates = temp_dates.str.replace(indo, eng, case=False)
                     
-                    # Insert new columns
-                    df['Commission'] = commission_real
-                    df['Revenue'] = revenue_real
-                    df['OFD Fees'] = ofd_fees_real
+                    # Parse to datetime and format
+                    parsed_dates = pd.to_datetime(temp_dates, format="%d %B %Y %H:%M", errors='coerce')
                     
-                    # Add Merchant Name column at the beginning
-                    df.insert(0, "Merchant Name", m_name)
+                    # Where parsing succeeded, apply the new format. Where it failed, keep original.
+                    df["Waktu Penyelesaian"] = parsed_dates.dt.strftime('%Y-%m-%d at %H:%M').fillna(df["Waktu Penyelesaian"])
                     
-                    # Fix scientific notation for Order IDs
-                    # Excel sometimes formats long numbers as 1.23E+15. Converting to string fixes this.
-                    if "No. Pesanan" in df.columns:
-                        # Convert to string and remove any trailing '.0' if pandas parsed it as float
-                        df["No. Pesanan"] = df["No. Pesanan"].astype(str).str.replace(r'\.0$', '', regex=True)
-                        
-                    # Reformat Waktu Penyelesaian from "07 Mei 2026 23:16" to "2026-05-07 at 23:16"
-                    if "Waktu Penyelesaian" in df.columns:
-                        indo_months = {
-                            'Januari': 'January', 'Februari': 'February', 'Maret': 'March', 
-                            'April': 'April', 'Mei': 'May', 'Juni': 'June', 'Juli': 'July', 
-                            'Agustus': 'August', 'September': 'September', 'Oktober': 'October', 
-                            'November': 'November', 'Desember': 'December'
-                        }
-                        temp_dates = df["Waktu Penyelesaian"].astype(str)
-                        for indo, eng in indo_months.items():
-                            temp_dates = temp_dates.str.replace(indo, eng, case=False)
-                        
-                        # Parse to datetime and format
-                        parsed_dates = pd.to_datetime(temp_dates, format="%d %B %Y %H:%M", errors='coerce')
-                        
-                        # Where parsing succeeded, apply the new format. Where it failed, keep original.
-                        df["Waktu Penyelesaian"] = parsed_dates.dt.strftime('%Y-%m-%d at %H:%M').fillna(df["Waktu Penyelesaian"])
-                    # Reorder columns to match Google Sheets format
-                    desired_order = [
-                        'Merchant Name', 'Store ID', 'Nama Toko', 'Tipe Transaksi', 'No. Pesanan', 
-                        'Waktu Penyelesaian', 'Status', 'Harga Makanan', 'Diskon', 'Diskon Flash Sale', 
-                        'Biaya Tambahan', 'Subsidi Merchant untuk Voucher Deals', 
-                        'Subsidi Platform untuk Flash Sale', 'Subsidi Voucher Makanan', 
-                        'Diskon Langsung', 'Nilai Transaksi', 'Harga Checkout Murah', 'Notes', 
-                        'Commission', 'OFD Fees', 'Revenue'
-                    ]
-                    final_cols = [c for c in desired_order if c in df.columns] + [c for c in df.columns if c not in desired_order]
-                    df = df[final_cols]
-                    
-                    # Save as new file (DISABLED - Focus on Database)
-                    # out_path = fpath.replace(".xlsx", "_Analyzed.xlsx")
-                    # df.to_excel(out_path, index=False)
-                    # log.info(f"     ✅ [DATA] Saved analyzed data: {os.path.basename(out_path)}")
-                    
-                    all_analyzed_data.append(df)
-                else:
-                    log.warning(f"     ⚠️ Missing required columns in {fpath}")
-            except Exception as e:
-                log.error(f"  ❌ Error processing {fpath}: {e}")
+                # Reorder columns to match Google Sheets format
+                desired_order = [
+                    'Merchant Name', 'Store ID', 'Nama Toko', 'Tipe Transaksi', 'No. Pesanan', 
+                    'Waktu Penyelesaian', 'Status', 'Harga Makanan', 'Diskon', 'Diskon Flash Sale', 
+                    'Biaya Tambahan', 'Subsidi Merchant untuk Voucher Deals', 
+                    'Subsidi Platform untuk Flash Sale', 'Subsidi Voucher Makanan', 
+                    'Diskon Langsung', 'Nilai Transaksi', 'Harga Checkout Murah', 'Notes', 
+                    'Commission', 'OFD Fees', 'Revenue'
+                ]
+                final_cols = [c for c in desired_order if c in df.columns] + [c for c in df.columns if c not in desired_order]
+                df = df[final_cols]
+                
+                all_analyzed_data.append(df)
+            else:
+                log.warning(f"  ⚠️ [CHECK] Raw file '{filename}' is missing required columns. Skipping.")
+        except Exception as e:
+            log.error(f"  ❌ Error processing '{filename}': {e}")
 
     # ── 5. Phase 4: Master Aggregation ───────────────────────────────────
     if all_analyzed_data:

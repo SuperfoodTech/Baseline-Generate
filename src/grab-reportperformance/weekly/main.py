@@ -17,7 +17,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
 
-from grab_api_scraper import run_api_download_for_portal
+from grab_api_scraper import run_api_download_for_portal, validate_credentials
 
 # --- Logging Setup ---
 def setup_logger():
@@ -81,13 +81,24 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
             pwd = pwd_sf if pd.notna(pwd_sf) and str(pwd_sf).strip() != "-" else pwd_mt
             
             if pd.notna(user) and pd.notna(pwd) and str(user).strip() != "-" and str(pwd).strip() != "-":
+                u_str = str(user).strip()
+                p_str = str(pwd).strip()
+                outlet = row.get("Nama Outlet", "Unknown")
+                branch = row.get("Cabang", "Unknown")
+                
+                # Smart credential validation
+                is_valid, err_msg = validate_credentials(u_str, p_str)
+                if not is_valid:
+                    log.warning(f"⚠️  [VALIDATION WARNING] Row #{idx+1} for '{outlet} ({branch})' has invalid credentials: {err_msg}")
+                    
                 portals.append({
                     "id": len(portals) + 1,
-                    "outlet": row.get("Nama Outlet", "Unknown"),
-                    "branch": row.get("Cabang", "Unknown"),
-                    "user": str(user).strip(),
-                    "pwd": str(pwd).strip()
+                    "outlet": outlet,
+                    "branch": branch,
+                    "user": u_str,
+                    "pwd": p_str
                 })
+
         
     except Exception as e:
         log.error(f"Failed to fetch or parse spreadsheet: {e}")
@@ -212,18 +223,23 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
         print("\n[SKIP] Tidak ada file CSV untuk digabung.")
         return
 
-    print(f"\nMenggabungkan {len(csv_files)} file CSV menjadi master...")
+    print(f"\nScanning and validating {len(csv_files)} raw CSV files for master merging...")
     frames = []
     for csv_path in csv_files:
         try:
             df = pd.read_csv(csv_path)
+            if df.empty or len(df) == 0:
+                print(f"  ⚠️ [CHECK] Raw file '{csv_path.name}' is EMPTY (no transaction rows). Skipping merger.")
+                continue
+                
+            print(f"  🔍 [CHECK] Raw file '{csv_path.name}' has {len(df)} rows. Including in MASTER...")
             df.insert(0, "Merchant", csv_path.stem)
             frames.append(df)
         except Exception as e:
-            print(f"  [WARN] Gagal baca {csv_path.name}: {e}")
+            print(f"  ❌ [CHECK] Gagal membaca atau memproses '{csv_path.name}': {e}")
 
     if not frames:
-        log.info("[SKIP] Semua file gagal dibaca.")
+        log.info("⏭️ [SKIP] Tidak ada file CSV yang memiliki data untuk digabung.")
         return
 
     master_df = pd.concat(frames, ignore_index=True)
