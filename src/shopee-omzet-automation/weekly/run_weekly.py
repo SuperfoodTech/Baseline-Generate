@@ -21,13 +21,17 @@ from selenium.webdriver.common.by import By
 load_dotenv()
 log = get_logger("omzet_pipeline")
 
+# --- Toggle Konfigurasi Global ---
+ENABLE_GSHEETS_PUSH = False   # Set ke True untuk mengizinkan unggah ke Google Sheets
+ENABLE_POSTGRES_PUSH = False  # Set ke True untuk mengizinkan unggah ke PostgreSQL (Tabel Gajah)
+
 def subtract_months(dt, months):
     """Helper to subtract calendar months."""
     for _ in range(months):
         dt = (dt - timedelta(days=1)).replace(day=1)
     return dt
 
-def get_live_merchants(app_name="ShopeeFood", max_age_hours=24):
+def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=None):
     """
     Fetches live merchants from Google Sheets and caches them locally.
     Uses cached data if it's less than max_age_hours old.
@@ -47,6 +51,10 @@ def get_live_merchants(app_name="ShopeeFood", max_age_hours=24):
             log.info(f"🔄 [DATA] Using cached merchant list (Age: {age_hours:.1f}h)")
             df = pd.read_csv(cache_path)
             sf_df = df[(df['Aplikasi'] == app_name) & (df['Status'] == 'Live')]
+            
+            if merchant_filter:
+                sf_df = sf_df[sf_df['Merchant Name'].str.strip().str.lower() == merchant_filter.strip().lower()]
+                
             sf_df = sf_df[(sf_df['Merchant Name'] != '-') & (sf_df['Merchant Name'].notna())]
             sf_df = sf_df.drop_duplicates(subset=['Merchant Name'])
             return sf_df['Merchant Name'].tolist()
@@ -58,6 +66,10 @@ def get_live_merchants(app_name="ShopeeFood", max_age_hours=24):
         df.to_csv(cache_path, index=False)
         
         sf_df = df[(df['Aplikasi'] == app_name) & (df['Status'] == 'Live')]
+        
+        if merchant_filter:
+            sf_df = sf_df[sf_df['Merchant Name'].str.strip().str.lower() == merchant_filter.strip().lower()]
+            
         sf_df = sf_df[(sf_df['Merchant Name'] != '-') & (sf_df['Merchant Name'].notna())]
         sf_df = sf_df.drop_duplicates(subset=['Merchant Name'])
         
@@ -97,10 +109,21 @@ def run_pipeline():
     parser.add_argument("--end", type=str, help="End date (YYYY-MM-DD)", default=None)
     parser.add_argument("--output-dir", type=str, help="Override output directory for reports", default=None)
     parser.add_argument("--skip-download", action="store_true", help="Skip browser automation and only process/merge raw files in output directory")
+    parser.add_argument("--merchant", type=str, help="Filter specific merchant name to run", default=None)
     args = parser.parse_args()
 
     # Determine output directory
     report_dir = args.output_dir or "data/reports/weekly"
+
+    # Pre-run cleanup of old Excel files in custom or download runs to ensure clean master aggregation
+    import glob
+    if not args.skip_download and os.path.exists(report_dir):
+        old_excels = glob.glob(os.path.join(report_dir, "*.xlsx"))
+        if old_excels:
+            log.info(f"🧹 Clearing {len(old_excels)} old Excel files in {report_dir} to prepare for fresh run...")
+            for f in old_excels:
+                try: os.unlink(f)
+                except Exception as e: log.debug(f"Failed to delete {f}: {e}")
 
     # Determine date range
     now = datetime.now()
@@ -159,7 +182,7 @@ def run_pipeline():
         pass
 
     # ── 1. Determine Merchants to Process (Data-Driven via G-Sheets) ────
-    target_merchants = get_live_merchants(app_name="ShopeeFood", max_age_hours=24)
+    target_merchants = get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=args.merchant)
     log.info(f"📋 [PROGRESS] Found {len(target_merchants)} live merchants ready to process.")
 
     if not target_merchants:
@@ -454,16 +477,25 @@ def run_pipeline():
         min_start_str = datetime.fromtimestamp(min_start).strftime('%d%m%Y')
         max_end_str = datetime.fromtimestamp(max_end).strftime('%d%m%Y')
         
-        master_filename = f"Master_Weekly_Report_ShopeeFood_{min_start_str}_{max_end_str}.xlsx"
+        if args.merchant:
+            merchant_safe = str(args.merchant).strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
+            master_filename = f"CUSTOM_{merchant_safe}_{min_start_str}_{max_end_str}.xlsx"
+        else:
+            master_filename = f"Master_Weekly_Report_ShopeeFood_{min_start_str}_{max_end_str}.xlsx"
+            
         master_filepath = os.path.join(report_dir, master_filename)
         
         master_df.to_excel(master_filepath, index=False)
-        log.info(f"🎉 [SUCCESS] Master report created: {master_filepath}")
+        log.info(f"🎉 [SUCCESS] Laporan created: {master_filepath}")
         log.info(f"   Total rows: {len(master_df)}")
 
         # ── 6. Phase 5: Distribution to Google Sheets ──────────────────────
         apps_script_url = "https://script.google.com/macros/s/AKfycbxuqQ72VfP-5f-h-ud1XZDgG47KDwyP8gDg2AFzIjq6JrnZnWGenRs50G06RxsPiSxj/exec"
-        if apps_script_url:
+        if not ENABLE_GSHEETS_PUSH:
+            log.info("⏭️ [SKIP] PHASE 5: Distribusi ke Google Sheets dinonaktifkan secara global.")
+        elif args.merchant:
+            log.info("⏭️ [SKIP] PHASE 5: Custom Merchant run dideteksi. Distribusi ke Google Sheets dilewati untuk mencegah kerusakan data master.")
+        elif apps_script_url:
             log.info("📤 [PROGRESS] PHASE 5: Sending data to Google Sheets...")
             
             # Mapping columns to match 'Shopee' sheet headers
@@ -549,15 +581,20 @@ def run_pipeline():
             log.warning("⚠️ [SKIP] APPS_SCRIPT_URL not found in .env. Skipping distribution.")
 
         # ── 7. Phase 6: Sync to PostgreSQL ──────────────────────────────────
-        try:
-            log.info("🐘 [PROGRESS] PHASE 6: Syncing data to PostgreSQL...")
-            from database.db_manager import DatabaseManager
-            db = DatabaseManager()
-            db.ingest_shopee(final_df)
-            db.refresh_master()
-            log.info("✅ [SUCCESS] Data successfully pushed to Master Table (Tabel Gajah).")
-        except Exception as e:
-            log.info(f"⏭️ [SKIP] PostgreSQL sync skipped (DB is temporarily inactive or offline).")
+        if not ENABLE_POSTGRES_PUSH:
+            log.info("⏭️ [SKIP] PHASE 6: Sinkronisasi ke PostgreSQL dinonaktifkan secara global.")
+        elif args.merchant:
+            log.info("⏭️ [SKIP] PHASE 6: Custom Merchant run dideteksi. Sinkronisasi PostgreSQL dilewati untuk mencegah kerusakan data master.")
+        else:
+            try:
+                log.info("🐘 [PROGRESS] PHASE 6: Syncing data to PostgreSQL...")
+                from database.db_manager import DatabaseManager
+                db = DatabaseManager()
+                db.ingest_shopee(final_df)
+                db.refresh_master()
+                log.info("✅ [SUCCESS] Data successfully pushed to Master Table (Tabel Gajah).")
+            except Exception as e:
+                log.info(f"⏭️ [SKIP] PostgreSQL sync skipped (DB is temporarily inactive or offline).")
 
     if not args.skip_download and driver is not None:
         driver.quit()

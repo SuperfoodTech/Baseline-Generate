@@ -10,6 +10,10 @@ import requests
 from dotenv import load_dotenv
 import sys
 import os
+
+# --- Toggle Konfigurasi Global ---
+ENABLE_GSHEETS_PUSH = False  # Set ke True untuk mengizinkan unggah ke Google Sheets
+
 # Add parent directory to sys.path to allow importing grab_api_scraper
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -56,7 +60,7 @@ log = setup_logger()
 
 CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv"
 
-async def run_all(date_start: str = None, date_end: str = None, output_dir: str = None, user_filter: str = None):
+async def run_all(date_start: str = None, date_end: str = None, output_dir: str = None, user_filter: str = None, outlet_filter: str = None, branch_filter: str = None):
     # Reload env just in case
     load_dotenv(override=True)
     
@@ -85,6 +89,12 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                 p_str = str(pwd).strip()
                 outlet = row.get("Nama Outlet", "Unknown")
                 branch = row.get("Cabang", "Unknown")
+                
+                # Apply custom outlet and branch filters internally
+                if outlet_filter and str(outlet).strip().lower() != str(outlet_filter).strip().lower():
+                    continue
+                if branch_filter and str(branch).strip().lower() != str(branch_filter).strip().lower():
+                    continue
                 
                 # Smart credential validation
                 is_valid, err_msg = validate_credentials(u_str, p_str)
@@ -262,21 +272,31 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                 parsed[mask_failed] = pd.to_datetime(master_df.loc[mask_failed, col], errors="coerce")
             master_df[col] = parsed.dt.strftime("%Y-%m-%d at %H:%M").where(parsed.notna(), other=master_df[col])
 
-    # Simpan sebagai CSV
-    master_csv = laporan_dir / "MASTER.csv"
+    # Simpan sebagai CSV & Excel (Pemisahan Penamaan Pelaporan)
+    if outlet_filter or branch_filter:
+        outlet_safe = str(outlet_filter or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
+        branch_safe = str(branch_filter or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
+        filename_prefix = f"CUSTOM_{outlet_safe}_{branch_safe}"
+    else:
+        filename_prefix = "MASTER"
+
+    master_csv = laporan_dir / f"{filename_prefix}.csv"
     master_df.to_csv(master_csv, index=False)
 
-    # Simpan sebagai Excel
-    master_xlsx = laporan_dir / "MASTER.xlsx"
+    master_xlsx = laporan_dir / f"{filename_prefix}.xlsx"
     master_df.to_excel(master_xlsx, index=False, sheet_name="All Merchants")
 
-    log.info(f"✓ Master CSV  : {master_csv}")
-    log.info(f"✓ Master Excel: {master_xlsx}")
-    log.info(f"  Total baris : {len(master_df):,} | Merchant: {master_df['Merchant'].nunique()}")
+    log.info(f"✓ Laporan CSV  : {master_csv}")
+    log.info(f"✓ Laporan Excel: {master_xlsx}")
+    log.info(f"  Total baris  : {len(master_df):,} | Merchant: {master_df['Merchant'].nunique()}")
 
     # --- Distribusi ke Google Sheets via Apps Script ---
     apps_script_url = "https://script.google.com/macros/s/AKfycbxuqQ72VfP-5f-h-ud1XZDgG47KDwyP8gDg2AFzIjq6JrnZnWGenRs50G06RxsPiSxj/exec"
-    if apps_script_url:
+    if not ENABLE_GSHEETS_PUSH:
+        log.info("\n⏭️ [SKIP] Distribusi ke Google Sheets dinonaktifkan secara global.")
+    elif outlet_filter or branch_filter:
+        log.info("\n⏭️ [SKIP] Custom/Single Outlet run dideteksi. Distribusi ke Google Sheets dilewati untuk mencegah kerusakan data master.")
+    elif apps_script_url:
         log.info("\n📤 [PROGRESS] Mengirim data ke Google Sheets...")
         
         dist_df = master_df.copy()
@@ -384,5 +404,22 @@ if __name__ == "__main__":
         default=None,
         help="Filter specific username to run.",
     )
+    parser.add_argument(
+        "--outlet",
+        default=None,
+        help="Filter specific outlet name to run.",
+    )
+    parser.add_argument(
+        "--branch",
+        default=None,
+        help="Filter specific branch name to run.",
+    )
     args = parser.parse_args()
-    asyncio.run(run_all(date_start=args.start_date, date_end=args.end_date, output_dir=args.output_dir, user_filter=args.user))
+    asyncio.run(run_all(
+        date_start=args.start_date, 
+        date_end=args.end_date, 
+        output_dir=args.output_dir, 
+        user_filter=args.user,
+        outlet_filter=args.outlet,
+        branch_filter=args.branch
+    ))

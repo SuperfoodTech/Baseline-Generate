@@ -152,7 +152,7 @@ def _resolve_output_dir(platform_name: str, start_date: str, end_date: str) -> s
 
 # ── Runners ────────────────────────────────────────────────────────────
 
-def run_grab(start_date: str, end_date: str, user_filter: str = None):
+def run_grab(start_date: str, end_date: str, user_filter: str = None, outlet_filter: str = None, branch_filter: str = None):
     """
     Delegates to the existing Grab weekly pipeline.
     Working directory is set to grab-reportperformance/weekly so that
@@ -178,6 +178,10 @@ def run_grab(start_date: str, end_date: str, user_filter: str = None):
     ]
     if user_filter:
         cmd.extend(["--user", user_filter])
+    if outlet_filter:
+        cmd.extend(["--outlet", outlet_filter])
+    if branch_filter:
+        cmd.extend(["--branch", branch_filter])
 
     print(f"\n{GREEN}{BOLD}▶ GRAB PIPELINE{RESET}")
     print(f"  {DIM}Directory : {grab_weekly_dir}{RESET}")
@@ -195,7 +199,7 @@ def run_grab(start_date: str, end_date: str, user_filter: str = None):
         return False
 
 
-def run_shopee(start_date: str, end_date: str):
+def run_shopee(start_date: str, end_date: str, merchant_filter: str = None):
     """
     Delegates to the existing Shopee weekly pipeline.
     Working directory is set to shopee-omzet-automation so that
@@ -219,6 +223,8 @@ def run_shopee(start_date: str, end_date: str):
         "--end", end_date,
         "--output-dir", output_dir,
     ]
+    if merchant_filter:
+        cmd.extend(["--merchant", merchant_filter])
 
     print(f"\n{MAGENTA}{BOLD}▶ SHOPEE PIPELINE{RESET}")
     print(f"  {DIM}Directory : {shopee_dir}{RESET}")
@@ -260,6 +266,94 @@ def interactive_mode():
     platform_map = {"1": "grab", "2": "shopee", "3": "all"}
     platform = platform_map[choice]
 
+    # ─ Scope selection ─
+    print(f"\n  {BOLD}Pilih cakupan outlet:{RESET}")
+    print(f"    {GREEN}[1]{RESET} Pilih semua outlet")
+    print(f"    {YELLOW}[2]{RESET} Pilih custom (Filter spesifik){RESET}")
+    print()
+
+    while True:
+        scope_choice = input(f"  {BOLD}Pilihan (1/2):{RESET} ").strip()
+        if scope_choice in ("1", "2"):
+            break
+        print(f"  {RED}Input tidak valid. Masukkan 1 atau 2.{RESET}")
+
+    outlet = None
+    branch = None
+    shopee_merchant = None
+
+    if scope_choice == "2":
+        import pandas as pd
+        import requests
+        import io
+
+        print(f"\n  {CYAN}[INFO] Mengunduh daftar merchant terbaru dari Google Sheets...{RESET}")
+        CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv"
+        try:
+            resp = requests.get(CSV_URL, timeout=30)
+            resp.raise_for_status()
+            df = pd.read_csv(io.StringIO(resp.text))
+        except Exception as e:
+            print(f"  {RED}[ERROR] Gagal mengunduh Google Sheets: {e}{RESET}")
+            sys.exit(1)
+
+        # --- FILTER CUSTOM GRAB ---
+        if platform in ("grab", "all"):
+            df_grab = df[df["Aplikasi"].str.contains("Grab", na=False, case=False) & df["Status"].str.contains("Live", na=False, case=False)]
+            if not df_grab.empty:
+                outlets = sorted(df_grab["Nama Outlet"].dropna().unique())
+                print(f"\n  {BOLD}Pilih Outlet Grab:{RESET}")
+                for idx, o_name in enumerate(outlets):
+                    print(f"    {GREEN}[{idx + 1}]{RESET} {o_name}")
+                print()
+                while True:
+                    try:
+                        o_choice = int(input(f"  {BOLD}Pilih nomor outlet Grab (1-{len(outlets)}):{RESET} ").strip())
+                        if 1 <= o_choice <= len(outlets):
+                            outlet = outlets[o_choice - 1]
+                            break
+                    except ValueError: pass
+                    print(f"  {RED}Pilihan tidak valid.{RESET}")
+
+                df_branch = df_grab[df_grab["Nama Outlet"] == outlet]
+                branches = sorted(df_branch["Cabang"].dropna().unique())
+                print(f"\n  {BOLD}Pilih Cabang Grab untuk '{outlet}':{RESET}")
+                for idx, b_name in enumerate(branches):
+                    print(f"    {GREEN}[{idx + 1}]{RESET} {b_name}")
+                print()
+                while True:
+                    try:
+                        b_choice = int(input(f"  {BOLD}Pilih nomor cabang Grab (1-{len(branches)}):{RESET} ").strip())
+                        if 1 <= b_choice <= len(branches):
+                            branch = branches[b_choice - 1]
+                            break
+                    except ValueError: pass
+                    print(f"  {RED}Pilihan tidak valid.{RESET}")
+            else:
+                print(f"  {RED}[ERROR] Tidak ada outlet Grab yang berstatus Live di Google Sheets.{RESET}")
+                sys.exit(1)
+
+        # --- FILTER CUSTOM SHOPEE ---
+        if platform in ("shopee", "all"):
+            df_shopee = df[df["Aplikasi"].str.contains("Shopee", na=False, case=False) & df["Status"].str.contains("Live", na=False, case=False)]
+            if not df_shopee.empty:
+                merchants = sorted(df_shopee["Merchant Name"].dropna().unique())
+                print(f"\n  {BOLD}Pilih Merchant ShopeeFood:{RESET}")
+                for idx, m_name in enumerate(merchants):
+                    print(f"    {GREEN}[{idx + 1}]{RESET} {m_name}")
+                print()
+                while True:
+                    try:
+                        m_choice = int(input(f"  {BOLD}Pilih nomor merchant Shopee (1-{len(merchants)}):{RESET} ").strip())
+                        if 1 <= m_choice <= len(merchants):
+                            shopee_merchant = merchants[m_choice - 1]
+                            break
+                    except ValueError: pass
+                    print(f"  {RED}Pilihan tidak valid.{RESET}")
+            else:
+                print(f"  {RED}[ERROR] Tidak ada merchant Shopee yang berstatus Live di Google Sheets.{RESET}")
+                sys.exit(1)
+
     # ─ Date input ─
     print()
     
@@ -293,6 +387,13 @@ def interactive_mode():
     
     print(f"\n  {CYAN}{'─'*50}{RESET}")
     print(f"  Platform : {BOLD}{platform_label}{RESET}")
+    if scope_choice == "2":
+        if outlet:
+            print(f"  Grab Outlet : {BOLD}{outlet} ({branch}){RESET}")
+        if shopee_merchant:
+            print(f"  Shopee Merchant : {BOLD}{shopee_merchant}{RESET}")
+    else:
+        print(f"  Outlet   : {BOLD}Semua Outlet{RESET}")
     print(f"  Start    : {BOLD}{start_date}{RESET}")
     print(f"  End      : {BOLD}{end_date}{RESET}")
     print(f"  Output   : {DIM}laporan/{{platform}}/{date_folder}/{RESET}")
@@ -303,7 +404,7 @@ def interactive_mode():
         print(f"\n  {YELLOW}Dibatalkan.{RESET}")
         sys.exit(0)
 
-    return platform, start_date, end_date
+    return platform, start_date, end_date, outlet, branch, shopee_merchant
 
 
 # ── Main ──────────────────────────────────────────────────────────────
@@ -336,11 +437,14 @@ Examples:
 
     # If no platform provided or dates missing → interactive
     if args.platform is None or args.start is None or args.end is None:
-        platform, start_date, end_date = interactive_mode()
+        platform, start_date, end_date, outlet, branch, shopee_merchant = interactive_mode()
     else:
         platform   = args.platform.lower()
         start_date = args.start
         end_date   = args.end
+        outlet     = None
+        branch     = None
+        shopee_merchant = None
         banner()
 
     # ── Execute ──
@@ -348,10 +452,10 @@ Examples:
     start_time = datetime.now()
 
     if platform in ("grab", "all"):
-        results["Grab"] = run_grab(start_date, end_date, user_filter=args.user)
+        results["Grab"] = run_grab(start_date, end_date, user_filter=args.user, outlet_filter=outlet, branch_filter=branch)
 
     if platform in ("shopee", "all"):
-        results["Shopee"] = run_shopee(start_date, end_date)
+        results["Shopee"] = run_shopee(start_date, end_date, merchant_filter=shopee_merchant)
 
     # ── Summary ──
     elapsed = datetime.now() - start_time
