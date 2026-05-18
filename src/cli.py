@@ -632,8 +632,8 @@ Examples:
                 frames.append(pd.read_excel(grab_path))
             
             # Find Shopee Baseline output
-            shopee_merchant_safe = str(shopee_merchant or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
-            shopee_filename = f"BASELINE_CUSTOM_{shopee_merchant_safe}.xlsx"
+            shopee_safe = str(shopee_merchant or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
+            shopee_filename = f"BASELINE_CUSTOM_{shopee_safe}.xlsx"
             shopee_path = os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, shopee_filename)
             if os.path.exists(shopee_path):
                 frames.append(pd.read_excel(shopee_path))
