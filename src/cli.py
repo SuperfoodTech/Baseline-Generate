@@ -375,8 +375,20 @@ def interactive_mode():
         platform = "all"
         scope_choice = "2"
         outlet = unified_outlet
-        shopee_merchant = unified_outlet
         branch = None
+
+        # Terjemahkan Nama Outlet ke Merchant Name (nama toko spesifik di ShopeeFood)
+        shopee_merchant = unified_outlet
+        try:
+            # Mencari baris yang namanya cocok dan aplikasinya mengandung "Shopee"
+            shopee_row = df_live[(df_live["Nama Outlet"] == unified_outlet) & (df_live["Aplikasi"].str.contains("Shopee", na=False, case=False))]
+            if not shopee_row.empty:
+                merchant_val = shopee_row.iloc[0].get("Merchant Name", "")
+                # Jika tidak kosong dan bukan strip "-", gunakan nilai tersebut
+                if pd.notna(merchant_val) and str(merchant_val).strip() != "-":
+                    shopee_merchant = str(merchant_val).strip()
+        except Exception:
+            pass
 
     else:
         # ─ Platform selection ─
@@ -582,32 +594,17 @@ Examples:
     results = {}
     start_time = datetime.now()
 
-    if platform == "all":
-        print(f"\n{YELLOW}{BOLD}▶ MENJALANKAN GRAB DAN SHOPEE SECARA BERSAMAAN (PARALEL){RESET}")
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            if task_choice == "1":
-                future_grab = executor.submit(run_grab_baseline, start_date, end_date, args.user, outlet, branch)
-                future_shopee = executor.submit(run_shopee_baseline, start_date, end_date, shopee_merchant)
-            else:
-                future_grab = executor.submit(run_grab, start_date, end_date, args.user, outlet, branch)
-                future_shopee = executor.submit(run_shopee, start_date, end_date, shopee_merchant)
-            
-            # Tunggu keduanya selesai
-            results["Grab"] = future_grab.result()
-            results["Shopee"] = future_shopee.result()
-    else:
-        if platform == "grab":
-            if task_choice == "1":
-                results["Grab"] = run_grab_baseline(start_date, end_date, user_filter=args.user, outlet_filter=outlet, branch_filter=branch)
-            else:
-                results["Grab"] = run_grab(start_date, end_date, user_filter=args.user, outlet_filter=outlet, branch_filter=branch)
+    if platform in ("grab", "all"):
+        if task_choice == "1":
+            results["Grab"] = run_grab_baseline(start_date, end_date, user_filter=args.user, outlet_filter=outlet, branch_filter=branch)
+        else:
+            results["Grab"] = run_grab(start_date, end_date, user_filter=args.user, outlet_filter=outlet, branch_filter=branch)
 
-        if platform == "shopee":
-            if task_choice == "1":
-                results["Shopee"] = run_shopee_baseline(start_date, end_date, merchant_filter=shopee_merchant)
-            else:
-                results["Shopee"] = run_shopee(start_date, end_date, merchant_filter=shopee_merchant)
+    if platform in ("shopee", "all"):
+        if task_choice == "1":
+            results["Shopee"] = run_shopee_baseline(start_date, end_date, merchant_filter=shopee_merchant)
+        else:
+            results["Shopee"] = run_shopee(start_date, end_date, merchant_filter=shopee_merchant)
 
     # ── Summary ──
     elapsed = datetime.now() - start_time
@@ -635,7 +632,8 @@ Examples:
                 frames.append(pd.read_excel(grab_path))
             
             # Find Shopee Baseline output
-            shopee_filename = f"BASELINE_CUSTOM_{outlet_safe}.xlsx"
+            shopee_merchant_safe = str(shopee_merchant or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
+            shopee_filename = f"BASELINE_CUSTOM_{shopee_merchant_safe}.xlsx"
             shopee_path = os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, shopee_filename)
             if os.path.exists(shopee_path):
                 frames.append(pd.read_excel(shopee_path))
@@ -658,7 +656,7 @@ Examples:
                     import io
                     
                     # Hardcode URL Web App Anda di sini setelah di-deploy
-                    webhook_url = "https://script.google.com/macros/s/AKfycbxJDAcgVYQqaI2_Xy8i6ND07hVFNRuXRBw6WCbYTr6u26uQZakL0Hy1hU0lJOniCYiv/exec"
+                    webhook_url = "https://script.google.com/macros/s/AKfycbx8eXubEkNVX3gDDeC-1AOwjeYxL1dG7jjGm_UM2kj5-j92p9gttA87Mf4TJcwirIMR/exec"
                     if not webhook_url or "GANTI_DENGAN_URL_ANDA" in webhook_url:
                         print(f"  {YELLOW}⚠️ URL Webhook belum di-hardcode di cli.py.{RESET}")
                         print(f"  {DIM}Silakan deploy apps_script_pdf.js dan masukkan URL-nya ke variabel webhook_url di cli.py{RESET}")
