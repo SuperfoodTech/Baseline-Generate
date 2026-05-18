@@ -582,17 +582,32 @@ Examples:
     results = {}
     start_time = datetime.now()
 
-    if platform in ("grab", "all"):
-        if task_choice == "1":
-            results["Grab"] = run_grab_baseline(start_date, end_date, user_filter=args.user, outlet_filter=outlet, branch_filter=branch)
-        else:
-            results["Grab"] = run_grab(start_date, end_date, user_filter=args.user, outlet_filter=outlet, branch_filter=branch)
+    if platform == "all":
+        print(f"\n{YELLOW}{BOLD}▶ MENJALANKAN GRAB DAN SHOPEE SECARA BERSAMAAN (PARALEL){RESET}")
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            if task_choice == "1":
+                future_grab = executor.submit(run_grab_baseline, start_date, end_date, args.user, outlet, branch)
+                future_shopee = executor.submit(run_shopee_baseline, start_date, end_date, shopee_merchant)
+            else:
+                future_grab = executor.submit(run_grab, start_date, end_date, args.user, outlet, branch)
+                future_shopee = executor.submit(run_shopee, start_date, end_date, shopee_merchant)
+            
+            # Tunggu keduanya selesai
+            results["Grab"] = future_grab.result()
+            results["Shopee"] = future_shopee.result()
+    else:
+        if platform == "grab":
+            if task_choice == "1":
+                results["Grab"] = run_grab_baseline(start_date, end_date, user_filter=args.user, outlet_filter=outlet, branch_filter=branch)
+            else:
+                results["Grab"] = run_grab(start_date, end_date, user_filter=args.user, outlet_filter=outlet, branch_filter=branch)
 
-    if platform in ("shopee", "all"):
-        if task_choice == "1":
-            results["Shopee"] = run_shopee_baseline(start_date, end_date, merchant_filter=shopee_merchant)
-        else:
-            results["Shopee"] = run_shopee(start_date, end_date, merchant_filter=shopee_merchant)
+        if platform == "shopee":
+            if task_choice == "1":
+                results["Shopee"] = run_shopee_baseline(start_date, end_date, merchant_filter=shopee_merchant)
+            else:
+                results["Shopee"] = run_shopee(start_date, end_date, merchant_filter=shopee_merchant)
 
     # ── Summary ──
     elapsed = datetime.now() - start_time
