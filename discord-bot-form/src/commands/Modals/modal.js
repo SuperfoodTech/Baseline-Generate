@@ -441,36 +441,74 @@ module.exports = {
                     
                     if (hasWarning) {
                         // Pipeline exit 0 tapi ada warning — partial success
+                        const cleanOutput = result.output.replace(/\x1B\[[0-9;]*m/g, '');
+                        const pdfUrlMatch = cleanOutput.match(/URL:\s*(https:\/\/drive\.google\.com\/file\/d\/[^\s\r\n]+)/);
+                        const pdfUrl = pdfUrlMatch ? pdfUrlMatch[1].trim() : null;
+
+                        const embed = new EmbedBuilder()
+                            .setColor(0xFFAA00)
+                            .setTitle('⚠️ Pipeline Selesai dengan Peringatan')
+                            .setDescription(
+                                `Pipeline **${formData.tagihan.toUpperCase()}** selesai, tetapi ada beberapa peringatan:\n\n` +
+                                `> Sebagian data mungkin tidak lengkap. Periksa laporan yang dihasilkan.\n` +
+                                (pdfUrl 
+                                    ? `🔗 **[Klik di sini untuk membuka PDF](${pdfUrl})**`
+                                    : `> Jika PDF terkirim, cek pesan di atas. ☝️`) + `\n\n` +
+                                `📄 Cek juga log server untuk detail.`
+                            )
+                            .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
+                            .setTimestamp();
+
+                        const components = [];
+                        if (pdfUrl) {
+                            components.push(
+                                new ActionRowBuilder().addComponents(
+                                    new ButtonBuilder()
+                                        .setLabel('📄 Buka PDF Laporan')
+                                        .setStyle(ButtonStyle.Link)
+                                        .setURL(pdfUrl)
+                                )
+                            );
+                        }
+
                         await statusMsg.edit({
-                            embeds: [
-                                new EmbedBuilder()
-                                    .setColor(0xFFAA00)
-                                    .setTitle('⚠️ Pipeline Selesai dengan Peringatan')
-                                    .setDescription(
-                                        `Pipeline **${formData.tagihan.toUpperCase()}** selesai, tetapi ada beberapa peringatan:\n\n` +
-                                        `> Sebagian data mungkin tidak lengkap. Periksa laporan yang dihasilkan.\n` +
-                                        `> Jika PDF terkirim, cek pesan di atas. ☝️\n\n` +
-                                        `📄 Cek juga log server untuk detail.`
-                                    )
-                                    .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
-                                    .setTimestamp()
-                            ]
+                            embeds: [embed],
+                            components: components
                         });
                     } else {
                         // Full success
+                        const cleanOutput = result.output.replace(/\x1B\[[0-9;]*m/g, '');
+                        const pdfUrlMatch = cleanOutput.match(/URL:\s*(https:\/\/drive\.google\.com\/file\/d\/[^\s\r\n]+)/);
+                        const pdfUrl = pdfUrlMatch ? pdfUrlMatch[1].trim() : null;
+
+                        const embed = new EmbedBuilder()
+                            .setColor(0x00C853)
+                            .setTitle('✅ Pipeline Selesai!')
+                            .setDescription(
+                                `Pipeline **${formData.tagihan.toUpperCase()}** berhasil dijalankan.\n` +
+                                `${makeProgressBar(totalPhases, totalPhases)}\n\n` +
+                                (pdfUrl 
+                                    ? `🔗 **[Klik di sini untuk membuka PDF](${pdfUrl})**`
+                                    : `📄 **PDF laporan telah dikirim ke channel ini.** Cek pesan di atas! ☝️`)
+                            )
+                            .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
+                            .setTimestamp();
+
+                        const components = [];
+                        if (pdfUrl) {
+                            components.push(
+                                new ActionRowBuilder().addComponents(
+                                    new ButtonBuilder()
+                                        .setLabel('📄 Buka PDF Laporan')
+                                        .setStyle(ButtonStyle.Link)
+                                        .setURL(pdfUrl)
+                                )
+                            );
+                        }
+
                         await statusMsg.edit({
-                            embeds: [
-                                new EmbedBuilder()
-                                    .setColor(0x00C853)
-                                    .setTitle('✅ Pipeline Selesai!')
-                                    .setDescription(
-                                        `Pipeline **${formData.tagihan.toUpperCase()}** berhasil dijalankan.\n` +
-                                        `${makeProgressBar(totalPhases, totalPhases)}\n\n` +
-                                        `📄 **PDF laporan telah dikirim ke channel ini.** Cek pesan di atas! ☝️`
-                                    )
-                                    .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
-                                    .setTimestamp()
-                            ]
+                            embeds: [embed],
+                            components: components
                         });
                     }
                 } else {
