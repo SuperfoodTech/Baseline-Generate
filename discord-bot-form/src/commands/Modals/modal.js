@@ -4,7 +4,10 @@ const {
     ButtonStyle,
     ActionRowBuilder,
     EmbedBuilder,
-    StringSelectMenuBuilder
+    StringSelectMenuBuilder,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle
 } = require('discord.js');
 const https = require('https');
 
@@ -253,18 +256,10 @@ module.exports = {
                 { name: 'Cabang Terpilih', value: formData.cabang.length > 512 ? formData.cabang.substring(0, 508) + '...' : formData.cabang, inline: false }
             ];
 
-            // Kirim aplikatorResult.lastInteraction ke askDatePicker agar direspon secara atomik dengan .update()
-            const resultMulai = await this.askDatePicker(aplikatorResult.lastInteraction, 'Pilih Tanggal Mulai', 4, dateFields);
-            formData.tanggalMulai = resultMulai.date;
-
-            const dateFieldsWithStart = [
-                ...dateFields,
-                { name: 'Tanggal Mulai', value: formData.tanggalMulai, inline: true }
-            ];
-
-            // Kirim resultMulai.lastInteraction ke askDatePicker berikutnya
-            const resultSelesai = await this.askDatePicker(resultMulai.lastInteraction, 'Pilih Tanggal Selesai', 4, dateFieldsWithStart);
-            formData.tanggalSelesai = resultSelesai.date;
+            // Kirim aplikatorResult.lastInteraction ke askDateModal agar direspon secara atomik dengan .update()
+            const dateResult = await this.askDateModal(aplikatorResult.lastInteraction, 4, dateFields);
+            formData.tanggalMulai = dateResult.tanggalMulai;
+            formData.tanggalSelesai = dateResult.tanggalSelesai;
 
             // ── REVIEW & KONFIRMASI ─────────────────────────────────────────
             const reviewEmbed = new EmbedBuilder()
@@ -292,7 +287,7 @@ module.exports = {
                     .setStyle(ButtonStyle.Danger)
             );
 
-            await resultSelesai.lastInteraction.update({
+            await dateResult.lastInteraction.update({
                 embeds: [reviewEmbed],
                 components: [confirmRow]
             });
@@ -532,99 +527,33 @@ module.exports = {
         }
     },
 
-    async askDatePicker(interaction, title, step, fields) {
-        let selectedDay = null;
-        let selectedMonth = new Date().getMonth() + 1;
-        let selectedYear = new Date().getFullYear();
-        let dayPage = 1;
-
-        const months = [
-            'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-            'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-        ];
-
-        const getComponents = () => {
-            // Hitung jumlah hari valid untuk bulan+tahun yang dipilih
-            const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
-
-            const rowMonth = new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder()
-                    .setCustomId('select_month')
-                    .setPlaceholder('Pilih Bulan')
-                    .addOptions(months.map((m, i) => ({ label: m, value: (i + 1).toString(), default: selectedMonth === i + 1 })))
-            );
-
-            // Jika hari yang sudah dipilih melebihi batas bulan, reset ke null
-            if (selectedDay && selectedDay > daysInMonth) {
-                selectedDay = null;
-            }
-
-            // Halaman 1: hari 1-20, Halaman 2: hari 21-daysInMonth (bukan selalu 31)
-            const startDay = dayPage === 1 ? 1 : 21;
-            const endDay   = dayPage === 1 ? 20 : daysInMonth;
-            const dayOptions = [];
-            for (let i = startDay; i <= endDay; i++) {
-                dayOptions.push({ label: i.toString(), value: i.toString(), default: selectedDay === i });
-            }
-
-            // Jika halaman 2 dan bulan tidak punya hari 21+, paksa ke halaman 1
-            if (dayPage === 2 && startDay > daysInMonth) {
-                dayPage = 1;
-            }
-
-            const rowDay = new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder()
-                    .setCustomId('select_day')
-                    .setPlaceholder(`Pilih Tanggal (${startDay}-${endDay})`)
-                    .addOptions(dayOptions.length > 0 ? dayOptions : [{ label: '1', value: '1' }])
-            );
-
-            const rowPagination = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('prev_page')
-                    .setLabel('⬅️ Halaman Hari 1-20')
-                    .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(dayPage === 1),
-                new ButtonBuilder()
-                    .setCustomId('next_page')
-                    .setLabel(`Halaman Hari 21-${daysInMonth} ➡️`)
-                    .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(dayPage === 2 || daysInMonth <= 20)
-            );
-
-            const rowYear = new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder()
-                    .setCustomId('select_year')
-                    .setPlaceholder('Pilih Tahun')
-                    .addOptions([
-                        { label: '2024', value: '2024', default: selectedYear === 2024 },
-                        { label: '2025', value: '2025', default: selectedYear === 2025 },
-                        { label: '2026', value: '2026', default: selectedYear === 2026 }
-                    ])
-            );
-
-            const rowConfirm = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('confirm_date')
-                    .setLabel(selectedDay ? `Konfirmasi: ${selectedDay}-${selectedMonth}-${selectedYear}` : 'Pilih Tanggal Dahulu')
-                    .setStyle(selectedDay ? ButtonStyle.Success : ButtonStyle.Secondary)
-                    .setDisabled(!selectedDay)
-            );
-
-            return [rowMonth, rowDay, rowPagination, rowYear, rowConfirm];
-        };
+    async askDateModal(interaction, step, fields) {
+        let errorMsg = null;
 
         const getEmbed = () => {
-            const dateStr = selectedDay ? `**${selectedDay.toString().padStart(2, '0')}-${selectedMonth.toString().padStart(2, '0')}-${selectedYear}**` : '*Belum ditentukan*';
+            let description = 'Silakan klik tombol **📅 Atur Rentang Tanggal** di bawah untuk memasukkan tanggal mulai dan tanggal selesai melalui popup formulir.';
+            if (errorMsg) {
+                description = `⚠️ **Format tidak valid:** ${errorMsg}\n\n${description}`;
+            }
             return makeProgressEmbed(
                 step,
-                title,
-                `Silakan gunakan menu dropdown dan paginasi hari di bawah untuk memilih tanggal.\n\n📅 **Tanggal Terpilih Sementara:** ${dateStr}`,
+                'Masukkan Rentang Tanggal',
+                description,
                 fields
             );
         };
 
-        // Respon secara atomik menggunakan update() dari interaction yang dilewatkan
+        const getComponents = () => {
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('open_date_modal_btn')
+                    .setLabel('📅 Atur Rentang Tanggal')
+                    .setStyle(ButtonStyle.Primary)
+            );
+            return [row];
+        };
+
+        // Update interaction first to show the button
         await interaction.update({
             embeds: [getEmbed()],
             components: getComponents()
@@ -634,39 +563,116 @@ module.exports = {
 
         return new Promise((resolve, reject) => {
             const collector = msg.createMessageComponentCollector({
-                filter: i => i.user.id === interaction.user.id,
+                filter: i => i.user.id === interaction.user.id && i.customId === 'open_date_modal_btn',
                 time: 300000
             });
 
             let latestInteraction = null;
 
             collector.on('collect', async i => {
-                latestInteraction = i;
-                if (i.customId === 'select_month') {
-                    selectedMonth = parseInt(i.values[0]);
-                    await i.update({ embeds: [getEmbed()], components: getComponents() });
-                } else if (i.customId === 'select_day') {
-                    selectedDay = parseInt(i.values[0]);
-                    await i.update({ embeds: [getEmbed()], components: getComponents() });
-                } else if (i.customId === 'select_year') {
-                    selectedYear = parseInt(i.values[0]);
-                    await i.update({ embeds: [getEmbed()], components: getComponents() });
-                } else if (i.customId === 'next_page') {
-                    dayPage = 2;
-                    await i.update({ embeds: [getEmbed()], components: getComponents() });
-                } else if (i.customId === 'prev_page') {
-                    dayPage = 1;
-                    await i.update({ embeds: [getEmbed()], components: getComponents() });
-                } else if (i.customId === 'confirm_date') {
+                const modalId = `date_modal_${Date.now()}`;
+                const modal = new ModalBuilder()
+                    .setCustomId(modalId)
+                    .setTitle('Rentang Tanggal Laporan');
+
+                const startInput = new TextInputBuilder()
+                    .setCustomId('start_date_input')
+                    .setLabel('TANGGAL MULAI (DD-MM-YYYY)')
+                    .setStyle(TextInputStyle.Short)
+                    .setPlaceholder('Contoh: 01-02-2026')
+                    .setMinLength(10)
+                    .setMaxLength(10)
+                    .setRequired(true);
+
+                const endInput = new TextInputBuilder()
+                    .setCustomId('end_date_input')
+                    .setLabel('TANGGAL SELESAI (DD-MM-YYYY)')
+                    .setStyle(TextInputStyle.Short)
+                    .setPlaceholder('Contoh: 07-02-2026')
+                    .setMinLength(10)
+                    .setMaxLength(10)
+                    .setRequired(true);
+
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(startInput),
+                    new ActionRowBuilder().addComponents(endInput)
+                );
+
+                await i.showModal(modal);
+
+                try {
+                    const modalInteraction = await i.awaitModalSubmit({
+                        filter: mi => mi.user.id === interaction.user.id && mi.customId === modalId,
+                        time: 120000
+                    });
+
+                    latestInteraction = modalInteraction;
+
+                    const startDateStr = modalInteraction.fields.getTextInputValue('start_date_input').trim();
+                    const endDateStr = modalInteraction.fields.getTextInputValue('end_date_input').trim();
+
+                    // Validation logic
+                    const parseDate = (str) => {
+                        const parts = str.split('-');
+                        if (parts.length !== 3) return null;
+                        const day = parseInt(parts[0], 10);
+                        const month = parseInt(parts[1], 10);
+                        const year = parseInt(parts[2], 10);
+                        if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
+
+                        const date = new Date(year, month - 1, day);
+                        if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+                            return null;
+                        }
+                        return date;
+                    };
+
+                    const regex = /^\d{2}-\d{2}-\d{4}$/;
+                    if (!regex.test(startDateStr) || !regex.test(endDateStr)) {
+                        errorMsg = 'Format salah. Gunakan DD-MM-YYYY (contoh: 01-02-2026).';
+                        await modalInteraction.update({
+                            embeds: [getEmbed()],
+                            components: getComponents()
+                        });
+                        return;
+                    }
+
+                    const startDate = parseDate(startDateStr);
+                    const endDate = parseDate(endDateStr);
+
+                    if (!startDate || !endDate) {
+                        errorMsg = 'Nilai tanggal tidak ada di kalender (contoh: 31 Februari).';
+                        await modalInteraction.update({
+                            embeds: [getEmbed()],
+                            components: getComponents()
+                        });
+                        return;
+                    }
+
+                    if (startDate > endDate) {
+                        errorMsg = 'Tanggal Mulai tidak boleh melewati Tanggal Selesai.';
+                        await modalInteraction.update({
+                            embeds: [getEmbed()],
+                            components: getComponents()
+                        });
+                        return;
+                    }
+
+                    // Success!
+                    errorMsg = null;
                     collector.stop('confirmed');
+                    resolve({
+                        tanggalMulai: startDateStr,
+                        tanggalSelesai: endDateStr,
+                        lastInteraction: modalInteraction
+                    });
+                } catch (err) {
+                    console.error('Modal submit/timeout error:', err);
                 }
             });
 
             collector.on('end', (collected, reason) => {
-                if (reason === 'confirmed' && latestInteraction) {
-                    const formattedDate = `${selectedDay.toString().padStart(2, '0')}-${selectedMonth.toString().padStart(2, '0')}-${selectedYear}`;
-                    resolve({ date: formattedDate, lastInteraction: latestInteraction });
-                } else {
+                if (reason !== 'confirmed') {
                     reject(new Error('Timeout or cancelled'));
                 }
             });
