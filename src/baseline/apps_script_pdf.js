@@ -1,6 +1,6 @@
 const CONFIG = {
-    // Template Document ID yang Anda berikan
-    TEMPLATE_ID: "1VCBdP3pcJJ1g7cY7162vRJnk7OTobtRM",
+    // Template Document ID yang baru (Google Docs Asli)
+    TEMPLATE_ID: "1fw4qv_7lzvPe3uh9XTAsNYoe5VMjc_f5NUq3QHp5Myw",
     
     // ID Folder tujuan untuk menyimpan PDF
     OUTPUT_FOLDER_ID: "1C5nuklD-v6gw8Ge2ZjUuUBnHwHPIkJum" 

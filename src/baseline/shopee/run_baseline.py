@@ -53,7 +53,8 @@ def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=
             sf_df = df[(df['Aplikasi'] == app_name) & (df['Status'] == 'Live')]
             
             if merchant_filter:
-                sf_df = sf_df[sf_df['Merchant Name'].str.strip().str.lower() == merchant_filter.strip().lower()]
+                filter_val = merchant_filter.strip().lower().rstrip('_')
+                sf_df = sf_df[sf_df['Merchant Name'].str.strip().str.lower().str.rstrip('_') == filter_val]
                 
             sf_df = sf_df[(sf_df['Merchant Name'] != '-') & (sf_df['Merchant Name'].notna())]
             sf_df = sf_df.drop_duplicates(subset=['Merchant Name'])
@@ -68,7 +69,8 @@ def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=
         sf_df = df[(df['Aplikasi'] == app_name) & (df['Status'] == 'Live')]
         
         if merchant_filter:
-            sf_df = sf_df[sf_df['Merchant Name'].str.strip().str.lower() == merchant_filter.strip().lower()]
+            filter_val = merchant_filter.strip().lower().rstrip('_')
+            sf_df = sf_df[sf_df['Merchant Name'].str.strip().str.lower().str.rstrip('_') == filter_val]
             
         sf_df = sf_df[(sf_df['Merchant Name'] != '-') & (sf_df['Merchant Name'].notna())]
         sf_df = sf_df.drop_duplicates(subset=['Merchant Name'])
