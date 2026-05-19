@@ -643,6 +643,7 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
     log.info(f"🌐 [BROWSER] Launching (headless={headless})...")
     driver = _init_driver(headless=headless)
     wait = WebDriverWait(driver, 30)
+    session_success = False
 
     try:
         # ── Step 1: Check browser state first (Profile session) ──
@@ -847,12 +848,17 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
         save_session(t, eid or "", extra_cookies=all_c)
         res = {"shopee_tob_token": t, "shopee_tob_entity_id": eid or "", "extra_cookies": all_c}
         if not close_browser: res["driver"] = driver
+        session_success = True
         return res
     except Exception as e:
         log.error(f"Browser session error: {e}")
         return None
     finally:
-        if close_browser: driver.quit()
+        if (close_browser or not session_success) and driver is not None:
+            try:
+                driver.quit()
+            except Exception as e:
+                log.debug(f"Failed to quit driver in get_session: {e}")
 
 def refresh_tokens(driver) -> dict:
     t, eid = _trigger_and_extract_tokens(driver)

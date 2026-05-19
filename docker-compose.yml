@@ -4,6 +4,7 @@ services:
   bot:
     build: .
     container_name: ofd_discord_bot
+    init: true
     restart: unless-stopped
     # Variabel environment di-load dari file .env bot
     env_file:
