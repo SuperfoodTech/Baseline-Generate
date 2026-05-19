@@ -1,0 +1,10 @@
+.git
+.venv
+node_modules
+data/
+src/database/
+src/logs/
+src/laporan/
+src/shopee-omzet-automation/data/
+__pycache__
+*.pyc

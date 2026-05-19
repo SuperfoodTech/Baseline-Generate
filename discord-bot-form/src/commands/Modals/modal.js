@@ -98,35 +98,20 @@ module.exports = {
             const formData = {};
 
             // 1. Pilih Jenis Tagihan
-            const taskRow = new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder()
-                    .setCustomId('task_select')
-                    .setPlaceholder('Pilih Jenis Tagihan')
-                    .addOptions([
-                        { label: 'Baseline', value: 'baseline', description: 'Laporan perbandingan standar performa' },
-                        { label: 'Weekly (Coming Soon)', value: 'weekly_disabled', description: '⚠️ Fitur ini belum tersedia' }
-                    ])
-            );
-
-            await interaction.editReply({
-                embeds: [
-                    makeProgressEmbed(
-                        0,
-                        'Pilih Jenis Laporan',
-                        'Halo! Selamat datang di formulir sinkronisasi laporan mingguan. Silakan pilih jenis tagihan yang ingin Anda buat laporan rekapitulasinya.'
-                    )
+            const taskResult = await this.askSelection(interaction, {
+                title: 'Pilih Jenis Laporan',
+                step: 0,
+                placeholder: 'Pilih Jenis Tagihan',
+                options: [
+                    { label: 'Baseline', value: 'baseline', description: 'Laporan perbandingan standar performa' },
+                    { label: 'Weekly (Coming Soon)', value: 'weekly_disabled', description: '⚠️ Fitur ini belum tersedia' }
                 ],
-                components: [taskRow]
-            });
-
-            const taskInteraction = await message.awaitMessageComponent({
-                filter: i => i.user.id === interaction.user.id && i.customId === 'task_select',
-                time: 300000
+                isFirstStep: true
             });
 
             // Blokir jika user pilih Weekly (disabled)
-            if (taskInteraction.values[0] === 'weekly_disabled') {
-                await taskInteraction.update({
+            if (taskResult.values[0] === 'weekly_disabled') {
+                await taskResult.lastInteraction.update({
                     embeds: [
                         new EmbedBuilder()
                             .setColor(0xFFAA00)
@@ -138,48 +123,31 @@ module.exports = {
                 });
                 return;
             }
-            formData.tagihan = taskInteraction.values[0];
+            formData.tagihan = taskResult.values[0];
 
             // 2. Pilih Outlet
             const maxOutletOpts = outlets.length > 24 ? 24 : outlets.length;
-            const outletRow = new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder()
-                    .setCustomId('outlet_select')
-                    .setPlaceholder('Pilih satu atau lebih outlet...')
-                    .setMinValues(1)
-                    .setMaxValues(maxOutletOpts + 1)
-                    .addOptions([
-                        { label: '🌟 Pilih Semua', value: 'all' },
-                        ...outlets.slice(0, 24).map(name => ({
-                            label: name.substring(0, 100),
-                            value: name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100)
-                        }))
-                    ])
-            );
+            const outletOptions = [
+                { label: '🌟 Pilih Semua', value: 'all' },
+                ...outlets.slice(0, 24).map(name => ({
+                    label: name.substring(0, 100),
+                    value: name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100)
+                }))
+            ];
 
-            // Ganti editReply lama menggunakan taskInteraction.update untuk merespon secara atomik!
-            await taskInteraction.update({
-                embeds: [
-                    makeProgressEmbed(
-                        1,
-                        'Pilih Outlet',
-                        'Pilih satu atau beberapa outlet yang ingin dimasukkan ke dalam laporan. Gunakan opsi *Pilih Semua* jika Anda ingin menarik data seluruh outlet.',
-                        [
-                            { name: 'Jenis Tagihan', value: formData.tagihan.toUpperCase(), inline: true }
-                        ]
-                    )
-                ],
-                components: [outletRow]
-            });
-            // Fetch ulang message agar collector berikutnya pakai referensi fresh
-            message = await interaction.fetchReply();
-
-            const outletInteraction = await message.awaitMessageComponent({
-                filter: i => i.user.id === interaction.user.id && i.customId === 'outlet_select',
-                time: 300000
+            const outletResult = await this.askSelection(taskResult.lastInteraction, {
+                title: 'Pilih Outlet',
+                step: 1,
+                placeholder: 'Pilih satu atau lebih outlet...',
+                options: outletOptions,
+                minValues: 1,
+                maxValues: maxOutletOpts + 1,
+                fields: [
+                    { name: 'Jenis Laporan', value: formData.tagihan.toUpperCase(), inline: true }
+                ]
             });
 
-            const selectedOutletValues = outletInteraction.values;
+            const selectedOutletValues = outletResult.values;
             let selectedOutletNames;
             if (selectedOutletValues.includes('all')) {
                 selectedOutletNames = outlets.slice(0, 24);
@@ -206,45 +174,28 @@ module.exports = {
             if (filteredBranches.length === 0) filteredBranches = ['Pilih Cabang (Tidak ada data)'];
 
             const maxCabangOpts = filteredBranches.length > 24 ? 24 : filteredBranches.length;
-            const cabangRow = new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder()
-                    .setCustomId('cabang_select')
-                    .setPlaceholder('Pilih satu atau lebih cabang...')
-                    .setMinValues(1)
-                    .setMaxValues(maxCabangOpts + 1)
-                    .addOptions([
-                        { label: '🌟 Pilih Semua', value: 'all' },
-                        ...filteredBranches.slice(0, 24).map(name => ({
-                            label: name.substring(0, 100),
-                            value: name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100)
-                        }))
-                    ])
-            );
+            const cabangOptions = [
+                { label: '🌟 Pilih Semua', value: 'all' },
+                ...filteredBranches.slice(0, 24).map(name => ({
+                    label: name.substring(0, 100),
+                    value: name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100)
+                }))
+            ];
 
-            // Ganti editReply lama menggunakan outletInteraction.update!
-            await outletInteraction.update({
-                embeds: [
-                    makeProgressEmbed(
-                        2,
-                        'Pilih Cabang',
-                        'Pilih cabang yang sesuai. Cabang yang ditampilkan di bawah ini telah disaring secara dinamis berdasarkan outlet yang Anda pilih pada langkah sebelumnya.',
-                        [
-                            { name: 'Jenis Tagihan', value: formData.tagihan.toUpperCase(), inline: true },
-                            { name: 'Outlet Terpilih', value: formData.outlet.length > 1024 ? formData.outlet.substring(0, 1020) + '...' : formData.outlet, inline: false }
-                        ]
-                    )
-                ],
-                components: [cabangRow]
-            });
-            // Fetch ulang message agar collector berikutnya pakai referensi fresh
-            message = await interaction.fetchReply();
-
-            const cabangInteraction = await message.awaitMessageComponent({
-                filter: i => i.user.id === interaction.user.id && i.customId === 'cabang_select',
-                time: 300000
+            const cabangResult = await this.askSelection(outletResult.lastInteraction, {
+                title: 'Pilih Cabang',
+                step: 2,
+                placeholder: 'Pilih satu atau lebih cabang...',
+                options: cabangOptions,
+                minValues: 1,
+                maxValues: maxCabangOpts + 1,
+                fields: [
+                    { name: 'Jenis Laporan', value: formData.tagihan.toUpperCase(), inline: true },
+                    { name: 'Outlet Terpilih', value: formData.outlet.length > 1024 ? formData.outlet.substring(0, 1020) + '...' : formData.outlet, inline: false }
+                ]
             });
 
-            const selectedCabangValues = cabangInteraction.values;
+            const selectedCabangValues = cabangResult.values;
             let selectedCabangNames;
             if (selectedCabangValues.includes('all')) {
                 selectedCabangNames = filteredBranches.slice(0, 24);
@@ -256,44 +207,28 @@ module.exports = {
             formData.cabang = selectedCabangNames.join(', ');
 
             // 4. Pilih Aplikator
-            const aplikatorRow = new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder()
-                    .setCustomId('aplikator_select')
-                    .setPlaceholder('Pilih satu atau lebih aplikator...')
-                    .setMinValues(1)
-                    .setMaxValues(4)
-                    .addOptions([
-                        { label: '🌟 Pilih Semua', value: 'all' },
-                        { label: 'GoFood', value: 'gofood' },
-                        { label: 'GrabFood', value: 'grabfood' },
-                        { label: 'ShopeeFood', value: 'shopeefood' }
-                    ])
-            );
+            const aplikatorOptions = [
+                { label: '🌟 Pilih Semua', value: 'all' },
+                { label: 'GoFood', value: 'gofood' },
+                { label: 'GrabFood', value: 'grabfood' },
+                { label: 'ShopeeFood', value: 'shopeefood' }
+            ];
 
-            await cabangInteraction.update({
-                embeds: [
-                    makeProgressEmbed(
-                        3,
-                        'Pilih Aplikator',
-                        'Pilih platform/aplikator pemesanan makanan yang ingin Anda rekap datanya.',
-                        [
-                            { name: 'Jenis Tagihan', value: formData.tagihan.toUpperCase(), inline: true },
-                            { name: 'Outlet Terpilih', value: formData.outlet.length > 512 ? formData.outlet.substring(0, 508) + '...' : formData.outlet, inline: false },
-                            { name: 'Cabang Terpilih', value: formData.cabang.length > 512 ? formData.cabang.substring(0, 508) + '...' : formData.cabang, inline: false }
-                        ]
-                    )
-                ],
-                components: [aplikatorRow]
-            });
-            
-            message = await interaction.fetchReply();
-
-            const aplikatorInteraction = await message.awaitMessageComponent({
-                filter: i => i.user.id === interaction.user.id && i.customId === 'aplikator_select',
-                time: 300000
+            const aplikatorResult = await this.askSelection(cabangResult.lastInteraction, {
+                title: 'Pilih Aplikator',
+                step: 3,
+                placeholder: 'Pilih satu atau lebih aplikator...',
+                options: aplikatorOptions,
+                minValues: 1,
+                maxValues: 4,
+                fields: [
+                    { name: 'Jenis Laporan', value: formData.tagihan.toUpperCase(), inline: true },
+                    { name: 'Outlet Terpilih', value: formData.outlet.length > 512 ? formData.outlet.substring(0, 508) + '...' : formData.outlet, inline: false },
+                    { name: 'Cabang Terpilih', value: formData.cabang.length > 512 ? formData.cabang.substring(0, 508) + '...' : formData.cabang, inline: false }
+                ]
             });
 
-            const selectedAplikatorValues = aplikatorInteraction.values;
+            const selectedAplikatorValues = aplikatorResult.values;
             if (selectedAplikatorValues.includes('all')) {
                 formData.aplikator = 'GoFood, GrabFood, ShopeeFood';
             } else {
@@ -307,14 +242,14 @@ module.exports = {
 
             // 5. Pilih Rentang Tanggal
             const dateFields = [
-                { name: 'Jenis Tagihan', value: formData.tagihan.toUpperCase(), inline: true },
+                { name: 'Jenis Laporan', value: formData.tagihan.toUpperCase(), inline: true },
                 { name: 'Aplikator', value: formData.aplikator, inline: true },
                 { name: 'Outlet Terpilih', value: formData.outlet.length > 512 ? formData.outlet.substring(0, 508) + '...' : formData.outlet, inline: false },
                 { name: 'Cabang Terpilih', value: formData.cabang.length > 512 ? formData.cabang.substring(0, 508) + '...' : formData.cabang, inline: false }
             ];
 
-            // Kirim aplikatorInteraction ke askDatePicker agar direspon secara atomik dengan .update()
-            const resultMulai = await this.askDatePicker(aplikatorInteraction, 'Pilih Tanggal Mulai', 4, dateFields);
+            // Kirim aplikatorResult.lastInteraction ke askDatePicker agar direspon secara atomik dengan .update()
+            const resultMulai = await this.askDatePicker(aplikatorResult.lastInteraction, 'Pilih Tanggal Mulai', 4, dateFields);
             formData.tanggalMulai = resultMulai.date;
 
             const dateFieldsWithStart = [
@@ -724,6 +659,95 @@ module.exports = {
                 if (reason === 'confirmed' && latestInteraction) {
                     const formattedDate = `${selectedDay.toString().padStart(2, '0')}-${selectedMonth.toString().padStart(2, '0')}-${selectedYear}`;
                     resolve({ date: formattedDate, lastInteraction: latestInteraction });
+                } else {
+                    reject(new Error('Timeout or cancelled'));
+                }
+            });
+        });
+    },
+
+    async askSelection(interaction, { title, step, placeholder, options, minValues = 1, maxValues = 1, fields = [], isFirstStep = false }) {
+        let selectedValues = [];
+
+        const getComponents = () => {
+            const selectMenu = new StringSelectMenuBuilder()
+                .setCustomId('selection_menu')
+                .setPlaceholder(placeholder)
+                .setMinValues(minValues)
+                .setMaxValues(maxValues)
+                .addOptions(options.map(opt => ({
+                    ...opt,
+                    default: selectedValues.includes(opt.value)
+                })));
+
+            const selectRow = new ActionRowBuilder().addComponents(selectMenu);
+
+            const nextButton = new ButtonBuilder()
+                .setCustomId('continue_btn')
+                .setLabel(selectedValues.length > 0 ? '➡️ Lanjutkan' : 'Pilih opsi terlebih dahulu')
+                .setStyle(selectedValues.length > 0 ? ButtonStyle.Success : ButtonStyle.Secondary)
+                .setDisabled(selectedValues.length === 0);
+
+            const buttonRow = new ActionRowBuilder().addComponents(nextButton);
+
+            return [selectRow, buttonRow];
+        };
+
+        const getEmbed = () => {
+            let description = `Silakan pilih opsi dari menu di bawah, lalu klik **Lanjutkan**.\n\n`;
+            if (selectedValues.length > 0) {
+                const labelList = selectedValues.map(val => {
+                    const found = options.find(opt => opt.value === val);
+                    return found ? found.label : val;
+                }).join(', ');
+                
+                const displayList = labelList.length > 300 ? labelList.substring(0, 297) + '...' : labelList;
+                description += `🔹 **Pilihan saat ini:** ${displayList}`;
+            } else {
+                description += `⚠️ *Belum ada opsi terpilih*`;
+            }
+
+            return makeProgressEmbed(step, title, description, fields);
+        };
+
+        if (isFirstStep) {
+            await interaction.editReply({
+                embeds: [getEmbed()],
+                components: getComponents()
+            });
+        } else {
+            await interaction.update({
+                embeds: [getEmbed()],
+                components: getComponents()
+            });
+        }
+
+        const message = await interaction.message || await interaction.fetchReply();
+
+        return new Promise((resolve, reject) => {
+            const collector = message.createMessageComponentCollector({
+                filter: i => i.user.id === interaction.user.id,
+                time: 300000
+            });
+
+            let latestInteraction = null;
+
+            collector.on('collect', async i => {
+                latestInteraction = i;
+                if (i.customId === 'selection_menu') {
+                    selectedValues = i.values;
+                    await i.update({
+                        embeds: [getEmbed()],
+                        components: getComponents()
+                    });
+                } else if (i.customId === 'continue_btn') {
+                    collector.stop('confirmed');
+                }
+            });
+
+            collector.on('end', (collected, reason) => {
+                if (reason === 'confirmed' && latestInteraction) {
+                    resolve({ values: selectedValues, lastInteraction: latestInteraction });
                 } else {
                     reject(new Error('Timeout or cancelled'));
                 }
