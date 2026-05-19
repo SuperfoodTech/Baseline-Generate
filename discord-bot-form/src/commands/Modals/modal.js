@@ -625,8 +625,10 @@ module.exports = {
             components: getComponents()
         });
 
+        const msg = interaction.message || await interaction.fetchReply();
+
         return new Promise((resolve, reject) => {
-            const collector = interaction.message.createMessageComponentCollector({
+            const collector = msg.createMessageComponentCollector({
                 filter: i => i.user.id === interaction.user.id,
                 time: 300000
             });
@@ -722,7 +724,7 @@ module.exports = {
             });
         }
 
-        const message = await interaction.message || await interaction.fetchReply();
+        const message = isFirstStep ? await interaction.fetchReply() : (interaction.message || await interaction.fetchReply());
 
         return new Promise((resolve, reject) => {
             const collector = message.createMessageComponentCollector({
