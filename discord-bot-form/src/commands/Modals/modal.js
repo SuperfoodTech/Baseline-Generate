@@ -870,6 +870,7 @@ module.exports = {
                                 finalMap[key] = Array.from(outletBranchMap[key]);
                             }
 
+                            console.log(`[SHEET] Berhasil mengambil ${outlets.length} outlet unik dari Google Sheets:`, outlets);
                             const result = { outlets, outletBranchMap: finalMap };
                             cachedSheetData = result;
                             lastCacheTime = now;
@@ -880,7 +881,7 @@ module.exports = {
                     });
                 }).on('error', (err) => reject(err));
             };
-            fetchUrl(SHEET_CSV_URL);
+            fetchUrl(SHEET_CSV_URL + '&t=' + Date.now());
         });
     }
 }
