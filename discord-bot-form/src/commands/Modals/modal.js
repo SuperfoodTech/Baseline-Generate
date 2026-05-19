@@ -323,7 +323,7 @@ module.exports = {
             ];
 
             // Kirim resultMulai.lastInteraction ke askDatePicker berikutnya
-            const resultSelesai = await this.askDatePicker(resultMulai.lastInteraction, 'Pilih Tanggal Selesai', 5, dateFieldsWithStart);
+            const resultSelesai = await this.askDatePicker(resultMulai.lastInteraction, 'Pilih Tanggal Selesai', 4, dateFieldsWithStart);
             formData.tanggalSelesai = resultSelesai.date;
 
             // ── REVIEW & KONFIRMASI ─────────────────────────────────────────
