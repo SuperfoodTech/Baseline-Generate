@@ -180,8 +180,12 @@ def run_pipeline():
                 with open(config_file, "r") as f:
                     headless = json.load(f).get("headless_shopee", True)
                 break
+    except Exception:
+        pass
+
     if os.environ.get("HEADLESS") == "true":
         headless = True
+
 
 
     # ── 1. Determine Merchants to Process (Data-Driven via G-Sheets) ────
