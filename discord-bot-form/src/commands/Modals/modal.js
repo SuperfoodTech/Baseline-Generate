@@ -10,6 +10,11 @@ const https = require('https');
 
 const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv';
 
+let cachedSheetData = null;
+let lastCacheTime = 0;
+const CACHE_DURATION = 5 * 60 * 1000; // 5 menit cache
+
+
 const makeProgressEmbed = (step, title, description, fields = []) => {
     const steps = [
         { name: 'Tagihan', icon: '📝' },
@@ -758,6 +763,11 @@ module.exports = {
     },
 
     fetchSheetData() {
+        const now = Date.now();
+        if (cachedSheetData && (now - lastCacheTime < CACHE_DURATION)) {
+            return Promise.resolve(cachedSheetData);
+        }
+
         return new Promise((resolve, reject) => {
             const fetchUrl = (url) => {
                 https.get(url, (res) => {
@@ -816,7 +826,10 @@ module.exports = {
                                 finalMap[key] = Array.from(outletBranchMap[key]);
                             }
 
-                            resolve({ outlets, outletBranchMap: finalMap });
+                            const result = { outlets, outletBranchMap: finalMap };
+                            cachedSheetData = result;
+                            lastCacheTime = now;
+                            resolve(result);
                         } catch (e) {
                             reject(e);
                         }
