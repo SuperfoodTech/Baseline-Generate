@@ -428,20 +428,20 @@ def run_pipeline():
                 # Reformat Waktu Penyelesaian from "07 Mei 2026 23:16" to "2026-05-07 at 23:16"
                 if "Waktu Penyelesaian" in df.columns:
                     indo_months = {
-                        'Januari': 'January', 'Februari': 'February', 'Maret': 'March', 
-                        'April': 'April', 'Mei': 'May', 'Juni': 'June', 'Juli': 'July', 
-                        'Agustus': 'August', 'September': 'September', 'Oktober': 'October', 
-                        'November': 'November', 'Desember': 'December',
-                        'Jan ': 'Jan ', 'Feb ': 'Feb ', 'Mar ': 'Mar ', 'Apr ': 'Apr ',
-                        'Mei ': 'May ', 'Jun ': 'Jun ', 'Jul ': 'Jul ', 'Ags ': 'Aug ', 'Agu ': 'Aug ',
-                        'Sep ': 'Sep ', 'Okt ': 'Oct ', 'Nov ': 'Nov ', 'Des ': 'Dec '
+                        'Januari': 'Jan', 'Februari': 'Feb', 'Maret': 'Mar', 
+                        'April': 'Apr', 'Mei': 'May', 'Juni': 'Jun', 'Juli': 'Jul', 
+                        'Agustus': 'Aug', 'September': 'Sep', 'Oktober': 'Oct', 
+                        'November': 'Nov', 'Desember': 'Dec',
+                        'Jan': 'Jan', 'Feb': 'Feb', 'Mar': 'Mar', 'Apr': 'Apr',
+                        'Jun': 'Jun', 'Jul': 'Jul', 'Ags': 'Aug', 'Agu': 'Aug',
+                        'Sep': 'Sep', 'Okt': 'Oct', 'Nov': 'Nov', 'Des': 'Dec'
                     }
                     temp_dates = df["Waktu Penyelesaian"].astype(str)
-                    for indo, eng in indo_months.items():
+                    for indo, eng in sorted(indo_months.items(), key=lambda x: len(x[0]), reverse=True):
                         temp_dates = temp_dates.str.replace(indo, eng, case=False, regex=False)
                     
-                    # Parse to datetime robustly (infer format)
-                    parsed_dates = pd.to_datetime(temp_dates, errors='coerce')
+                    # Parse to datetime using robust explicit format
+                    parsed_dates = pd.to_datetime(temp_dates, format='%d %b %Y %H:%M', errors='coerce')
                     
                     # Where parsing succeeded, apply the new format. Where it failed, keep original.
                     df["Waktu Penyelesaian"] = parsed_dates.dt.strftime('%Y-%m-%d at %H:%M').fillna(df["Waktu Penyelesaian"])
