@@ -50,8 +50,8 @@ function detectPlatform(aplikator) {
     if (hasGrab) selected.push('grab');
     if (hasShopee) selected.push('shopee');
     
-    if (selected.length === 1) {
-        return selected[0];
+    if (selected.length > 0) {
+        return selected.join(',');
     }
     return 'all';
 }
