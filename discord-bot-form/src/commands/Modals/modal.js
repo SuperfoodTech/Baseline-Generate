@@ -102,7 +102,7 @@ module.exports = {
         let message = await interaction.editReply({ embeds: [loadingEmbed], components: [] });
 
         try {
-            const { outlets, outletBranchMap } = await this.fetchSheetData();
+            const { outlets, outletBranchMap, outletAppMap, outletCabangAppMap } = await this.fetchSheetData();
             const formData = {};
 
             // 1. Pilih Jenis Tagihan
@@ -215,12 +215,72 @@ module.exports = {
             formData.cabang = selectedCabangNames.join(', ');
 
             // 4. Pilih Aplikator
-            const aplikatorOptions = [
-                { label: '🌟 Pilih Semua', value: 'all' },
-                { label: 'GoFood', value: 'gofood' },
-                { label: 'GrabFood', value: 'grabfood' },
-                { label: 'ShopeeFood', value: 'shopeefood' }
+            const availableApps = new Set();
+            let selectedOutletVals = selectedOutletValues;
+            if (selectedOutletValues.includes('all')) {
+                selectedOutletVals = outlets.map(name => name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100));
+            }
+            
+            selectedOutletVals.forEach(outletVal => {
+                let selectedCabangVals = selectedCabangValues;
+                if (selectedCabangValues.includes('all')) {
+                    const branches = outletBranchMap[outletVal] || [];
+                    selectedCabangVals = ['all', ...branches.map(name => name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100))];
+                }
+                
+                selectedCabangVals.forEach(cabangVal => {
+                    if (cabangVal === 'all') {
+                        const apps = outletAppMap[outletVal] || [];
+                        apps.forEach(a => availableApps.add(a));
+                    } else {
+                        const key = `${outletVal}|${cabangVal}`;
+                        const apps = outletCabangAppMap[key] || [];
+                        apps.forEach(a => availableApps.add(a));
+                    }
+                });
+            });
+
+            if (availableApps.size === 0) {
+                availableApps.add('gofood');
+                availableApps.add('grabfood');
+                availableApps.add('shopeefood');
+            }
+
+            const allApps = [
+                { label: 'GoFood', value: 'gofood', emoji: '🟢' },
+                { label: 'GrabFood', value: 'grabfood', emoji: '🟢' },
+                { label: 'ShopeeFood', value: 'shopeefood', emoji: '🟠' }
             ];
+
+            const aplikatorOptions = [];
+            const hasMultipleAvailable = Array.from(availableApps).length > 1;
+            
+            if (hasMultipleAvailable) {
+                aplikatorOptions.push({ 
+                    label: '🌟 Pilih Semua yang Tersedia', 
+                    value: 'all',
+                    description: `Pilih semua aplikator aktif (${Array.from(availableApps).join(', ')})`
+                });
+            }
+
+            allApps.forEach(app => {
+                const isAvailable = availableApps.has(app.value);
+                if (isAvailable) {
+                    aplikatorOptions.push({
+                        label: app.label,
+                        value: app.value,
+                        description: `Tersedia untuk outlet/cabang terpilih`,
+                        emoji: app.emoji
+                    });
+                } else {
+                    aplikatorOptions.push({
+                        label: `${app.label} (Tidak Tersedia)`,
+                        value: `${app.value}_disabled`,
+                        description: `❌ Tidak aktif untuk outlet/cabang terpilih`,
+                        emoji: '⚪'
+                    });
+                }
+            });
 
             const aplikatorResult = await this.askSelection(cabangResult.lastInteraction, {
                 title: 'Pilih Aplikator',
@@ -228,7 +288,7 @@ module.exports = {
                 placeholder: 'Pilih satu atau lebih aplikator...',
                 options: aplikatorOptions,
                 minValues: 1,
-                maxValues: 4,
+                maxValues: aplikatorOptions.length,
                 fields: [
                     { name: 'Jenis Laporan', value: formData.tagihan.toUpperCase(), inline: true },
                     { name: 'Outlet Terpilih', value: formData.outlet.length > 512 ? formData.outlet.substring(0, 508) + '...' : formData.outlet, inline: false },
@@ -238,7 +298,12 @@ module.exports = {
 
             const selectedAplikatorValues = aplikatorResult.values;
             if (selectedAplikatorValues.includes('all')) {
-                formData.aplikator = 'GoFood, GrabFood, ShopeeFood';
+                formData.aplikator = Array.from(availableApps).map(val => {
+                    if (val === 'gofood') return 'GoFood';
+                    if (val === 'grabfood') return 'GrabFood';
+                    if (val === 'shopeefood') return 'ShopeeFood';
+                    return val;
+                }).join(', ');
             } else {
                 formData.aplikator = selectedAplikatorValues.map(val => {
                     if (val === 'gofood') return 'GoFood';
@@ -256,7 +321,6 @@ module.exports = {
                 { name: 'Cabang Terpilih', value: formData.cabang.length > 512 ? formData.cabang.substring(0, 508) + '...' : formData.cabang, inline: false }
             ];
 
-            // Kirim aplikatorResult.lastInteraction ke askDateModal agar direspon secara atomik dengan .update()
             const dateResult = await this.askDateModal(aplikatorResult.lastInteraction, 4, dateFields);
             formData.tanggalMulai = dateResult.tanggalMulai;
             formData.tanggalSelesai = dateResult.tanggalSelesai;
@@ -733,11 +797,14 @@ module.exports = {
 
             const selectRow = new ActionRowBuilder().addComponents(selectMenu);
 
+            const hasDisabledSelected = selectedValues.some(val => val.endsWith('_disabled'));
+            const isDisabled = selectedValues.length === 0 || hasDisabledSelected;
+
             const nextButton = new ButtonBuilder()
                 .setCustomId('continue_btn')
-                .setLabel(selectedValues.length > 0 ? '➡️ Lanjutkan' : 'Pilih opsi terlebih dahulu')
-                .setStyle(selectedValues.length > 0 ? ButtonStyle.Success : ButtonStyle.Secondary)
-                .setDisabled(selectedValues.length === 0);
+                .setLabel(hasDisabledSelected ? '⚠️ Opsi tidak tersedia terpilih' : (selectedValues.length > 0 ? '➡️ Lanjutkan' : 'Pilih opsi terlebih dahulu'))
+                .setStyle(hasDisabledSelected ? ButtonStyle.Danger : (selectedValues.length > 0 ? ButtonStyle.Success : ButtonStyle.Secondary))
+                .setDisabled(isDisabled);
 
             const buttonRow = new ActionRowBuilder().addComponents(nextButton);
 
@@ -827,15 +894,18 @@ module.exports = {
                         try {
                             const lines = data.split(/\r?\n/);
                             if (lines.length < 2) {
-                                return resolve({ outlets: [], outletBranchMap: {} });
+                                return resolve({ outlets: [], outletBranchMap: {}, outletAppMap: {}, outletCabangAppMap: {} });
                             }
                             const headers = lines[0].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
                             const nameIdx = headers.findIndex(h => h.trim().replace(/^"|"$/g, '') === 'Nama Outlet');
                             const statusIdx = headers.findIndex(h => h.trim().replace(/^"|"$/g, '') === 'Status');
                             const cabangIdx = headers.findIndex(h => h.trim().replace(/^"|"$/g, '') === 'Cabang');
+                            const aplikasiIdx = headers.findIndex(h => h.trim().replace(/^"|"$/g, '').toLowerCase() === 'aplikasi');
 
                             const outletSet = new Set();
                             const outletBranchMap = {};
+                            const outletAppMap = {};
+                            const outletCabangAppMap = {};
 
                             for (let i = 1; i < lines.length; i++) {
                                 const line = lines[i].trim();
@@ -854,10 +924,44 @@ module.exports = {
                                             outletBranchMap[normalizedOutlet] = new Set();
                                         }
 
+                                        let branchName = '';
                                         if (cabangIdx !== -1 && columns.length > cabangIdx) {
-                                            let cabangName = columns[cabangIdx].replace(/^"|"$/g, '').trim();
-                                            if (cabangName && cabangName !== '-' && cabangName !== '') {
-                                                outletBranchMap[normalizedOutlet].add(cabangName);
+                                            let cbName = columns[cabangIdx].replace(/^"|"$/g, '').trim();
+                                            if (cbName && cbName !== '-' && cbName !== '') {
+                                                branchName = cbName;
+                                                outletBranchMap[normalizedOutlet].add(branchName);
+                                            }
+                                        }
+
+                                        // Parse Aplikasi
+                                        let appName = '';
+                                        if (aplikasiIdx !== -1 && columns.length > aplikasiIdx) {
+                                            appName = columns[aplikasiIdx].replace(/^"|"$/g, '').trim();
+                                        }
+                                        
+                                        // Helper to normalize app name
+                                        const normalizeApp = (str) => {
+                                            const s = str.toLowerCase();
+                                            if (s.includes('go')) return 'gofood';
+                                            if (s.includes('grab')) return 'grabfood';
+                                            if (s.includes('shopee')) return 'shopeefood';
+                                            return null;
+                                        };
+                                        
+                                        const normApp = normalizeApp(appName);
+                                        if (normApp) {
+                                            if (!outletAppMap[normalizedOutlet]) {
+                                                outletAppMap[normalizedOutlet] = new Set();
+                                            }
+                                            outletAppMap[normalizedOutlet].add(normApp);
+
+                                            if (branchName) {
+                                                const normalizedCabang = branchName.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100);
+                                                const key = `${normalizedOutlet}|${normalizedCabang}`;
+                                                if (!outletCabangAppMap[key]) {
+                                                    outletCabangAppMap[key] = new Set();
+                                                }
+                                                outletCabangAppMap[key].add(normApp);
                                             }
                                         }
                                     }
@@ -870,8 +974,23 @@ module.exports = {
                                 finalMap[key] = Array.from(outletBranchMap[key]);
                             }
 
+                            const finalOutletAppMap = {};
+                            for (const key in outletAppMap) {
+                                finalOutletAppMap[key] = Array.from(outletAppMap[key]);
+                            }
+
+                            const finalOutletCabangAppMap = {};
+                            for (const key in outletCabangAppMap) {
+                                finalOutletCabangAppMap[key] = Array.from(outletCabangAppMap[key]);
+                            }
+
                             console.log(`[SHEET] Berhasil mengambil ${outlets.length} outlet unik dari Google Sheets:`, outlets);
-                            const result = { outlets, outletBranchMap: finalMap };
+                            const result = { 
+                                outlets, 
+                                outletBranchMap: finalMap, 
+                                outletAppMap: finalOutletAppMap, 
+                                outletCabangAppMap: finalOutletCabangAppMap 
+                            };
                             cachedSheetData = result;
                             lastCacheTime = now;
                             resolve(result);

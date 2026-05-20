@@ -82,3 +82,8 @@ Thumbs.db
 node_modules/
 **/.env
 **/baseline/*/data/
+
+# ── GoFood / Temp Files ────────────────────────────────────────────────────
+src/gofood-automation/
+cli.py
+

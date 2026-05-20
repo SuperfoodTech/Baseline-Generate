@@ -428,6 +428,47 @@ def run_shopee_baseline(start_date: str, end_date: str, merchant_filter: str = N
         return False
 
 
+def run_gofood(start_date: str, end_date: str, outlet_filter: str = None):
+    """
+    Delegates to the GoFood Login/Dashboard utility.
+    Working directory is set to goscrapperv2 so that
+    relative paths and imports resolve correctly.
+    """
+    gofood_dir = os.path.join(os.path.dirname(__file__), "goscrapperv2")
+    
+    if not os.path.isdir(gofood_dir):
+        print(f"{RED}[ERROR]{RESET} GoFood directory not found: {gofood_dir}")
+        return False
+
+    import subprocess
+    
+    python_exe = _resolve_python_executable()
+    # Menjalankan gofood.py untuk otomatis login (jika perlu) dan scrape data
+    cmd = [
+        python_exe, "gofood.py",
+        "--start-date", start_date,
+        "--end-date", end_date
+    ]
+    if outlet_filter:
+        cmd.extend(["--outlet", outlet_filter])
+
+    print(f"\n{YELLOW}{BOLD}▶ GOFOOD AUTO LOGIN & SCRAPE PIPELINE{RESET}")
+    print(f"  {DIM}Directory : {gofood_dir}{RESET}")
+    if outlet_filter:
+        print(f"  {DIM}Outlet    : {outlet_filter}{RESET}")
+    print(f"  {DIM}Date Range: {start_date} → {end_date}{RESET}")
+    print()
+
+    result = subprocess.run(cmd, cwd=gofood_dir)
+    
+    if result.returncode == 0:
+        print(f"\n{GREEN}✓ GoFood login dan scrape data berhasil.{RESET}")
+        return True
+    else:
+        print(f"\n{RED}✗ GoFood login/scrape data keluar dengan kode {result.returncode}.{RESET}")
+        return False
+
+
 # ── Interactive Mode ──────────────────────────────────────────────────
 
 def interactive_mode():
@@ -503,16 +544,17 @@ def interactive_mode():
         print(f"\n  {BOLD}Pilih platform:{RESET}")
         print(f"    {GREEN}[1]{RESET} Grab")
         print(f"    {MAGENTA}[2]{RESET} Shopee")
-        print(f"    {CYAN}[3]{RESET} Keduanya (Grab + Shopee)")
+        print(f"    {YELLOW}[3]{RESET} GoFood")
+        print(f"    {CYAN}[4]{RESET} Semua Platform (Grab + Shopee + GoFood)")
         print()
 
         while True:
-            choice = input(f"  {BOLD}Pilihan (1/2/3):{RESET} ").strip()
-            if choice in ("1", "2", "3"):
+            choice = input(f"  {BOLD}Pilihan (1/2/3/4):{RESET} ").strip()
+            if choice in ("1", "2", "3", "4"):
                 break
-            print(f"  {RED}Input tidak valid. Masukkan 1, 2, atau 3.{RESET}")
+            print(f"  {RED}Input tidak valid. Masukkan 1, 2, 3, atau 4.{RESET}")
 
-        platform_map = {"1": "grab", "2": "shopee", "3": "all"}
+        platform_map = {"1": "grab", "2": "shopee", "3": "gofood", "4": "all"}
         platform = platform_map[choice]
 
         # ─ Scope selection ─
@@ -603,6 +645,27 @@ def interactive_mode():
                     print(f"  {RED}[ERROR] Tidak ada merchant Shopee yang berstatus Live di Google Sheets.{RESET}")
                     sys.exit(1)
 
+            # --- FILTER CUSTOM GOFOOD ---
+            if platform in ("gofood", "all"):
+                df_gofood = df[df["Aplikasi"].str.contains("GoFood", na=False, case=False) & df["Status"].str.contains("Live", na=False, case=False)]
+                if not df_gofood.empty:
+                    gofood_outlets = sorted(df_gofood["Nama Outlet"].dropna().unique())
+                    print(f"\n  {BOLD}Pilih Outlet GoFood:{RESET}")
+                    for idx, o_name in enumerate(gofood_outlets):
+                        print(f"    {GREEN}[{idx + 1}]{RESET} {o_name}")
+                    print()
+                    while True:
+                        try:
+                            o_choice = int(input(f"  {BOLD}Pilih nomor outlet GoFood (1-{len(gofood_outlets)}):{RESET} ").strip())
+                            if 1 <= o_choice <= len(gofood_outlets):
+                                outlet = gofood_outlets[o_choice - 1]
+                                break
+                        except ValueError: pass
+                        print(f"  {RED}Pilihan tidak valid.{RESET}")
+                else:
+                    print(f"  {RED}[ERROR] Tidak ada outlet GoFood yang berstatus Live di Google Sheets.{RESET}")
+                    sys.exit(1)
+
     # ─ Date input ─
     print()
     
@@ -631,7 +694,7 @@ def interactive_mode():
         sys.exit(1)
 
     # ─ Confirmation ─
-    platform_label = {"grab": "Grab", "shopee": "Shopee", "all": "Grab + Shopee"}[platform]
+    platform_label = {"grab": "Grab", "shopee": "Shopee", "gofood": "GoFood", "all": "Semua Platform (Grab + Shopee + GoFood)"}[platform]
     date_folder = f"{start_date}_to_{end_date}"
     
     print(f"\n  {CYAN}{'─'*50}{RESET}")
@@ -660,7 +723,7 @@ def interactive_mode():
 
 def _notify_discord_pdf(outlet, start_date, end_date, aplikator,
                         pdf_url, pdf_name, omzet_gr, omzet_sf,
-                        order_gr, order_sf):
+                        order_gr, order_sf, omzet_go="Rp 0", order_go="0"):
     """
     Kirim embed notifikasi PDF ke Discord channel via webhook.
     Hanya aktif ketika OFD_DISCORD_MODE=1 dan OFD_WEBHOOK_URL tersedia.
@@ -673,6 +736,22 @@ def _notify_discord_pdf(outlet, start_date, end_date, aplikator,
     try:
         import requests as _req
 
+        omzet_lines = []
+        order_lines = []
+        lower_app = aplikator.lower()
+        if "go" in lower_app or "all" in lower_app:
+            omzet_lines.append(f"GoFood: **{omzet_go}**")
+            order_lines.append(f"GoFood: **{order_go}**")
+        if "grab" in lower_app or "all" in lower_app:
+            omzet_lines.append(f"GrabFood: **{omzet_gr}**")
+            order_lines.append(f"GrabFood: **{order_gr}**")
+        if "shopee" in lower_app or "all" in lower_app:
+            omzet_lines.append(f"ShopeeFood: **{omzet_sf}**")
+            order_lines.append(f"ShopeeFood: **{order_sf}**")
+            
+        omzet_str = "\n".join(omzet_lines) if omzet_lines else "-"
+        order_str = "\n".join(order_lines) if order_lines else "-"
+
         embed = {
             "title"      : "📄 Laporan Baseline Selesai!",
             "description": (
@@ -684,8 +763,8 @@ def _notify_discord_pdf(outlet, start_date, end_date, aplikator,
                 {"name": "📍 Outlet",          "value": outlet,                              "inline": True},
                 {"name": "📱 Aplikator",        "value": aplikator,                           "inline": True},
                 {"name": "📅 Rentang Tanggal",  "value": f"`{start_date}` → `{end_date}`",   "inline": False},
-                {"name": "📊 Rata-rata Omzet",  "value": f"GrabFood: **{omzet_gr}**\nShopeeFood: **{omzet_sf}**", "inline": True},
-                {"name": "🛒 Rata-rata Order",  "value": f"GrabFood: **{order_gr}**\nShopeeFood: **{order_sf}**", "inline": True},
+                {"name": "📊 Rata-rata Omzet",  "value": omzet_str,                           "inline": True},
+                {"name": "🛒 Rata-rata Order",  "value": order_str,                           "inline": True},
                 {"name": "📁 Nama File",        "value": f"`{pdf_name}`",                    "inline": False},
             ],
             "footer"     : {"text": "Sistem Rekap Laporan Otomatis • OFD Report"},
@@ -720,7 +799,7 @@ Examples:
         "platform",
         nargs="?",
         type=lambda x: x.lower(),
-        choices=["grab", "shopee", "all"],
+        choices=["grab", "shopee", "gofood", "all"],
         default=None,
         help="Platform to run: grab, shopee, or all",
     )
@@ -775,6 +854,9 @@ Examples:
         else:
             results["Shopee"] = run_shopee(start_date, end_date, merchant_filter=shopee_merchant)
 
+    if platform in ("gofood", "all"):
+        results["GoFood"] = run_gofood(start_date, end_date, outlet_filter=outlet)
+
     # ── Summary ──
     elapsed = datetime.now() - start_time
     minutes = int(elapsed.total_seconds() // 60)
@@ -784,7 +866,7 @@ Examples:
     base_dir = os.path.dirname(os.path.abspath(__file__))
     
     # ── Merge Baseline Outputs ──
-    if task_choice == "1" and platform == "all":
+    if task_choice == "1":
         print(f"\n{YELLOW}{BOLD}▶ PENGGABUNGAN LAPORAN BASELINE{RESET}")
         try:
             import pandas as pd
@@ -817,7 +899,7 @@ Examples:
                 print(f"  [INFO] Menemukan file Grab baseline: {grab_path}")
                 frames.append(pd.read_excel(grab_path))
             else:
-                print(f"  [WARNING] File Grab baseline tidak ditemukan untuk: {outlet_safe}")
+                print(f"  [INFO] File Grab baseline tidak ditemukan untuk: {outlet_safe}")
             
             # Find Shopee Baseline output
             shopee_paths_to_check = []
@@ -841,7 +923,23 @@ Examples:
                 print(f"  [INFO] Menemukan file Shopee baseline: {shopee_path}")
                 frames.append(pd.read_excel(shopee_path))
             else:
-                print(f"  [WARNING] File Shopee baseline tidak ditemukan untuk: {shopee_safe}")
+                print(f"  [INFO] File Shopee baseline tidak ditemukan untuk: {shopee_safe}")
+
+            # Find GoFood Baseline output
+            gofood_paths_to_check = []
+            gofood_paths_to_check.append(os.path.join(base_dir, "goscrapperv2", "laporan_gofood", f"BASELINE_GOFOOD_{start_date}_to_{end_date}.xlsx"))
+            
+            gofood_path = None
+            for p_check in gofood_paths_to_check:
+                if os.path.exists(p_check):
+                    gofood_path = p_check
+                    break
+                    
+            if gofood_path:
+                print(f"  [INFO] Menemukan file GoFood baseline: {gofood_path}")
+                frames.append(pd.read_excel(gofood_path))
+            else:
+                print(f"  [INFO] File GoFood baseline tidak ditemukan untuk: {start_date} s/d {end_date}")
                 
             if frames:
                 combined_df = pd.concat(frames, ignore_index=True)
@@ -879,6 +977,7 @@ Examples:
                             print(f"  {DIM}Gagal mengambil nama Owner: {e}{RESET}")
 
                         # 2. Extract metrics from combined DataFrame
+                        omzet_go, order_go = 0.0, 0.0
                         omzet_gr, order_gr = 0.0, 0.0
                         omzet_sf, order_sf = 0.0, 0.0
                         
@@ -890,6 +989,9 @@ Examples:
                             elif "shopee" in app:
                                 omzet_sf = float(row.get("Rata-rata Omzet", 0))
                                 order_sf = float(row.get("Rata-rata Order", 0))
+                            elif "go" in app:
+                                omzet_go = float(row.get("Rata-rata Omzet", 0))
+                                order_go = float(row.get("Rata-rata Order", 0))
                                 
                         def format_rp(val):
                             return f"Rp {int(val):,}".replace(",", ".")
@@ -904,8 +1006,8 @@ Examples:
                             "tahun": str(now.year),
                             "owner": owner_name,
                             "nama_outlet": str(outlet),
-                            "omzet_go": "Rp 0",
-                            "order_go": "0",
+                            "omzet_go": format_rp(omzet_go),
+                            "order_go": str(round(order_go, 1)),
                             "omzet_gr": format_rp(omzet_gr),
                             "order_gr": str(round(order_gr, 1)),
                             "omzet_sf": format_rp(omzet_sf),
@@ -932,6 +1034,8 @@ Examples:
                                     omzet_sf=format_rp(omzet_sf),
                                     order_gr=str(round(order_gr, 1)),
                                     order_sf=str(round(order_sf, 1)),
+                                    omzet_go=format_rp(omzet_go),
+                                    order_go=str(round(order_go, 1)),
                                 )
                             else:
                                 print(f"  {RED}✗ Gagal membuat PDF: {data.get('error')}{RESET}")

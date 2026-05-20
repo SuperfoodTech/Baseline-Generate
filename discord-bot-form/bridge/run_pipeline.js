@@ -41,12 +41,19 @@ function convertDate(ddmmyyyy) {
  */
 function detectPlatform(aplikator) {
     const lower    = aplikator.toLowerCase();
+    const hasGo    = lower.includes('gofood');
     const hasGrab  = lower.includes('grabfood');
     const hasShopee = lower.includes('shopeefood');
-    if (hasGrab && hasShopee) return 'all';
-    if (hasGrab)              return 'grab';
-    if (hasShopee)            return 'shopee';
-    return 'all'; // GoFood only → fallback all
+    
+    const selected = [];
+    if (hasGo) selected.push('gofood');
+    if (hasGrab) selected.push('grab');
+    if (hasShopee) selected.push('shopee');
+    
+    if (selected.length === 1) {
+        return selected[0];
+    }
+    return 'all';
 }
 
 /**
