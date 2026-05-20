@@ -55,6 +55,10 @@ def to_csv_url(url):
     return url
 
 
+GLOBAL_OUTPUT_DIR = None
+
+
+
 def fetch_csv_rows(url):
     with urllib.request.urlopen(url) as resp:
         raw = resp.read()
@@ -630,8 +634,13 @@ def ambil_data_dashboard():
 
 
 def parse_tanggal_input(tanggal_str):
-    """Mengubah string YYYY-MM-DD menjadi datetime."""
-    return datetime.strptime(tanggal_str.strip(), "%Y-%m-%d")
+    """Mengubah string tanggal (DD-MM-YYYY atau YYYY-MM-DD) menjadi datetime."""
+    for fmt in ("%d-%m-%Y", "%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(tanggal_str.strip(), fmt)
+        except ValueError:
+            continue
+    raise ValueError(f"Format tanggal tidak valid: '{tanggal_str}'")
 
 
 def minta_range_tanggal_custom():
@@ -645,8 +654,8 @@ def minta_range_tanggal_custom():
 
     while True:
         try:
-            start_str = input("Masukkan tanggal mulai (format YYYY-MM-DD): ").strip()
-            end_str = input("Masukkan tanggal akhir (format YYYY-MM-DD): ").strip()
+            start_str = input("Masukkan tanggal mulai (format DD-MM-YYYY atau YYYY-MM-DD): ").strip()
+            end_str = input("Masukkan tanggal akhir (format DD-MM-YYYY atau YYYY-MM-DD): ").strip()
             start_date = parse_tanggal_input(start_str)
             end_date = parse_tanggal_input(end_str)
             if start_date > end_date:
@@ -654,7 +663,7 @@ def minta_range_tanggal_custom():
                 continue
             return start_date, end_date
         except ValueError:
-            print("⚠️ Format tanggal tidak valid. Gunakan YYYY-MM-DD.")
+            print("⚠️ Format tanggal tidak valid. Gunakan DD-MM-YYYY atau YYYY-MM-DD.")
 
 
 def ambil_data_analytics(write_header=True, start_date=None, end_date=None, return_data=False):
@@ -704,6 +713,11 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
             period_iter.append((curr_day.strftime('%Y-%m-%d'), label))
             curr_day = curr_day + timedelta(days=1)
         excel_filename = f"revenue_{start_date.strftime('%Y-%m-%d')}_sampai_{end_date.strftime('%Y-%m-%d')}.xlsx"
+
+    global GLOBAL_OUTPUT_DIR
+    if GLOBAL_OUTPUT_DIR:
+        os.makedirs(GLOBAL_OUTPUT_DIR, exist_ok=True)
+        excel_filename = os.path.join(GLOBAL_OUTPUT_DIR, excel_filename)
 
     # Konversi ke Epoch timestamp dalam milidetik untuk header
     range_from_ms = str(int(start_date.timestamp() * 1000))
@@ -1418,7 +1432,13 @@ def tulis_baseline_excel(all_results, start_date, end_date):
     # Build filename using date range
     start_str = start_date.strftime('%Y-%m-%d')
     end_str = end_date.strftime('%Y-%m-%d')
-    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'laporan_gofood')
+    
+    global GLOBAL_OUTPUT_DIR
+    if GLOBAL_OUTPUT_DIR:
+        output_dir = GLOBAL_OUTPUT_DIR
+    else:
+        output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'laporan_gofood')
+        
     os.makedirs(output_dir, exist_ok=True)
     filename = os.path.join(output_dir, f'BASELINE_GOFOOD_{start_str}_to_{end_str}.xlsx')
 
@@ -1434,8 +1454,13 @@ if __name__ == "__main__":
     parser.add_argument("--start-date", type=str, default=None, help="Start date (YYYY-MM-DD)")
     parser.add_argument("--end-date", type=str, default=None, help="End date (YYYY-MM-DD)")
     parser.add_argument("--outlet", type=str, default=None, help="Filter specific outlet name")
+    parser.add_argument("--branch", type=str, default=None, help="Filter specific branch name")
+    parser.add_argument("--output-dir", type=str, default=None, help="Directory to save output files")
     parser.add_argument("--no-proxy", action="store_true", help="Nonaktifkan proxy/WARP untuk sesi ini")
     args_cli = parser.parse_args()
+
+    if args_cli.output_dir:
+        GLOBAL_OUTPUT_DIR = args_cli.output_dir
 
     if args_cli.no_proxy:
         os.environ["USE_PROXY"] = "false"
@@ -1524,10 +1549,15 @@ if __name__ == "__main__":
     if args_cli.outlet:
         target_outlet = args_cli.outlet.strip().lower()
         resolved_accounts = [a for a in resolved_accounts if target_outlet in a['nama_outlet'].lower()]
+        if args_cli.branch:
+            target_branch = args_cli.branch.strip().lower()
+            resolved_accounts = [a for a in resolved_accounts if target_branch in a['cabang'].lower()]
         if not resolved_accounts:
-            console.print(f"[error]⚠️ Tidak ditemukan akun GoFood dengan outlet: {args_cli.outlet}[/error]")
+            branch_err = f" dan cabang: {args_cli.branch}" if args_cli.branch else ""
+            console.print(f"[error]⚠️ Tidak ditemukan akun GoFood dengan outlet: {args_cli.outlet}{branch_err}[/error]")
             exit(1)
-        console.print(f"[success]✅ Filter outlet: {args_cli.outlet} ({len(resolved_accounts)} akun)[/success]")
+        branch_msg = f" dan cabang: {args_cli.branch}" if args_cli.branch else ""
+        console.print(f"[success]✅ Filter outlet: {args_cli.outlet}{branch_msg} ({len(resolved_accounts)} akun)[/success]")
     else:
         console.print("[bold]Daftar Outlet GoFood yang tersedia:[/bold]")
         for i, acc in enumerate(resolved_accounts, 1):
@@ -1553,8 +1583,8 @@ if __name__ == "__main__":
 
     # --- LOGIKA TANGGAL ---
     if args_cli.start_date and args_cli.end_date:
-        custom_start_date = datetime.strptime(args_cli.start_date, "%Y-%m-%d")
-        custom_end_date = datetime.strptime(args_cli.end_date, "%Y-%m-%d")
+        custom_start_date = parse_tanggal_input(args_cli.start_date)
+        custom_end_date = parse_tanggal_input(args_cli.end_date)
         print(f"\n✅ Menggunakan range dari CLI: {args_cli.start_date} s/d {args_cli.end_date}\n")
     else:
         custom_start_date, custom_end_date = minta_range_tanggal_custom()

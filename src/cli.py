@@ -18,6 +18,19 @@ import sys
 import os
 from datetime import datetime, timedelta
 
+def normalize_date_string(date_str: str) -> str:
+    """
+    Parses a date string in various formats (DD-MM-YYYY, YYYY-MM-DD, etc.)
+    and returns a standardized YYYY-MM-DD string.
+    """
+    for fmt in ("%d-%m-%Y", "%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d"):
+        try:
+            dt = datetime.strptime(date_str.strip(), fmt)
+            return dt.strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    raise ValueError(f"Format tanggal tidak valid: '{date_str}'. Gunakan DD-MM-YYYY atau YYYY-MM-DD.")
+
 
 # ── Colour helpers (ANSI) ──────────────────────────────────────────────
 RESET  = "\033[0m"
@@ -428,7 +441,7 @@ def run_shopee_baseline(start_date: str, end_date: str, merchant_filter: str = N
         return False
 
 
-def run_gofood(start_date: str, end_date: str, outlet_filter: str = None):
+def run_gofood(start_date: str, end_date: str, outlet_filter: str = None, branch_filter: str = None, task_choice: str = "2"):
     """
     Delegates to the GoFood Login/Dashboard utility.
     Working directory is set to goscrapperv2 so that
@@ -440,6 +453,11 @@ def run_gofood(start_date: str, end_date: str, outlet_filter: str = None):
         print(f"{RED}[ERROR]{RESET} GoFood directory not found: {gofood_dir}")
         return False
 
+    if task_choice == "1":
+        output_dir = _resolve_output_dir("gofood_baseline", start_date, end_date)
+    else:
+        output_dir = _resolve_output_dir("gofood", start_date, end_date)
+
     import subprocess
     
     python_exe = _resolve_python_executable()
@@ -447,15 +465,21 @@ def run_gofood(start_date: str, end_date: str, outlet_filter: str = None):
     cmd = [
         python_exe, "gofood.py",
         "--start-date", start_date,
-        "--end-date", end_date
+        "--end-date", end_date,
+        "--output-dir", output_dir
     ]
     if outlet_filter:
         cmd.extend(["--outlet", outlet_filter])
+    if branch_filter:
+        cmd.extend(["--branch", branch_filter])
 
     print(f"\n{YELLOW}{BOLD}▶ GOFOOD AUTO LOGIN & SCRAPE PIPELINE{RESET}")
     print(f"  {DIM}Directory : {gofood_dir}{RESET}")
     if outlet_filter:
         print(f"  {DIM}Outlet    : {outlet_filter}{RESET}")
+    if branch_filter:
+        print(f"  {DIM}Cabang    : {branch_filter}{RESET}")
+    print(f"  {DIM}Output Dir: {output_dir}{RESET}")
     print(f"  {DIM}Date Range: {start_date} → {end_date}{RESET}")
     print()
 
@@ -839,6 +863,14 @@ Examples:
         shopee_merchant = _resolve_shopee_merchant(outlet, branch_name=branch) if outlet else None
         banner()
 
+    # Standardize/Normalize date strings to YYYY-MM-DD
+    try:
+        start_date = normalize_date_string(start_date)
+        end_date   = normalize_date_string(end_date)
+    except ValueError as err:
+        print(f"\n  {RED}[ERROR] {err}{RESET}")
+        sys.exit(1)
+
     # ── Execute ──
     results = {}
     start_time = datetime.now()
@@ -856,7 +888,7 @@ Examples:
             results["Shopee"] = run_shopee(start_date, end_date, merchant_filter=shopee_merchant)
 
     if "gofood" in platform or platform == "all":
-        results["GoFood"] = run_gofood(start_date, end_date, outlet_filter=outlet)
+        results["GoFood"] = run_gofood(start_date, end_date, outlet_filter=outlet, branch_filter=branch, task_choice=task_choice)
 
     # ── Summary ──
     elapsed = datetime.now() - start_time
@@ -932,7 +964,7 @@ Examples:
             # Find GoFood Baseline output
             if "gofood" in platform or platform == "all":
                 gofood_paths_to_check = []
-                gofood_paths_to_check.append(os.path.join(base_dir, "goscrapperv2", "laporan_gofood", f"BASELINE_GOFOOD_{start_date}_to_{end_date}.xlsx"))
+                gofood_paths_to_check.append(os.path.join(base_dir, "laporan", "gofood_baseline", date_folder, f"BASELINE_GOFOOD_{start_date}_to_{end_date}.xlsx"))
                 
                 gofood_path = None
                 for p_check in gofood_paths_to_check:
