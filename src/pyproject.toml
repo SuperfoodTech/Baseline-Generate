@@ -12,6 +12,7 @@ dependencies = [
     "selenium",
     "webdriver-manager",
     "undetected-chromedriver",
+    "rich",
 ]
 
 [project.scripts]
