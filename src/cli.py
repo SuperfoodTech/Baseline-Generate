@@ -508,7 +508,7 @@ def interactive_mode():
         # Filter hanya outlet yang memiliki minimal 1 aplikasi berstatus "Live"
         df_live = df[df["Status"].str.contains("Live", na=False, case=False)]
         outlets = sorted(df_live["Nama Outlet"].dropna().unique())
-        print(f"\n  {BOLD}Pilih Outlet untuk Baseline (Menarik seluruh cabang Grab & Shopee sekaligus):{RESET}")
+        print(f"\n  {BOLD}Pilih Outlet untuk Baseline (Menarik seluruh cabang Grab, Shopee, & GoFood sekaligus):{RESET}")
         for idx, o_name in enumerate(outlets):
             print(f"    {GREEN}[{idx + 1}]{RESET} {o_name}")
         print()
@@ -799,13 +799,15 @@ Examples:
         "platform",
         nargs="?",
         type=lambda x: x.lower(),
-        choices=["grab", "shopee", "gofood", "all"],
         default=None,
-        help="Platform to run: grab, shopee, or all",
+        help="Platform to run: grab, shopee, gofood, all",
     )
     parser.add_argument("--start", type=str, default=None, help="Start date (YYYY-MM-DD)")
     parser.add_argument("--end",   type=str, default=None, help="End date (YYYY-MM-DD)")
     parser.add_argument("--user",  type=str, default=None, help="Filter specific username (Grab only)")
+    parser.add_argument("--task",  type=str, choices=["1", "2"], default=None, help="Task type: 1 for Baseline, 2 for Weekly")
+    parser.add_argument("--outlet", type=str, default=None, help="Filter specific outlet name")
+    parser.add_argument("--branch", type=str, default=None, help="Filter specific branch name")
 
     args = parser.parse_args()
 
@@ -828,33 +830,32 @@ Examples:
     elif args.platform is None or args.start is None or args.end is None:
         task_choice, platform, start_date, end_date, outlet, branch, shopee_merchant = interactive_mode()
     else:
-        # Currently CLI args default to weekly (task 2)
-        task_choice = "2"
+        task_choice = args.task or "2"
         platform   = args.platform.lower()
         start_date = args.start
         end_date   = args.end
-        outlet     = None
-        branch     = None
-        shopee_merchant = None
+        outlet     = args.outlet
+        branch     = args.branch
+        shopee_merchant = _resolve_shopee_merchant(outlet, branch_name=branch) if outlet else None
         banner()
 
     # ── Execute ──
     results = {}
     start_time = datetime.now()
 
-    if platform in ("grab", "all"):
+    if "grab" in platform or platform == "all":
         if task_choice == "1":
             results["Grab"] = run_grab_baseline(start_date, end_date, user_filter=args.user, outlet_filter=outlet, branch_filter=branch)
         else:
             results["Grab"] = run_grab(start_date, end_date, user_filter=args.user, outlet_filter=outlet, branch_filter=branch)
 
-    if platform in ("shopee", "all"):
+    if "shopee" in platform or platform == "all":
         if task_choice == "1":
             results["Shopee"] = run_shopee_baseline(start_date, end_date, merchant_filter=shopee_merchant)
         else:
             results["Shopee"] = run_shopee(start_date, end_date, merchant_filter=shopee_merchant)
 
-    if platform in ("gofood", "all"):
+    if "gofood" in platform or platform == "all":
         results["GoFood"] = run_gofood(start_date, end_date, outlet_filter=outlet)
 
     # ── Summary ──
@@ -875,71 +876,75 @@ Examples:
             outlet_safe = str(outlet or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
             
             # Find Grab Baseline output
-            # In run_baseline Grab, branches are appended. We check branch-specific file first, then fallback to empty branch file.
-            grab_paths_to_check = []
-            if branch:
-                branch_safe = str(branch).strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
-                grab_paths_to_check.append(os.path.join(base_dir, "laporan", "grab_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}_{branch_safe}.xlsx"))
-            grab_paths_to_check.append(os.path.join(base_dir, "laporan", "grab_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}_.xlsx"))
-            
-            # Fallback glob pattern for any BASELINE_CUSTOM_{outlet_safe}_*.xlsx
-            import glob
-            glob_pattern = os.path.join(base_dir, "laporan", "grab_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}_*.xlsx")
-            for gp in glob.glob(glob_pattern):
-                if gp not in grab_paths_to_check:
-                    grab_paths_to_check.append(gp)
+            if "grab" in platform or platform == "all":
+                # In run_baseline Grab, branches are appended. We check branch-specific file first, then fallback to empty branch file.
+                grab_paths_to_check = []
+                if branch:
+                    branch_safe = str(branch).strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
+                    grab_paths_to_check.append(os.path.join(base_dir, "laporan", "grab_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}_{branch_safe}.xlsx"))
+                grab_paths_to_check.append(os.path.join(base_dir, "laporan", "grab_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}_.xlsx"))
+                
+                # Fallback glob pattern for any BASELINE_CUSTOM_{outlet_safe}_*.xlsx
+                import glob
+                glob_pattern = os.path.join(base_dir, "laporan", "grab_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}_*.xlsx")
+                for gp in glob.glob(glob_pattern):
+                    if gp not in grab_paths_to_check:
+                        grab_paths_to_check.append(gp)
 
-            grab_path = None
-            for p_check in grab_paths_to_check:
-                if os.path.exists(p_check):
-                    grab_path = p_check
-                    break
-                    
-            if grab_path:
-                print(f"  [INFO] Menemukan file Grab baseline: {grab_path}")
-                frames.append(pd.read_excel(grab_path))
-            else:
-                print(f"  [INFO] File Grab baseline tidak ditemukan untuk: {outlet_safe}")
+                grab_path = None
+                for p_check in grab_paths_to_check:
+                    if os.path.exists(p_check):
+                        grab_path = p_check
+                        break
+                        
+                if grab_path:
+                    print(f"  [INFO] Menemukan file Grab baseline: {grab_path}")
+                    frames.append(pd.read_excel(grab_path))
+                else:
+                    print(f"  [INFO] File Grab baseline tidak ditemukan untuk: {outlet_safe}")
             
             # Find Shopee Baseline output
-            shopee_paths_to_check = []
-            shopee_safe = str(shopee_merchant or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
-            shopee_paths_to_check.append(os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}.xlsx"))
-            shopee_paths_to_check.append(os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}_.xlsx"))
-            
-            # Fallback glob pattern for any BASELINE_CUSTOM_{shopee_safe}*.xlsx
-            glob_pattern_sf = os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}*.xlsx")
-            for gp in glob.glob(glob_pattern_sf):
-                if gp not in shopee_paths_to_check:
-                    shopee_paths_to_check.append(gp)
-                    
-            shopee_path = None
-            for p_check in shopee_paths_to_check:
-                if os.path.exists(p_check):
-                    shopee_path = p_check
-                    break
-                    
-            if shopee_path:
-                print(f"  [INFO] Menemukan file Shopee baseline: {shopee_path}")
-                frames.append(pd.read_excel(shopee_path))
-            else:
-                print(f"  [INFO] File Shopee baseline tidak ditemukan untuk: {shopee_safe}")
+            if "shopee" in platform or platform == "all":
+                shopee_paths_to_check = []
+                shopee_safe = str(shopee_merchant or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
+                shopee_paths_to_check.append(os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}.xlsx"))
+                shopee_paths_to_check.append(os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}_.xlsx"))
+                
+                # Fallback glob pattern for any BASELINE_CUSTOM_{shopee_safe}*.xlsx
+                import glob
+                glob_pattern_sf = os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}*.xlsx")
+                for gp in glob.glob(glob_pattern_sf):
+                    if gp not in shopee_paths_to_check:
+                        shopee_paths_to_check.append(gp)
+                        
+                shopee_path = None
+                for p_check in shopee_paths_to_check:
+                    if os.path.exists(p_check):
+                        shopee_path = p_check
+                        break
+                        
+                if shopee_path:
+                    print(f"  [INFO] Menemukan file Shopee baseline: {shopee_path}")
+                    frames.append(pd.read_excel(shopee_path))
+                else:
+                    print(f"  [INFO] File Shopee baseline tidak ditemukan untuk: {shopee_safe}")
 
             # Find GoFood Baseline output
-            gofood_paths_to_check = []
-            gofood_paths_to_check.append(os.path.join(base_dir, "goscrapperv2", "laporan_gofood", f"BASELINE_GOFOOD_{start_date}_to_{end_date}.xlsx"))
-            
-            gofood_path = None
-            for p_check in gofood_paths_to_check:
-                if os.path.exists(p_check):
-                    gofood_path = p_check
-                    break
-                    
-            if gofood_path:
-                print(f"  [INFO] Menemukan file GoFood baseline: {gofood_path}")
-                frames.append(pd.read_excel(gofood_path))
-            else:
-                print(f"  [INFO] File GoFood baseline tidak ditemukan untuk: {start_date} s/d {end_date}")
+            if "gofood" in platform or platform == "all":
+                gofood_paths_to_check = []
+                gofood_paths_to_check.append(os.path.join(base_dir, "goscrapperv2", "laporan_gofood", f"BASELINE_GOFOOD_{start_date}_to_{end_date}.xlsx"))
+                
+                gofood_path = None
+                for p_check in gofood_paths_to_check:
+                    if os.path.exists(p_check):
+                        gofood_path = p_check
+                        break
+                        
+                if gofood_path:
+                    print(f"  [INFO] Menemukan file GoFood baseline: {gofood_path}")
+                    frames.append(pd.read_excel(gofood_path))
+                else:
+                    print(f"  [INFO] File GoFood baseline tidak ditemukan untuk: {start_date} s/d {end_date}")
                 
             if frames:
                 combined_df = pd.concat(frames, ignore_index=True)
@@ -984,14 +989,14 @@ Examples:
                         for _, row in combined_df.iterrows():
                             app = str(row.get("Aplikasi", "")).lower()
                             if "grab" in app:
-                                omzet_gr = float(row.get("Rata-rata Omzet", 0))
-                                order_gr = float(row.get("Rata-rata Order", 0))
+                                omzet_gr += float(row.get("Rata-rata Omzet", 0))
+                                order_gr += float(row.get("Rata-rata Order", 0))
                             elif "shopee" in app:
-                                omzet_sf = float(row.get("Rata-rata Omzet", 0))
-                                order_sf = float(row.get("Rata-rata Order", 0))
+                                omzet_sf += float(row.get("Rata-rata Omzet", 0))
+                                order_sf += float(row.get("Rata-rata Order", 0))
                             elif "go" in app:
-                                omzet_go = float(row.get("Rata-rata Omzet", 0))
-                                order_go = float(row.get("Rata-rata Order", 0))
+                                omzet_go += float(row.get("Rata-rata Omzet", 0))
+                                order_go += float(row.get("Rata-rata Order", 0))
                                 
                         def format_rp(val):
                             return f"Rp {int(val):,}".replace(",", ".")
