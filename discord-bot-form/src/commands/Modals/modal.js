@@ -411,7 +411,32 @@ module.exports = {
             // Status awal — LIVE PROGRESS
             let currentPhase = '🔄 Memulai pipeline...';
             let phaseNumber = 0;
-            const totalPhases = 4;
+            
+            const selectedApps = selectedAplikatorValues.includes('all') 
+                ? Array.from(availableApps) 
+                : selectedAplikatorValues;
+            
+            const platforms = [];
+            if (selectedApps.includes('gofood')) platforms.push('gofood');
+            if (selectedApps.includes('grabfood')) platforms.push('grab');
+            if (selectedApps.includes('shopeefood')) platforms.push('shopee');
+            
+            const steps = [];
+            if (platforms.includes('grab')) {
+                steps.push({ id: 'grab', name: '📗 Scraping data Grab...' });
+            }
+            if (platforms.includes('shopee')) {
+                steps.push({ id: 'shopee', name: '🟠 Scraping data Shopee...' });
+            }
+            if (platforms.includes('gofood')) {
+                steps.push({ id: 'gofood', name: '🟢 Scraping data GoFood...' });
+            }
+            if (platforms.length > 1) {
+                steps.push({ id: 'merge', name: '📊 Menggabungkan laporan...' });
+            }
+            steps.push({ id: 'pdf', name: '📄 Membuat PDF Laporan...' });
+            
+            const totalPhases = steps.length;
 
             const makeProgressBar = (phase, total) => {
                 const filled = '█'.repeat(phase);
@@ -431,7 +456,7 @@ module.exports = {
                             `> 📱 **Platform:** ${formData.aplikator}\n` +
                             `> 📅 **Rentang:** ${formData.tanggalMulai} s/d ${formData.tanggalSelesai}\n\n` +
                             `🔄 *Memulai pipeline...*\n` +
-                            `⏱️ Estimasi waktu: **5–15 menit**`
+                            `⏱️ Estimasi waktu: **3–10 menit**`
                         )
                         .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
                         .setTimestamp()
@@ -456,7 +481,7 @@ module.exports = {
                                     `> 📱 **Platform:** ${formData.aplikator}\n` +
                                     `> 📅 **Rentang:** ${formData.tanggalMulai} s/d ${formData.tanggalSelesai}\n\n` +
                                     `${currentPhase}\n` +
-                                    `⏱️ Estimasi waktu: **5–15 menit**`
+                                    `⏱️ Estimasi waktu: **3–10 menit**`
                                 )
                                 .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
                                 .setTimestamp()
@@ -473,18 +498,23 @@ module.exports = {
                 const lower = logLine.toLowerCase();
                 let newPhase = null;
 
+                let matchedIndex = -1;
                 if (lower.includes('grab') && (lower.includes('pipeline') || lower.includes('automation') || lower.includes('fetching'))) {
-                    newPhase = '📗 **[1/4]** Scraping data Grab...';
-                    phaseNumber = 1;
+                    matchedIndex = steps.findIndex(s => s.id === 'grab');
                 } else if (lower.includes('shopee') && (lower.includes('pipeline') || lower.includes('launching') || lower.includes('triggering'))) {
-                    newPhase = '🟠 **[2/4]** Scraping data Shopee...';
-                    phaseNumber = 2;
+                    matchedIndex = steps.findIndex(s => s.id === 'shopee');
+                } else if (lower.includes('gofood') && (lower.includes('pipeline') || lower.includes('login') || lower.includes('scrapperv2') || lower.includes('memproses'))) {
+                    matchedIndex = steps.findIndex(s => s.id === 'gofood');
                 } else if (lower.includes('penggabungan') || lower.includes('gabung') || lower.includes('merging')) {
-                    newPhase = '📊 **[3/4]** Menggabungkan laporan Grab + Shopee...';
-                    phaseNumber = 3;
+                    matchedIndex = steps.findIndex(s => s.id === 'merge');
                 } else if (lower.includes('pdf') || lower.includes('apps script') || lower.includes('webhook')) {
-                    newPhase = '📄 **[4/4]** Membuat PDF & mengirim ke Discord...';
-                    phaseNumber = 4;
+                    matchedIndex = steps.findIndex(s => s.id === 'pdf');
+                }
+
+                if (matchedIndex !== -1) {
+                    phaseNumber = matchedIndex + 1;
+                    const step = steps[matchedIndex];
+                    newPhase = `**[${phaseNumber}/${totalPhases}]** ${step.name}`;
                 }
 
                 if (newPhase && newPhase !== currentPhase) {
