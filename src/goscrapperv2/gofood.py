@@ -439,9 +439,10 @@ def login_outlet_gofood_flow(outlet_info):
         else:
             proxy_config = {"server": proxy_server}
 
+    headless_mode = os.getenv("HEADLESS", "false").lower() == "true" or os.getenv("HEADLESS_GOFOOD", "false").lower() == "true"
     with sync_playwright() as p:
         browser = p.chromium.launch(
-            headless=False,
+            headless=headless_mode,
             args=[
                 '--disable-blink-features=AutomationControlled',
                 '--disable-infobars',
