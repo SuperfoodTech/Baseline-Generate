@@ -127,13 +127,16 @@ function runPipeline(formData, onLog = () => {}) {
         proc.stdout.on('data', (data) => {
             const line = data.toString();
             output += line;
+            process.stdout.write(data); // Stream to docker compose logs live and uncropped
             // Kirim baris penting ke Discord (filter noise ANSI)
             const clean = line.replace(/\x1B\[[0-9;]*m/g, '').trim();
             if (clean) onLog(clean.substring(0, 200));
         });
 
         proc.stderr.on('data', (data) => {
-            output += data.toString();
+            const str = data.toString();
+            output += str;
+            process.stderr.write(data); // Stream errors to docker compose logs live and uncropped
         });
 
         proc.on('close', (exitCode) => {
