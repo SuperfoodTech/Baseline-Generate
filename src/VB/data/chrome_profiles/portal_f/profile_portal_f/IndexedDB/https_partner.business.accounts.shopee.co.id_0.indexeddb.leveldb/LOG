@@ -1,0 +1,10 @@
+2026/05/23-10:22:06.143 8cb5 Creating DB /home/akbarhann/project/task-weekly/src/VB/data/chrome_profiles/portal_f/profile_portal_f/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb since it was missing.
+2026/05/23-10:22:06.148 8cb5 Reusing MANIFEST /home/akbarhann/project/task-weekly/src/VB/data/chrome_profiles/portal_f/profile_portal_f/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/MANIFEST-000001
+2026/05/23-10:22:06.186 8cc7 Level-0 table #5: started
+2026/05/23-10:22:06.188 8cc7 Level-0 table #5: 2210 bytes OK
+2026/05/23-10:22:06.193 8cc7 Delete type=0 #3
+2026/05/23-10:22:06.193 8cb5 Manual compaction at level-0 from '\x00\x01\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x02\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/05/23-10:22:11.647 8cb8 Level-0 table #7: started
+2026/05/23-10:22:11.649 8cb8 Level-0 table #7: 6200 bytes OK
+2026/05/23-10:22:11.651 8cb8 Delete type=0 #4
+2026/05/23-10:22:11.652 8cb8 Manual compaction at level-0 from '\x00\x04\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x05\x00\x00\x00' @ 0 : 0; will stop at (end)

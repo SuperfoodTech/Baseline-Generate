@@ -1,0 +1,7 @@
+2026/05/23-10:59:53.037 b2b0 Reusing MANIFEST /home/akbarhann/project/task-weekly/src/VB/data/chrome_profiles/portal_f/profile_portal_f/IndexedDB/https_partner.shopee.co.id_0.indexeddb.leveldb/MANIFEST-000001
+2026/05/23-10:59:53.038 b2b0 Recovering log #3
+2026/05/23-10:59:53.039 b2b0 Reusing old log /home/akbarhann/project/task-weekly/src/VB/data/chrome_profiles/portal_f/profile_portal_f/IndexedDB/https_partner.shopee.co.id_0.indexeddb.leveldb/000003.log 
+2026/05/23-11:10:44.447 b2b1 Level-0 table #5: started
+2026/05/23-11:10:44.456 b2b1 Level-0 table #5: 72766 bytes OK
+2026/05/23-11:10:44.460 b2b1 Delete type=0 #3
+2026/05/23-11:10:44.460 b2b1 Manual compaction at level-0 from (begin) .. (end); will stop at (end)

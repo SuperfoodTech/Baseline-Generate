@@ -353,6 +353,170 @@ class ShopeeClient:
             
         return []
 
+    def _wallet_headers(self) -> dict:
+        """Headers for Wallet API (Merchant-level context, shopee_tob_entity_id cookie must be empty)."""
+        cookies = self.extra_cookies.copy()
+        cookies["shopee_tob_token"]     = self.tob_token
+        cookies["shopee_tob_entity_id"] = ""
+        cookie_str = "; ".join(f"{k}={v}" for k, v in cookies.items())
+
+        return {
+            "Host":           "foody.shopee.co.id",
+            "Accept":         "application/json, text/plain, */*",
+            "Content-Type":   "application/json",
+            "User-Agent":     self.user_agent,
+            "Cookie":         cookie_str,
+            "X-Sf-Platform":  "2",
+            "Operate-Source": "partnerapp",
+            "Origin":         "https://partner.shopee.co.id",
+            "Referer":        "https://partner.shopee.co.id/",
+        }
+
+    def submit_wallet_export(self, start_time: int, end_time: int, wallet_id: str = None) -> str:
+        """
+        POST /api/seller/v1/wallet/export-task/submit
+        Triggers an Excel export of wallet transactions for the given time range.
+        Returns the task_id if successful, or None/False.
+        """
+        url = "https://foody.shopee.co.id/api/seller/v1/wallet/export-task/submit"
+        
+        # Static mapping fallback for VB portals if wallet_id is not passed
+        wallet_map = {
+            "11511947": "13629594", # portal_f (SuperFood)
+            "14367488": "16612848", # portal_w (WonderFood)
+            "14384953": "16634272", # portal_l (LOKARASA)
+            "15892383": "18362777", # portal_d (Gurame Bakar, Do Eat)
+        }
+        
+        target_wallet_id = wallet_id or wallet_map.get(str(self.entity_id))
+        search_wallet_ids = [target_wallet_id] if target_wallet_id else []
+        
+        payload = {
+            "export_type": 56,
+            "filter": {
+                "search_start_time": str(start_time),
+                "search_end_time": str(end_time),
+                "search_wallet_ids": search_wallet_ids
+            }
+        }
+        try:
+            resp = self.session.post(url, json=payload, headers=self._wallet_headers(), timeout=15)
+            data = resp.json()
+            if data.get("code") == 0:
+                task_id = data.get("data", {}).get("task_id")
+                log.info(f"✅ [API] Wallet export triggered successfully: task_id={task_id}")
+                return str(task_id)
+            log.warning(f"[API] submit_wallet_export failed: code={data.get('code')} msg={data.get('msg')}")
+        except Exception as e:
+            log.error(f"submit_wallet_export exception: {e}")
+            return None
+        return False
+
+    def get_wallet_report_list(self) -> list[dict]:
+        """
+        GET /api/seller/v1/wallet/export-task/list
+        Returns the list of generated wallet reports.
+        """
+        url = "https://foody.shopee.co.id/api/seller/v1/wallet/export-task/list?export_type=56&page_num=1&page_size=20"
+        try:
+            resp = self.session.get(url, headers=self._wallet_headers(), timeout=15)
+            data = resp.json()
+            if data.get("code") == 0:
+                tasks = data.get("data", {}).get("task_list", [])
+                normalized = []
+                for t in tasks:
+                    normalized.append({
+                        "id": str(t.get("task_id")),
+                        "name": t.get("task_name"),
+                        "status": t.get("task_status"), # 3 means ready/success
+                        "download_url": t.get("file_url"),
+                        "create_time": 0 # Not provided directly in task_list items
+                    })
+                return normalized
+            log.warning(f"get_wallet_report_list failed: code={data.get('code')} msg={data.get('msg')}")
+        except Exception as e:
+            log.error(f"get_wallet_report_list exception: {e}")
+            return None
+        return []
+
+    def search_wallet_transactions(
+        self,
+        start_time: int,
+        end_time: int,
+        wallet_id: str = None,
+        page_size: int = 50,
+    ) -> list[dict]:
+        """
+        POST /api/seller/v1/wallet/transaction/search
+        Fetches wallet transactions directly (paginated). Returns a flat list of all
+        transaction records for the given time range.
+        Documented in src/VB/shopee/API/search-transaction-*.
+
+        Note: Shopee enforces a max page_size of 50. Values above 50 cause ERROR_PARAMS_INVALID.
+        """
+        url = f"{SELLER_BASE}/api/seller/v1/wallet/transaction/search"
+
+        # Enforce Shopee's page size cap
+        page_size = min(page_size, 50)
+
+        # Resolve wallet_id from static VB portal map if not provided
+        wallet_map = {
+            "11511947": "13629594",  # portal_f (SuperFood)
+            "14367488": "16612848",  # portal_w (WonderFood)
+            "14384953": "16634272",  # portal_l (LOKARASA)
+            "15892383": "18362777",  # portal_d (Gurame Bakar, Do Eat)
+        }
+        mw = wallet_id or wallet_map.get(str(self.entity_id), "")
+
+        all_records: list[dict] = []
+        page_num = 1
+
+        while True:
+            payload: dict = {
+                "filter": {
+                    "search_start_time": str(start_time),
+                    "search_end_time": str(end_time),
+                },
+                "page_num": page_num,
+                "page_size": page_size,
+            }
+            # Only include mw when we have a valid wallet ID — empty string causes ERROR_PARAMS_INVALID
+            if mw:
+                payload["mw"] = mw
+
+            try:
+                resp = self.session.post(
+                    url,
+                    json=payload,
+                    headers=self._wallet_headers(),
+                    timeout=20,
+                )
+                data = resp.json()
+                if data.get("code") != 0:
+                    log.warning(
+                        f"search_wallet_transactions page {page_num} failed: "
+                        f"code={data.get('code')} msg={data.get('msg')}"
+                    )
+                    break
+
+                records = data.get("data", {}).get("transaction_logs", [])
+                total = data.get("data", {}).get("total", 0)
+                all_records.extend(records)
+
+                log.info(
+                    f"  📄 [WALLET SEARCH] Page {page_num}: "
+                    f"{len(records)} records fetched, total={total}"
+                )
+
+                if len(all_records) >= total or len(records) == 0:
+                    break
+                page_num += 1
+            except Exception as e:
+                log.error(f"search_wallet_transactions exception (page {page_num}): {e}")
+                break
+
+        return all_records
+
     # ── Buyer API methods (public, no auth) ────────────────────────────────────
 
     def get_public_store_detail(self, store_id: str) -> dict:

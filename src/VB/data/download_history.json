@@ -1,0 +1,58 @@
+{
+  "portal_l::20260517_20260523": {
+    "path": "/home/akbarhann/project/task-weekly/src/laporan/shopee_vb/2026-05-17_to_2026-05-23/LOKARASA_Transactions_20260517_20260523.xlsx",
+    "merchant": "LOKARASA",
+    "range": "17 May 2026 - 23 May 2026",
+    "rows": 20,
+    "source": "search_api",
+    "fetched_at": "2026-05-23T13:10:03.745736"
+  },
+  "portal_l::20260513_20260523": {
+    "path": "/home/akbarhann/project/task-weekly/src/laporan/shopee_vb/2026-05-13_to_2026-05-23/LOKARASA_LOKARASA_Transactions_20260513_20260523.xlsx",
+    "merchant": "LOKARASA",
+    "range": "13 May 2026 - 23 May 2026",
+    "source": "export_task",
+    "task_id": "253531",
+    "fetched_at": "2026-05-23T15:35:47.321595"
+  },
+  "portal_d::20260516_20260523": {
+    "path": "/home/akbarhann/project/task-weekly/src/laporan/shopee_vb/2026-05-16_to_2026-05-23/Gurame_Bakar,_Do_Eat_Gurame_Bakar,_Do_Eat_Transactions_20260516_20260523.xlsx",
+    "merchant": "Gurame Bakar, Do Eat",
+    "range": "16 May 2026 - 23 May 2026",
+    "source": "export_task",
+    "task_id": "253558",
+    "fetched_at": "2026-05-23T15:24:07.525179"
+  },
+  "portal_l::20260516_20260523": {
+    "path": "/home/akbarhann/project/task-weekly/src/laporan/shopee_vb/2026-05-16_to_2026-05-23/LOKARASA_LOKARASA_Transactions_20260516_20260523.xlsx",
+    "merchant": "LOKARASA",
+    "range": "16 May 2026 - 23 May 2026",
+    "source": "export_task",
+    "task_id": "253559",
+    "fetched_at": "2026-05-23T15:27:06.832441"
+  },
+  "portal_d::20260513_20260523": {
+    "path": "/home/akbarhann/project/task-weekly/src/laporan/shopee_vb/2026-05-13_to_2026-05-23/Gurame_Bakar,_Do_Eat_Gurame_Bakar,_Do_Eat_Transactions_20260513_20260523.xlsx",
+    "merchant": "Gurame Bakar, Do Eat",
+    "range": "13 May 2026 - 23 May 2026",
+    "source": "export_task",
+    "task_id": "253563",
+    "fetched_at": "2026-05-23T15:48:03.368125"
+  },
+  "portal_l::20260510_20260520": {
+    "path": "/home/akbarhann/project/task-weekly/src/laporan/shopee_vb/2026-05-10_to_2026-05-20/LOKARASA_LOKARASA_Transactions_20260510_20260520.xlsx",
+    "merchant": "LOKARASA",
+    "range": "10 May 2026 - 20 May 2026",
+    "source": "export_task",
+    "task_id": "253568",
+    "fetched_at": "2026-05-23T15:54:07.682195"
+  },
+  "portal_d::20260510_20260520": {
+    "path": "/home/akbarhann/project/task-weekly/src/laporan/shopee_vb/2026-05-10_to_2026-05-20/Gurame_Bakar,_Do_Eat_Gurame_Bakar,_Do_Eat_Transactions_20260510_20260520.xlsx",
+    "merchant": "Gurame Bakar, Do Eat",
+    "range": "10 May 2026 - 20 May 2026",
+    "source": "export_task",
+    "task_id": "253567",
+    "fetched_at": "2026-05-23T16:14:09.710811"
+  }
+}

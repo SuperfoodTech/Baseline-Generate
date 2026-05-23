@@ -441,6 +441,43 @@ def run_shopee_baseline(start_date: str, end_date: str, merchant_filter: str = N
         return False
 
 
+def run_shopee_vb(start_date: str, end_date: str, merchant_filter: str = None):
+    shopee_vb_dir = os.path.join(os.path.dirname(__file__), "VB", "shopee")
+    
+    if not os.path.isdir(shopee_vb_dir):
+        print(f"{RED}[ERROR]{RESET} Shopee VB directory not found: {shopee_vb_dir}")
+        return False
+
+    output_dir = _resolve_output_dir("shopee_vb", start_date, end_date)
+
+    import subprocess
+    
+    python_exe = _resolve_python_executable()
+    cmd = [
+        python_exe, "run_baseline.py",
+        "--start", start_date,
+        "--end", end_date,
+        "--output-dir", output_dir,
+    ]
+    if merchant_filter:
+        cmd.extend(["--merchant", merchant_filter])
+
+    print(f"\n{MAGENTA}{BOLD}▶ SHOPEE VB PIPELINE{RESET}")
+    print(f"  {DIM}Directory : {shopee_vb_dir}{RESET}")
+    print(f"  {DIM}Output    : {output_dir}{RESET}")
+    print(f"  {DIM}Date Range: {start_date} → {end_date}{RESET}")
+    print()
+
+    result = subprocess.run(cmd, cwd=shopee_vb_dir)
+    
+    if result.returncode == 0:
+        print(f"\n{GREEN}✓ Shopee VB completed successfully.{RESET}")
+        return True
+    else:
+        print(f"\n{RED}✗ Shopee VB exited with code {result.returncode}.{RESET}")
+        return False
+
+
 def run_gofood(start_date: str, end_date: str, outlet_filter: str = None, branch_filter: str = None, task_choice: str = "2"):
     """
     Delegates to the GoFood Login/Dashboard utility.
@@ -505,13 +542,14 @@ def interactive_mode():
     print(f"  {BOLD}Pilih Task:{RESET}")
     print(f"    {GREEN}[1]{RESET} Baseline")
     print(f"    {CYAN}[2]{RESET} Weekly")
+    print(f"    {MAGENTA}[3]{RESET} Virtual Brand (VB)")
     print()
 
     while True:
-        task_choice = input(f"  {BOLD}Pilihan (1/2):{RESET} ").strip()
-        if task_choice in ("1", "2"):
+        task_choice = input(f"  {BOLD}Pilihan (1/2/3):{RESET} ").strip()
+        if task_choice in ("1", "2", "3"):
             break
-        print(f"  {RED}Input tidak valid. Masukkan 1 atau 2.{RESET}")
+        print(f"  {RED}Input tidak valid. Masukkan 1, 2, atau 3.{RESET}")
 
     if task_choice == "1":
         print(f"\n  {GREEN}[INFO] Mengaktifkan Mode Baseline.{RESET}")
@@ -568,15 +606,24 @@ def interactive_mode():
         print(f"\n  {BOLD}Pilih platform:{RESET}")
         print(f"    {GREEN}[1]{RESET} Grab")
         print(f"    {MAGENTA}[2]{RESET} Shopee")
-        print(f"    {YELLOW}[3]{RESET} GoFood")
-        print(f"    {CYAN}[4]{RESET} Semua Platform (Grab + Shopee + GoFood)")
+        if task_choice != "3":
+            print(f"    {YELLOW}[3]{RESET} GoFood")
+            print(f"    {CYAN}[4]{RESET} Semua Platform (Grab + Shopee + GoFood)")
+        else:
+            print(f"    {CYAN}[4]{RESET} Kedua Platform (Grab + Shopee)")
         print()
 
         while True:
-            choice = input(f"  {BOLD}Pilihan (1/2/3/4):{RESET} ").strip()
-            if choice in ("1", "2", "3", "4"):
-                break
-            print(f"  {RED}Input tidak valid. Masukkan 1, 2, 3, atau 4.{RESET}")
+            if task_choice != "3":
+                choice = input(f"  {BOLD}Pilihan (1/2/3/4):{RESET} ").strip()
+                if choice in ("1", "2", "3", "4"):
+                    break
+                print(f"  {RED}Input tidak valid. Masukkan 1, 2, 3, atau 4.{RESET}")
+            else:
+                choice = input(f"  {BOLD}Pilihan (1/2/4):{RESET} ").strip()
+                if choice in ("1", "2", "4"):
+                    break
+                print(f"  {RED}Input tidak valid. Masukkan 1, 2, atau 4.{RESET}")
 
         platform_map = {"1": "grab", "2": "shopee", "3": "gofood", "4": "all"}
         platform = platform_map[choice]
@@ -593,9 +640,9 @@ def interactive_mode():
                 break
             print(f"  {RED}Input tidak valid. Masukkan 1 atau 2.{RESET}")
 
-        outlet = None
-        branch = None
-        shopee_merchant = None
+        outlet = []
+        branch = []
+        shopee_merchant = []
 
         if scope_choice == "2":
             import pandas as pd
@@ -603,54 +650,88 @@ def interactive_mode():
             import io
 
             print(f"\n  {CYAN}[INFO] Mengunduh daftar merchant terbaru dari Google Sheets...{RESET}")
-            CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv"
+            CSV_URL_MAIN = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv"
+            CSV_URL_VB = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYSUnKOqk29LCktTxdb0wPLbWMbRaWRP3eC_UA4AwYod1FW6zDMhtLMC5ghIvot2B8upCDfBsn-TCP/pub?gid=565510790&single=true&output=csv"
+            
             try:
-                resp = requests.get(CSV_URL, timeout=30)
-                resp.raise_for_status()
-                df = pd.read_csv(io.StringIO(resp.text))
+                resp_main = requests.get(CSV_URL_MAIN, timeout=30)
+                resp_main.raise_for_status()
+                df_main = pd.read_csv(io.StringIO(resp_main.text))
             except Exception as e:
-                print(f"  {RED}[ERROR] Gagal mengunduh Google Sheets: {e}{RESET}")
+                print(f"  {RED}[ERROR] Gagal mengunduh Google Sheets utama: {e}{RESET}")
                 sys.exit(1)
+                
+            df_vb = pd.DataFrame()
+            if task_choice == "3" and platform in ("shopee", "all"):
+                try:
+                    resp_vb = requests.get(CSV_URL_VB, timeout=30)
+                    resp_vb.raise_for_status()
+                    df_vb = pd.read_csv(io.StringIO(resp_vb.text))
+                except Exception as e:
+                    print(f"  {RED}[ERROR] Gagal mengunduh Google Sheets VB: {e}{RESET}")
+                    sys.exit(1)
 
             # --- FILTER CUSTOM GRAB ---
             if platform in ("grab", "all"):
-                df_grab = df[df["Aplikasi"].str.contains("Grab", na=False, case=False) & df["Status"].str.contains("Live", na=False, case=False)]
+                df_grab = df_main[df_main["Aplikasi"].str.contains("Grab", na=False, case=False) & df_main["Status"].str.contains("Live", na=False, case=False)]
+                # (For VB mode we might use Grab from main sheet if Grab VB isn't on a separate sheet)
+                if task_choice == "3":
+                    pass
+                
                 if not df_grab.empty:
-                    outlets = sorted(df_grab["Nama Outlet"].dropna().unique())
+                    outlets_list = sorted(df_grab["Nama Outlet"].dropna().unique())
                     print(f"\n  {BOLD}Pilih Outlet Grab:{RESET}")
-                    for idx, o_name in enumerate(outlets):
+                    for idx, o_name in enumerate(outlets_list):
                         print(f"    {GREEN}[{idx + 1}]{RESET} {o_name}")
                     print()
                     while True:
                         try:
-                            o_choice = int(input(f"  {BOLD}Pilih nomor outlet Grab (1-{len(outlets)}):{RESET} ").strip())
-                            if 1 <= o_choice <= len(outlets):
-                                outlet = outlets[o_choice - 1]
+                            o_choices = input(f"  {BOLD}Pilih nomor outlet Grab (contoh: 1,3 atau 'all'):{RESET} ").strip()
+                            if o_choices.lower() == "all":
+                                outlet = outlets_list
                                 break
+                            else:
+                                indices = [int(x.strip()) for x in o_choices.split(",") if x.strip()]
+                                if all(1 <= i <= len(outlets_list) for i in indices):
+                                    outlet = [outlets_list[i - 1] for i in indices]
+                                    break
                         except ValueError: pass
                         print(f"  {RED}Pilihan tidak valid.{RESET}")
 
-                    df_branch = df_grab[df_grab["Nama Outlet"] == outlet]
-                    branches = sorted(df_branch["Cabang"].dropna().unique())
-                    print(f"\n  {BOLD}Pilih Cabang Grab untuk '{outlet}':{RESET}")
-                    for idx, b_name in enumerate(branches):
-                        print(f"    {GREEN}[{idx + 1}]{RESET} {b_name}")
-                    print()
-                    while True:
-                        try:
-                            b_choice = int(input(f"  {BOLD}Pilih nomor cabang Grab (1-{len(branches)}):{RESET} ").strip())
-                            if 1 <= b_choice <= len(branches):
-                                branch = branches[b_choice - 1]
-                                break
-                        except ValueError: pass
-                        print(f"  {RED}Pilihan tidak valid.{RESET}")
+                    if len(outlet) == 1:
+                        df_branch = df_grab[df_grab["Nama Outlet"] == outlet[0]]
+                        branches = sorted(df_branch["Cabang"].dropna().unique())
+                        print(f"\n  {BOLD}Pilih Cabang Grab untuk '{outlet[0]}':{RESET}")
+                        for idx, b_name in enumerate(branches):
+                            print(f"    {GREEN}[{idx + 1}]{RESET} {b_name}")
+                        print()
+                        while True:
+                            try:
+                                b_choices = input(f"  {BOLD}Pilih nomor cabang Grab (contoh: 1,2 atau 'all'):{RESET} ").strip()
+                                if b_choices.lower() == "all":
+                                    branch = branches
+                                    break
+                                else:
+                                    indices = [int(x.strip()) for x in b_choices.split(",") if x.strip()]
+                                    if all(1 <= i <= len(branches) for i in indices):
+                                        branch = [branches[i - 1] for i in indices]
+                                        break
+                            except ValueError: pass
+                            print(f"  {RED}Pilihan tidak valid.{RESET}")
+                    else:
+                        # Multiple outlets chosen -> all branches for those outlets
+                        branch = []
                 else:
                     print(f"  {RED}[ERROR] Tidak ada outlet Grab yang berstatus Live di Google Sheets.{RESET}")
                     sys.exit(1)
 
             # --- FILTER CUSTOM SHOPEE ---
             if platform in ("shopee", "all"):
-                df_shopee = df[df["Aplikasi"].str.contains("Shopee", na=False, case=False) & df["Status"].str.contains("Live", na=False, case=False)]
+                if task_choice == "3":
+                    df_shopee = df_vb
+                else:
+                    df_shopee = df_main[df_main["Aplikasi"].str.contains("Shopee", na=False, case=False) & df_main["Status"].str.contains("Live", na=False, case=False)]
+                    
                 if not df_shopee.empty:
                     merchants = sorted(df_shopee["Merchant Name"].dropna().unique())
                     print(f"\n  {BOLD}Pilih Merchant ShopeeFood:{RESET}")
@@ -659,19 +740,24 @@ def interactive_mode():
                     print()
                     while True:
                         try:
-                            m_choice = int(input(f"  {BOLD}Pilih nomor merchant Shopee (1-{len(merchants)}):{RESET} ").strip())
-                            if 1 <= m_choice <= len(merchants):
-                                shopee_merchant = merchants[m_choice - 1]
+                            m_choices = input(f"  {BOLD}Pilih nomor merchant Shopee (contoh: 1,2 atau 'all'):{RESET} ").strip()
+                            if m_choices.lower() == "all":
+                                shopee_merchant = merchants
                                 break
+                            else:
+                                indices = [int(x.strip()) for x in m_choices.split(",") if x.strip()]
+                                if all(1 <= i <= len(merchants) for i in indices):
+                                    shopee_merchant = [merchants[i - 1] for i in indices]
+                                    break
                         except ValueError: pass
                         print(f"  {RED}Pilihan tidak valid.{RESET}")
                 else:
-                    print(f"  {RED}[ERROR] Tidak ada merchant Shopee yang berstatus Live di Google Sheets.{RESET}")
+                    print(f"  {RED}[ERROR] Tidak ada merchant Shopee di Google Sheets.{RESET}")
                     sys.exit(1)
 
             # --- FILTER CUSTOM GOFOOD ---
-            if platform in ("gofood", "all"):
-                df_gofood = df[df["Aplikasi"].str.contains("GoFood", na=False, case=False) & df["Status"].str.contains("Live", na=False, case=False)]
+            if platform in ("gofood", "all") and task_choice != "3":
+                df_gofood = df_main[df_main["Aplikasi"].str.contains("GoFood", na=False, case=False) & df_main["Status"].str.contains("Live", na=False, case=False)]
                 if not df_gofood.empty:
                     gofood_outlets = sorted(df_gofood["Nama Outlet"].dropna().unique())
                     print(f"\n  {BOLD}Pilih Outlet GoFood:{RESET}")
@@ -680,10 +766,22 @@ def interactive_mode():
                     print()
                     while True:
                         try:
-                            o_choice = int(input(f"  {BOLD}Pilih nomor outlet GoFood (1-{len(gofood_outlets)}):{RESET} ").strip())
-                            if 1 <= o_choice <= len(gofood_outlets):
-                                outlet = gofood_outlets[o_choice - 1]
+                            o_choices = input(f"  {BOLD}Pilih nomor outlet GoFood (contoh: 1,3 atau 'all'):{RESET} ").strip()
+                            if o_choices.lower() == "all":
+                                if not outlet: # If user selected all in platform prompt, we append
+                                    outlet = gofood_outlets
+                                else:
+                                    outlet.extend([x for x in gofood_outlets if x not in outlet])
                                 break
+                            else:
+                                indices = [int(x.strip()) for x in o_choices.split(",") if x.strip()]
+                                if all(1 <= i <= len(gofood_outlets) for i in indices):
+                                    selected_go = [gofood_outlets[i - 1] for i in indices]
+                                    if not outlet:
+                                        outlet = selected_go
+                                    else:
+                                        outlet.extend([x for x in selected_go if x not in outlet])
+                                    break
                         except ValueError: pass
                         print(f"  {RED}Pilihan tidak valid.{RESET}")
                 else:
@@ -718,7 +816,10 @@ def interactive_mode():
         sys.exit(1)
 
     # ─ Confirmation ─
-    platform_label = {"grab": "Grab", "shopee": "Shopee", "gofood": "GoFood", "all": "Semua Platform (Grab + Shopee + GoFood)"}[platform]
+    if task_choice == "3":
+        platform_label = {"grab": "Grab", "shopee": "Shopee", "all": "Kedua Platform (Grab + Shopee)"}[platform]
+    else:
+        platform_label = {"grab": "Grab", "shopee": "Shopee", "gofood": "GoFood", "all": "Semua Platform (Grab + Shopee + GoFood)"}[platform]
     date_folder = f"{start_date}_to_{end_date}"
     
     print(f"\n  {CYAN}{'─'*50}{RESET}")
@@ -829,7 +930,7 @@ Examples:
     parser.add_argument("--start", type=str, default=None, help="Start date (YYYY-MM-DD)")
     parser.add_argument("--end",   type=str, default=None, help="End date (YYYY-MM-DD)")
     parser.add_argument("--user",  type=str, default=None, help="Filter specific username (Grab only)")
-    parser.add_argument("--task",  type=str, choices=["1", "2"], default=None, help="Task type: 1 for Baseline, 2 for Weekly")
+    parser.add_argument("--task",  type=str, choices=["1", "2", "3"], default=None, help="Task type: 1 for Baseline, 2 for Weekly, 3 for VB")
     parser.add_argument("--outlet", type=str, default=None, help="Filter specific outlet name")
     parser.add_argument("--branch", type=str, default=None, help="Filter specific branch name")
 
@@ -871,24 +972,47 @@ Examples:
         print(f"\n  {RED}[ERROR] {err}{RESET}")
         sys.exit(1)
 
+    # Convert singles to lists for uniform handling if passed via args
+    if not isinstance(outlet, list): outlet = [outlet] if outlet else []
+    if not isinstance(branch, list): branch = [branch] if branch else []
+    if not isinstance(shopee_merchant, list): shopee_merchant = [shopee_merchant] if shopee_merchant else []
+
     # ── Execute ──
     results = {}
     start_time = datetime.now()
 
     if "grab" in platform or platform == "all":
-        if task_choice == "1":
-            results["Grab"] = run_grab_baseline(start_date, end_date, user_filter=args.user, outlet_filter=outlet, branch_filter=branch)
-        else:
-            results["Grab"] = run_grab(start_date, end_date, user_filter=args.user, outlet_filter=outlet, branch_filter=branch)
+        outlets_to_run = outlet if outlet else [None]
+        branches_to_run = branch if branch else [None]
+        for o in outlets_to_run:
+            for b in branches_to_run:
+                name_key = f"Grab_{o}_{b}" if o and b else (f"Grab_{o}" if o else "Grab")
+                if task_choice == "1":
+                    results[name_key] = run_grab_baseline(start_date, end_date, user_filter=args.user, outlet_filter=o, branch_filter=b)
+                else:
+                    results[name_key] = run_grab(start_date, end_date, user_filter=args.user, outlet_filter=o, branch_filter=b)
 
     if "shopee" in platform or platform == "all":
-        if task_choice == "1":
-            results["Shopee"] = run_shopee_baseline(start_date, end_date, merchant_filter=shopee_merchant)
+        if task_choice == "3":
+            # For VB, pass all selected merchants as a pipe-separated string to utilize its internal parallel ThreadPoolExecutor
+            m_str = "|".join(shopee_merchant) if shopee_merchant else None
+            results["Shopee_VB"] = run_shopee_vb(start_date, end_date, merchant_filter=m_str)
         else:
-            results["Shopee"] = run_shopee(start_date, end_date, merchant_filter=shopee_merchant)
+            merchants_to_run = shopee_merchant if shopee_merchant else [None]
+            for m in merchants_to_run:
+                name_key = f"Shopee_{m}" if m else "Shopee"
+                if task_choice == "1":
+                    results[name_key] = run_shopee_baseline(start_date, end_date, merchant_filter=m)
+                elif task_choice == "2":
+                    results[name_key] = run_shopee(start_date, end_date, merchant_filter=m)
 
-    if "gofood" in platform or platform == "all":
-        results["GoFood"] = run_gofood(start_date, end_date, outlet_filter=outlet, branch_filter=branch, task_choice=task_choice)
+    if ("gofood" in platform or platform == "all") and task_choice != "3":
+        outlets_to_run = outlet if outlet else [None]
+        branches_to_run = branch if branch else [None]
+        for o in outlets_to_run:
+            for b in branches_to_run:
+                name_key = f"GoFood_{o}_{b}" if o and b else (f"GoFood_{o}" if o else "GoFood")
+                results[name_key] = run_gofood(start_date, end_date, outlet_filter=o, branch_filter=b, task_choice=task_choice)
 
     # ── Summary ──
     elapsed = datetime.now() - start_time
@@ -1093,7 +1217,14 @@ Examples:
     print()
     for name, success in results.items():
         status = f"{GREEN}✓ SUCCESS{RESET}" if success else f"{RED}✗ FAILED{RESET}"
-        out_path = os.path.join(base_dir, "laporan", name.lower() + ("_baseline" if task_choice == "1" else ""), date_folder)
+        if task_choice == "1":
+            out_folder = name.lower() + "_baseline"
+        elif task_choice == "3":
+            out_folder = name.lower() + "_vb"
+        else:
+            out_folder = name.lower()
+            
+        out_path = os.path.join(base_dir, "laporan", out_folder, date_folder)
         print(f"  {name:10s} : {status}")
         print(f"  {'':10s}   {DIM}→ {out_path}{RESET}")
     print(f"\n{CYAN}{'═'*58}{RESET}\n")

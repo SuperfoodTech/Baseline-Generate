@@ -1,0 +1,109 @@
+{
+    "code": 0,
+    "msg": "success",
+    "data": {
+        "total": 115,
+        "transaction_logs": [
+            {
+                "id": "3098900541569024828",
+                "transaction_type": 1,
+                "transaction_status": 2,
+                "reference_id": "3098900443196928331",
+                "amount": "2473600000",
+                "store_name": "Nasi Fuyunghai, Foodnesia",
+                "create_time": "1779507373833",
+                "update_time": "1779507373889"
+            },
+            {
+                "id": "3098873617969664856",
+                "transaction_type": 1,
+                "transaction_status": 2,
+                "reference_id": "3098873482786816881",
+                "amount": "4724300000",
+                "store_name": "Nasi Cumi Hitam, Foodnesia ",
+                "create_time": "1779506251855",
+                "update_time": "1779506251913"
+            },
+            {
+                "id": "3097801959176192605",
+                "transaction_type": 1,
+                "transaction_status": 2,
+                "reference_id": "3097801817928704735",
+                "amount": "2066100000",
+                "store_name": "Chicken Curry Katsu, Foodnesia",
+                "create_time": "1779441867720",
+                "update_time": "1779441867774"
+            },
+            {
+                "id": "3097789238603264605",
+                "transaction_type": 1,
+                "transaction_status": 2,
+                "reference_id": "3097789112462848063",
+                "amount": "3096000000",
+                "store_name": "Chicken Curry Katsu, Foodnesia",
+                "create_time": "1779439743574",
+                "update_time": "1779439743629"
+            },
+            {
+                "id": "3097695612352512605",
+                "transaction_type": 1,
+                "transaction_status": 2,
+                "reference_id": "3097695388366848631",
+                "amount": "4274800000",
+                "store_name": "Chicken Curry Katsu, Foodnesia",
+                "create_time": "1779434753438",
+                "update_time": "1779434753488"
+            },
+            {
+                "id": "3097586833290240206",
+                "transaction_type": 1,
+                "transaction_status": 2,
+                "reference_id": "3097586587512320332",
+                "amount": "2236500000",
+                "store_name": "Dendeng Balado, Foodnesia - Tidar",
+                "create_time": "1779427833345",
+                "update_time": "1779427833393"
+            },
+            {
+                "id": "3097502537266176594",
+                "transaction_type": 1,
+                "transaction_status": 2,
+                "reference_id": "3097502405012992215",
+                "amount": "1573200000",
+                "store_name": "Nasi Goreng Seafood, Foodnesia - Krembangan",
+                "create_time": "1779422736286",
+                "update_time": "1779422736343"
+            },
+            {
+                "id": "3097427282441216822",
+                "transaction_type": 1,
+                "transaction_status": 2,
+                "reference_id": "3097427160856576533",
+                "amount": "3040900000",
+                "store_name": "Otak Sapi Padang, Foodnesia",
+                "create_time": "1779418062617",
+                "update_time": "1779418062665"
+            },
+            {
+                "id": "3096455876587008824",
+                "transaction_type": 1,
+                "transaction_status": 2,
+                "reference_id": "3096455494890496188",
+                "amount": "3944700000",
+                "store_name": "Ayam Goreng Kemangi, Foodnesia",
+                "create_time": "1779358083846",
+                "update_time": "1779358083900"
+            },
+            {
+                "id": "3096337183242240605",
+                "transaction_type": 1,
+                "transaction_status": 2,
+                "reference_id": "3096337033000960522",
+                "amount": "6100600000",
+                "store_name": "Chicken Curry Katsu, Foodnesia",
+                "create_time": "1779351469626",
+                "update_time": "1779351469683"
+            }
+        ]
+    }
+}

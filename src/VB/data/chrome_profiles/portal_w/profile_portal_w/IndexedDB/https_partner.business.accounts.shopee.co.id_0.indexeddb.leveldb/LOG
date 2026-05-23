@@ -1,0 +1,25 @@
+2026/05/23-10:52:10.818 ab89 Reusing MANIFEST /home/akbarhann/project/task-weekly/src/VB/data/chrome_profiles/portal_w/profile_portal_w/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/MANIFEST-000001
+2026/05/23-10:52:10.820 ab89 Recovering log #11
+2026/05/23-10:52:10.821 ab89 Reusing old log /home/akbarhann/project/task-weekly/src/VB/data/chrome_profiles/portal_w/profile_portal_w/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/000011.log 
+2026/05/23-10:52:10.821 ab89 Delete type=2 #10
+2026/05/23-10:52:10.865 ab99 Level-0 table #16: started
+2026/05/23-10:52:10.883 ab99 Level-0 table #16: 4459 bytes OK
+2026/05/23-10:52:10.900 ab99 Delete type=0 #11
+2026/05/23-10:52:10.901 ab99 Manual compaction at level-0 from '\x00\x07\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x08\x00\x00\x00' @ 0 : 0; will stop at '\x00\x07\x00\x00\x05' @ 908 : 1
+2026/05/23-10:52:10.901 ab99 Compacting 1@0 + 1@1 files
+2026/05/23-10:52:10.918 ab99 Generated table #17@0: 328 keys, 5557 bytes
+2026/05/23-10:52:10.918 ab99 Compacted 1@0 + 1@1 files => 5557 bytes
+2026/05/23-10:52:10.975 ab99 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/05/23-10:52:10.975 ab99 Delete type=2 #16
+2026/05/23-10:52:10.976 ab99 Manual compaction at level-0 from '\x00\x07\x00\x00\x05' @ 908 : 1 .. '\x00\x08\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/05/23-10:52:16.421 ab8c Level-0 table #19: started
+2026/05/23-10:52:16.423 ab8c Level-0 table #19: 3012 bytes OK
+2026/05/23-10:52:16.425 ab8c Delete type=2 #13
+2026/05/23-10:52:16.425 ab8c Delete type=0 #15
+2026/05/23-10:52:16.426 ab8a Manual compaction at level-0 from '\x00\x08\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x09\x00\x00\x00' @ 0 : 0; will stop at '\x00\x08\x00\x00\x05' @ 1007 : 1
+2026/05/23-10:52:16.426 ab8a Compacting 1@0 + 1@1 files
+2026/05/23-10:52:16.430 ab8a Generated table #20@0: 341 keys, 4720 bytes
+2026/05/23-10:52:16.430 ab8a Compacted 1@0 + 1@1 files => 4720 bytes
+2026/05/23-10:52:16.431 ab8a compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/05/23-10:52:16.432 ab8a Delete type=2 #19
+2026/05/23-10:52:16.432 ab8c Manual compaction at level-0 from '\x00\x08\x00\x00\x05' @ 1007 : 1 .. '\x00\x09\x00\x00\x00' @ 0 : 0; will stop at (end)

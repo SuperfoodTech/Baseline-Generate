@@ -106,7 +106,7 @@ def download_file(url, filename, cookies=None, max_retries=3):
 
 def run_pipeline():
     import argparse
-    parser = argparse.ArgumentParser(description="Shopee Omzet Weekly Pipeline")
+    parser = argparse.ArgumentParser(description="Shopee Omzet Baseline Pipeline")
     parser.add_argument("--start", type=str, help="Start date (YYYY-MM-DD)", default=None)
     parser.add_argument("--end", type=str, help="End date (YYYY-MM-DD)", default=None)
     parser.add_argument("--output-dir", type=str, help="Override output directory for reports", default=None)
@@ -115,7 +115,7 @@ def run_pipeline():
     args = parser.parse_args()
 
     # Determine output directory
-    report_dir = args.output_dir or "data/reports/weekly"
+    report_dir = args.output_dir or "data/reports/baseline"
 
     # Pre-run cleanup of old Excel files in custom or download runs to ensure clean master aggregation
     import glob
@@ -142,7 +142,7 @@ def run_pipeline():
     global_ranges = [{"start": int(start_dt.timestamp()), "end": int(end_dt.timestamp()), "label": label}]
     
     print("\n" + "=" * 60)
-    print(f"  Shopee Omzet - WEEKLY Report Pipeline")
+    print(f"  Shopee Omzet - BASELINE Report Pipeline")
     print(f"  Range: {label}")
     print("=" * 60)
 

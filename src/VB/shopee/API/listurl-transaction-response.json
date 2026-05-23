@@ -1,0 +1,30 @@
+{
+    "code": 0,
+    "msg": "success",
+    "data": {
+        "task_list": [
+            {
+                "task_id": "253490",
+                "task_name": "SuperFood_Transactions 20260423_20260523",
+                "task_status": 2,
+                "file_url": "",
+                "file_name": ""
+            },
+            {
+                "task_id": "253489",
+                "task_name": "SuperFood_Transactions 20260423_20260523",
+                "task_status": 3,
+                "file_url": "https://foodde-uss.shopee.com/id-shopeefood-merchantwalletfile/tmp/files/wallet/id/253489/SuperFood_Transactions%2020260423_20260523.xlsx",
+                "file_name": "SuperFood_Transactions 20260423_20260523.xlsx"
+            },
+            {
+                "task_id": "253488",
+                "task_name": "SuperFood_Transactions 20260410_20260523",
+                "task_status": 3,
+                "file_url": "https://foodde-uss.shopee.com/id-shopeefood-merchantwalletfile/tmp/files/wallet/id/253488/SuperFood_Transactions%2020260410_20260523.xlsx",
+                "file_name": "SuperFood_Transactions 20260410_20260523.xlsx"
+            }
+        ],
+        "total_num": 86
+    }
+}
