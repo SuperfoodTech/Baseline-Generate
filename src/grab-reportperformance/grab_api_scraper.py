@@ -168,7 +168,10 @@ class GrabAPI:
         return None
 
     async def start_async_download(self, mgid, start_date, end_date):
-        """GET /mex/finances/v1/async-transactions-download"""
+        """GET /mex/finances/v1/async-transactions-download
+        
+        Grab API accepts YYYY-MM-DD format for 'from' and 'to' params.
+        """
         url = f"{self.base_url}/mex/finances/v1/async-transactions-download"
         params = {
             "merchant_group_id": mgid,
@@ -448,123 +451,194 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
     os.makedirs(session_dir, exist_ok=True)
     session_path = os.path.join(session_dir, f"{user}.json")
 
-    
     p = None
     managed_browser = None
-    
-    for run_attempt in range(3):
-        storage_state = session_path if os.path.exists(session_path) and run_attempt == 0 else None
-        
-        try:
-            if browser is None and managed_browser is None:
-                p = await async_playwright().start()
-                # Load headless setting from config.json walk-up
-                headless_env = True
-                try:
-                    from pathlib import Path
-                    import json
-                    for parent in Path(__file__).resolve().parents:
-                        config_file = parent / "config.json"
-                        if config_file.exists():
-                            with open(config_file, "r") as f:
-                                headless_env = json.load(f).get("headless_grab", True)
-                            break
-                except Exception:
-                    pass
-                managed_browser = await p.chromium.launch(headless=headless_env)
-                browser = managed_browser
-            
-            context = await browser.new_context(
-                storage_state=storage_state,
-                user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-            )
-            page = await context.new_page()
-            
-            if run_attempt > 0:
-                logger.info(f"  [Action] Persistent network error. Re-opening session for {user} (Attempt {run_attempt+1})...")
 
-            logger.info(f"  [Isolation] Checking session for {user}...")
+    # Date range — Grab API accepts YYYY-MM-DD format
+    report_end   = end_date   or datetime.now().strftime("%Y-%m-%d")
+    report_start = start_date or (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d")
+    logger.info(f"  [Date] Download range: {report_start} → {report_end} (YYYY-MM-DD)")
+
+    # --- Outer loop for handling fatal download errors (refresh session if download fails) ---
+    for run_attempt in range(2):
+        # --- Session + Auth (done ONCE per run_attempt) ---
+        context = None
+        mgid = None
+        page = None
+        for auth_attempt in range(2):  # Allow at most 1 re-auth if session is stale
             try:
-                await page.goto("https://merchant.grab.com/dashboard", wait_until="domcontentloaded", timeout=30000)
-            except: pass
-            
-            api = GrabAPI(page, user, pwd)
-            mgid = await api.get_merchant_group_id()
-            
-            if not mgid:
-                logger.info(f"  [Session] Not active. Logging in...")
-                if await perform_login(page, user, pwd):
-                    mgid = await api.get_merchant_group_id()
-                    if mgid:
-                        await context.storage_state(path=session_path)
-                        logger.info(f"  [Session] Login success, session saved.")
+                if browser is None and managed_browser is None:
+                    p_inst = await async_playwright().start()
+                    headless_env = True
+                    try:
+                        from pathlib import Path
+                        import json
+                        for parent in Path(__file__).resolve().parents:
+                            config_file = parent / "config.json"
+                            if config_file.exists():
+                                with open(config_file, "r") as f:
+                                    headless_env = json.load(f).get("headless_grab", True)
+                                break
+                    except Exception:
+                        pass
+                    managed_browser = await p_inst.chromium.launch(headless=headless_env)
+                    browser = managed_browser
+                    p = p_inst
+    
+                storage_state = session_path if os.path.exists(session_path) and auth_attempt == 0 else None
+                context = await browser.new_context(
+                    storage_state=storage_state,
+                    user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                )
+                page = await context.new_page()
+    
+                if auth_attempt > 0:
+                    logger.info(f"  [Action] Re-opening session for {user} (Auth attempt {auth_attempt + 1})...")
+    
+                logger.info(f"  [Isolation] Checking session for {user}...")
+                try:
+                    await page.goto("https://merchant.grab.com/dashboard", wait_until="domcontentloaded", timeout=30000)
+                except:
+                    pass
+    
+                api = GrabAPI(page, user, pwd)
+                mgid = await api.get_merchant_group_id()
+    
+                if not mgid:
+                    logger.info(f"  [Session] Not active. Logging in...")
+                    if await perform_login(page, user, pwd):
+                        mgid = await api.get_merchant_group_id()
+                        if mgid:
+                            await context.storage_state(path=session_path)
+                            logger.info(f"  [Session] Login success, session saved.")
+                        else:
+                            logger.error(f"  ✗ [Session] Login success but failed to get MGID for {user}.")
+                            os.makedirs("logs", exist_ok=True)
+                            await page.screenshot(path=f"logs/auth_fail_mgid_{user}.png")
                     else:
-                        logger.error(f"  ✗ [Session] Login success but failed to get MGID for {user}.")
+                        logger.error(f"  ✗ [Session] Login failed for {user}.")
                         os.makedirs("logs", exist_ok=True)
-                        ss_path = f"logs/auth_fail_mgid_{user}.png"
-                        await page.screenshot(path=ss_path)
+                        await page.screenshot(path=f"logs/login_fail_{user}.png")
                 else:
-                    logger.error(f"  ✗ [Session] Login failed for {user}.")
+                    await context.storage_state(path=session_path)
+    
+                if mgid:
+                    break  # Auth succeeded — exit auth retry loop
+    
+                # Auth failed — close context and try once more without saved session
+                await context.close()
+                context = None
+                if auth_attempt >= 1:
+                    if managed_browser:
+                        await managed_browser.close()
+                    if p:
+                        await p.stop()
+                    return None, "Auth failed after 2 attempts"
+    
+            except IncorrectCredentialsError as ice:
+                logger.error(f"  ✗ [Fatal Login Error] Aborting immediately for {user} to prevent lockout: {ice}")
+                if context:
+                    await context.close()
+                if managed_browser:
+                    await managed_browser.close()
+                if p:
+                    await p.stop()
+                return None, f"Incorrect credentials: {ice}"
+            except Exception as e:
+                logger.error(f"  [Error] Auth attempt {auth_attempt + 1} failed for {user}: {e}")
+                if context:
+                    await context.close()
+                context = None
+                if auth_attempt >= 1:
+                    if managed_browser:
+                        await managed_browser.close()
+                    if p:
+                        await p.stop()
+                    return None, str(e)
+    
+        if not mgid:
+            if managed_browser:
+                await managed_browser.close()
+            if p:
+                await p.stop()
+            return None, "Auth failed"
+
+        # --- Download steps (retried WITHOUT re-login to avoid account blocking) ---
+        download_success = False
+        last_dl_err = ""
+        for dl_attempt in range(3):
+            try:
+                if dl_attempt > 0:
+                    logger.info(f"  [Action] Retrying download for {user} (Attempt {dl_attempt + 1}/3, no re-login)...")
+                    await asyncio.sleep(5)  # Brief pause before retry
+
+                ref_id, err = await api.start_async_download(mgid, report_start, report_end)
+                if not ref_id:
+                    logger.warning(f"  [Download] start_async_download failed for {user}: {err}")
+                    last_dl_err = f"Request failed: {err}"
+                    if dl_attempt < 2:
+                        continue
+                    break # Break dl_attempt loop, let outer loop handle retry
+
+                download_url, err = await api.poll_for_download(mgid, ref_id)
+                if not download_url:
+                    logger.warning(f"  [Download] Polling failed for {user}: {err}")
+                    last_dl_err = f"Polling failed: {err}"
+                    if dl_attempt < 2:
+                        continue
+                    break # Break dl_attempt loop
+
+                filename = f"downloads/grab_transactions_{user}.csv"
+                success, err = await api.download_csv(download_url, filename)
+
+                if not success:
                     os.makedirs("logs", exist_ok=True)
-                    ss_path = f"logs/login_fail_{user}.png"
-                    await page.screenshot(path=ss_path)
-            else:
-                await context.storage_state(path=session_path)
+                    await page.screenshot(path=f"logs/download_fail_{user}.png")
+                    logger.warning(f"  [Download] CSV download failed for {user}: {err}")
+                    last_dl_err = f"Download failed: {err}"
+                    if dl_attempt < 2:
+                        continue
+                    break # Break dl_attempt loop
 
-            if not mgid:
+                # Success!
                 await context.close()
-                if run_attempt < 2: continue
-                return None, "Auth failed"
+                if managed_browser:
+                    await managed_browser.close()
+                if p:
+                    await p.stop()
+                return (filename, None)
 
-            report_end = end_date or datetime.now().strftime("%Y-%m-%d")
-            report_start = start_date or (datetime.now() - timedelta(days=120)).strftime("%Y-%m-%d")
-            
-            ref_id, err = await api.start_async_download(mgid, report_start, report_end)
-            if not ref_id:
-                await context.close()
-                if run_attempt < 2: continue
-                return None, f"Request failed: {err}"
-                
-            download_url, err = await api.poll_for_download(mgid, ref_id)
-            if not download_url:
-                await context.close()
-                if run_attempt < 2: continue
-                return None, f"Polling failed: {err}"
-                
-            filename = f"downloads/grab_transactions_{user}.csv"
-            success, err = await api.download_csv(download_url, filename)
-            
-            if not success:
-                os.makedirs("logs", exist_ok=True)
-                ss_path = f"logs/download_fail_{user}.png"
-                await page.screenshot(path=ss_path)
-                await context.close()
-                if run_attempt < 2: continue
-                return None, f"Download failed: {err}"
+            except SessionStuckError as se:
+                logger.warning(f"  [Action] SessionStuck on download for {user}: {se}")
+                last_dl_err = str(se)
+                if dl_attempt < 2:
+                    continue
+                break # Break dl_attempt loop
+            except Exception as e:
+                logger.error(f"  [Error] Download attempt {dl_attempt + 1} failed for {user}: {e}")
+                last_dl_err = str(e)
+                if dl_attempt < 2:
+                    continue
+                break # Break dl_attempt loop
 
+        # If we are here, download failed after 3 attempts.
+        if context:
             await context.close()
-            return (filename, None)
-
-        except IncorrectCredentialsError as ice:
-            logger.error(f"  ✗ [Fatal Login Error] Aborting immediately for {user} to prevent lockout: {ice}")
-            if 'context' in locals(): await context.close()
-            if managed_browser: await managed_browser.close()
-            if p: await p.stop()
-            return None, f"Incorrect credentials: {ice}"
-        except SessionStuckError as se:
-
-            logger.warning(f"  [Action] {se}. Closing and re-opening context for {user}...")
-            if 'context' in locals(): await context.close()
-            if run_attempt < 2: continue
-            return None, str(se)
-        except Exception as e:
-            logger.error(f"  [Error] Run attempt {run_attempt+1} failed for {user}: {e}")
-            if 'context' in locals(): await context.close()
-            if run_attempt < 2: continue
-            return None, str(e)
             
-    if managed_browser: await managed_browser.close()
-    if p: await p.stop()
+        if run_attempt < 1:
+            logger.info(f"  [Action] Refreshing session: Re-logging in after 3 download failures... (Run attempt {run_attempt + 1})")
+            continue # Try again from auth
+        else:
+            if managed_browser:
+                await managed_browser.close()
+            if p:
+                await p.stop()
+            return None, last_dl_err
+
+    if managed_browser:
+        await managed_browser.close()
+    if p:
+        await p.stop()
     return None, "Max account-level retries reached"
 
 if __name__ == "__main__":

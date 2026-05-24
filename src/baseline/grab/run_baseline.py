@@ -87,8 +87,11 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
             if pd.notna(user) and pd.notna(pwd) and str(user).strip() != "-" and str(pwd).strip() != "-":
                 u_str = str(user).strip()
                 p_str = str(pwd).strip()
-                outlet = row.get("Nama Outlet", "Unknown")
-                branch = row.get("Cabang", "Unknown")
+                outlet = str(row.get("Nama Outlet", "Unknown")).strip()
+                
+                # Di Master DB, kolom Cabang tidak ada, gunakan Brand
+                branch_val = row.get("Cabang", row.get("Brand", ""))
+                branch = str(branch_val).strip() if pd.notna(branch_val) else ""
                 
                 # Apply custom outlet and branch filters internally
                 if outlet_filter and str(outlet).strip().lower() != str(outlet_filter).strip().lower():
@@ -191,10 +194,11 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
 
                     for portal in related_portals:
                         portal_id = portal["id"]
-                        outlet_name = f"{portal['outlet']} ({portal['branch']})"
+                        outlet_name = f"{portal['outlet']} ({portal['branch']})" if portal['branch'] else portal['outlet']
                         laporan_dir.mkdir(parents=True, exist_ok=True)
                         
-                        portal_safe_name = f"{portal['outlet']}_{portal['branch']}".replace("/", "_").replace("\\", "_")
+                        portal_safe_name = f"{portal['outlet']}_{portal['branch']}" if portal['branch'] else f"{portal['outlet']}"
+                        portal_safe_name = portal_safe_name.replace("/", "_").replace("\\", "_")
                         dest = laporan_dir / f"{portal_safe_name}.csv"
                         shutil.copy2(downloaded_file, dest)
                         log.info(f"  ✓ [PORTAL {portal_id}] {outlet_name} — Saved to: {dest.name}")

@@ -54,5 +54,69 @@
     "source": "export_task",
     "task_id": "253567",
     "fetched_at": "2026-05-23T16:14:09.710811"
+  },
+  "portal_w::20260511_20260517": {
+    "path": "/home/akbarhann/project/task-weekly/src/laporan/shopee_vb/2026-05-11_to_2026-05-17/WonderFood_WonderFood_Transactions_20260511_20260517.xlsx",
+    "merchant": "WonderFood",
+    "range": "11 May 2026 - 17 May 2026",
+    "source": "export_task",
+    "task_id": "251880",
+    "fetched_at": "2026-05-24T19:13:17.629689"
+  },
+  "portal_l::20260511_20260517": {
+    "path": "/home/akbarhann/project/task-weekly/src/laporan/shopee_vb/2026-05-11_to_2026-05-17/LOKARASA_LOKARASA_Transactions_20260511_20260517.xlsx",
+    "merchant": "LOKARASA",
+    "range": "11 May 2026 - 17 May 2026",
+    "source": "export_task",
+    "task_id": "251882",
+    "fetched_at": "2026-05-24T18:09:06.190033"
+  },
+  "portal_d::20260511_20260517": {
+    "path": "/home/akbarhann/project/task-weekly/src/laporan/shopee_vb/2026-05-11_to_2026-05-17/Gurame_Bakar,_Do_Eat_Gurame_Bakar,_Do_Eat_Transactions_20260511_20260517.xlsx",
+    "merchant": "Gurame Bakar, Do Eat",
+    "range": "11 May 2026 - 17 May 2026",
+    "source": "export_task",
+    "task_id": "251905",
+    "fetched_at": "2026-05-24T18:09:06.242904"
+  },
+  "portal_f::20260511_20260517": {
+    "path": "/home/akbarhann/project/task-weekly/src/laporan/shopee_vb/2026-05-11_to_2026-05-17/SuperFood_SuperFood_Transactions_20260511_20260517.xlsx",
+    "merchant": "SuperFood",
+    "range": "11 May 2026 - 17 May 2026",
+    "source": "export_task",
+    "task_id": "251883",
+    "fetched_at": "2026-05-24T18:09:06.321417"
+  },
+  "portal_d::20260512_20260518": {
+    "path": "/home/akbarhann/project/task-weekly/src/laporan/shopee_vb/2026-05-12_to_2026-05-18/Gurame_Bakar,_Do_Eat_Gurame_Bakar,_Do_Eat_Transactions_20260512_20260518.xlsx",
+    "merchant": "Gurame Bakar, Do Eat",
+    "range": "12 May 2026 - 18 May 2026",
+    "source": "export_task",
+    "task_id": "253683",
+    "fetched_at": "2026-05-24T18:45:06.669796"
+  },
+  "portal_l::20260512_20260518": {
+    "path": "/home/akbarhann/project/task-weekly/src/laporan/shopee_vb/2026-05-12_to_2026-05-18/LOKARASA_LOKARASA_Transactions_20260512_20260518.xlsx",
+    "merchant": "LOKARASA",
+    "range": "12 May 2026 - 18 May 2026",
+    "source": "export_task",
+    "task_id": "253684",
+    "fetched_at": "2026-05-24T18:45:07.355284"
+  },
+  "portal_w::20260512_20260518": {
+    "path": "/home/akbarhann/project/task-weekly/src/laporan/shopee_vb/2026-05-12_to_2026-05-18/WonderFood_WonderFood_Transactions_20260512_20260518.xlsx",
+    "merchant": "WonderFood",
+    "range": "12 May 2026 - 18 May 2026",
+    "source": "export_task",
+    "task_id": "253685",
+    "fetched_at": "2026-05-24T18:45:07.360569"
+  },
+  "portal_f::20260512_20260518": {
+    "path": "/home/akbarhann/project/task-weekly/src/laporan/shopee_vb/2026-05-12_to_2026-05-18/SuperFood_SuperFood_Transactions_20260512_20260518.xlsx",
+    "merchant": "SuperFood",
+    "range": "12 May 2026 - 18 May 2026",
+    "source": "export_task",
+    "task_id": "253686",
+    "fetched_at": "2026-05-24T18:45:07.517205"
   }
 }

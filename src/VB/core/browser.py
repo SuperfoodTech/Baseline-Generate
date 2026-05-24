@@ -33,7 +33,7 @@ log = get_logger("browser_vb")
 # ── Constants ──────────────────────────────────────────────────────────────────
 PARTNER_DASHBOARD = "https://partner.shopee.co.id/food/dashboard"
 TOKEN_TRIGGER_PAGE = "https://partner.shopee.co.id/settings/shopee-food/business-hours-settings"
-VALIDATE_URL = "https://foody.shopee.co.id/api/seller/stores"
+VALIDATE_URL = "https://api.partner.shopee.co.id/nb/mss/web-api/PartnerAccountServer/GetUserInfo"
 SHOPEE_IMG_BASE = "https://down-id.img.susercontent.com/file"
 
 
@@ -83,14 +83,16 @@ def validate_session(tob_token: str, entity_id: str) -> bool:
     log.debug("🔍 Validating session token...")
     headers = {
         "Cookie": f"shopee_tob_entity_id={entity_id}; shopee_tob_token={tob_token}",
+        "x-merchant-token": tob_token,
+        "Content-Type": "application/json",
         "Accept": "application/json",
-        "X-Sf-Platform": "2",
-        "Operate-Source": "partnerapp",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     }
     try:
-        resp = requests.post(VALIDATE_URL, json={"page_no": 1, "page_size": 1}, headers=headers, timeout=8)
-        if resp.json().get("code") == 0:
+        resp = requests.post(VALIDATE_URL, json={}, headers=headers, timeout=8)
+        data = resp.json()
+        # GetUserInfo returns message "success" or code 0 when valid
+        if data.get("message") == "success" or data.get("code") == 0:
             log.info("✅ [SESSION] Session is valid.")
             return True
     except: pass
@@ -199,10 +201,12 @@ def _init_driver(headless: bool, account_name: str):
 
 def _perform_login(driver, wait, username: str = None, password: str = None, phone: str = None) -> bool:
     log.info("➡️  [AUTH] Starting login sequence...")
-    if not phone and (not username or not password):
+    if not username and not password and not phone:
         raise Exception("Shopee credentials are not configured! Please check your credentials file.")
     
-    if phone:
+    # Prioritize username/password. Phone is only used as fallback if username/password are absent.
+    use_phone = phone and not (username and password)
+    if use_phone:
         try:
             wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(text(), 'Log in dengan no. HP')]"))).click()
             time.sleep(1)
@@ -338,107 +342,125 @@ def get_session(account_name: str, username: str = None, password: str = None, p
         else:
             log.warning(f"⚠️ [SESSION] Cached session for '{account_name}' is invalid/expired. Refreshing via browser...")
 
-    # 2. If cached session is missing or invalid, run Selenium login
-    log.info(f"🌐 [BROWSER] Launching isolated browser for '{account_name}' (headless={headless})...")
-    driver = _init_driver(headless=headless, account_name=account_name)
-    wait = WebDriverWait(driver, 30)
-    session_success = False
+    # 2. If cached session is missing or invalid, run Selenium login with retries
+    for attempt in range(3):
+        log.info(f"🌐 [BROWSER] Launching isolated browser for '{account_name}' (headless={headless}, attempt={attempt+1}/3)...")
+        driver = _init_driver(headless=headless, account_name=account_name)
+        wait = WebDriverWait(driver, 30)
+        session_success = False
 
-    try:
-        driver.get(PARTNER_DASHBOARD)
-        time.sleep(4)
-        
-        is_logged_in = False
-        current_url = driver.current_url.lower()
-        if "dashboard" in current_url or "merchant-selector" in current_url:
-            log.info(f"✅ [SESSION] Browser is already logged in for '{account_name}'.")
-            is_logged_in = True
-        else:
-            # Try injection of old cookies to restore Selenium state if possible
-            if saved:
-                log.debug(f"🔍 Attempting to restore browser cookies for '{account_name}'...")
-                driver.add_cookie({"name": "shopee_tob_token", "value": saved["shopee_tob_token"]})
-                if saved.get("shopee_tob_entity_id"):
-                    driver.add_cookie({"name": "shopee_tob_entity_id", "value": saved["shopee_tob_entity_id"]})
-                for n, v in saved.get("extra_cookies", {}).items():
-                    try: driver.add_cookie({"name": n, "value": v})
-                    except: pass
-                driver.refresh()
-                time.sleep(4)
-                current_url = driver.current_url.lower()
-                if "dashboard" in current_url or "merchant-selector" in current_url:
-                    log.info(f"✅ [SESSION] Restored browser login from saved cookies for '{account_name}'.")
-                    is_logged_in = True
-
-        if not is_logged_in:
-            log.info(f"⚠️ [SESSION] Logging in to '{account_name}'...")
-            driver.get("https://partner.shopee.co.id/login")
-            time.sleep(5)
-            
-            current_url = driver.current_url.lower()
-            if "login" in current_url or "authenticate" in current_url or "about:blank" in current_url:
-                success = _perform_login(driver, wait, username, password, phone)
-                if not success: return None
-                
-            time.sleep(3)
-            # Handle merchant selector page (onboarding selector) by selecting first available
-            if "onboarding" in driver.current_url or "merchant-selector" in driver.current_url:
-                log.info("📍 [SESSION] Onboarding/Selector page detected. Auto-selecting first merchant/portal...")
-                bypass_js = """
-                    var loaders = document.querySelectorAll('.ant-spin, [class*="loading"], .shopee-loading, .ant-spin-nested-loading');
-                    loaders.forEach(el => el.remove());
-                    var target = document.querySelector('.merchantInfo, .ant-list-item, .shop-name');
-                    if (target) {
-                        target.scrollIntoView({block: 'center'});
-                        target.click();
-                        setTimeout(() => {
-                            var btns = document.querySelectorAll('button');
-                            for (var b of btns) {
-                                var bText = (b.innerText || "").toLowerCase();
-                                if (bText.includes('masuk') || bText.includes('konfirmasi') || bText.includes('lanjutkan') || bText.includes('ok')) {
-                                    b.click();
-                                }
-                            }
-                        }, 500);
-                        return true;
-                    }
-                    return false;
-                """
-                for attempt in range(10):
-                    if driver.execute_script(bypass_js):
-                        try:
-                            wait.until(lambda d: "/food/dashboard" in d.current_url)
-                            log.debug("  ✅ Landed on dashboard.")
-                            break
-                        except: pass
-                    time.sleep(1)
-                time.sleep(2)
-        
-        # Ensure we are on dashboard or settings to trigger tokens
-        if "/food/dashboard" not in driver.current_url:
+        try:
             driver.get(PARTNER_DASHBOARD)
-            time.sleep(2)
+            time.sleep(4)
+            
+            # If attempt > 0, force a fresh login by clearing cookies
+            if attempt > 0:
+                log.info(f"⚠️ [SESSION] Forcing fresh login for '{account_name}' (Attempt {attempt+1})...")
+                driver.delete_all_cookies()
+                driver.get("https://partner.shopee.co.id/login")
+                time.sleep(4)
+            
+            is_logged_in = False
+            current_url = driver.current_url.lower()
+            if ("dashboard" in current_url or "merchant-selector" in current_url) and attempt == 0:
+                log.info(f"✅ [SESSION] Browser is already logged in for '{account_name}'.")
+                is_logged_in = True
+            elif attempt == 0:
+                # Try injection of old cookies to restore Selenium state if possible
+                if saved:
+                    log.debug(f"🔍 Attempting to restore browser cookies for '{account_name}'...")
+                    driver.add_cookie({"name": "shopee_tob_token", "value": saved["shopee_tob_token"]})
+                    if saved.get("shopee_tob_entity_id"):
+                        driver.add_cookie({"name": "shopee_tob_entity_id", "value": saved["shopee_tob_entity_id"]})
+                    for n, v in saved.get("extra_cookies", {}).items():
+                        try: driver.add_cookie({"name": n, "value": v})
+                        except: pass
+                    driver.refresh()
+                    time.sleep(4)
+                    current_url = driver.current_url.lower()
+                    if "dashboard" in current_url or "merchant-selector" in current_url:
+                        log.info(f"✅ [SESSION] Restored browser login from saved cookies for '{account_name}'.")
+                        is_logged_in = True
 
-        # 3. Final Token Extraction
-        t, eid = _trigger_and_extract_tokens(driver)
-        if not t: return None
-        all_c = get_all_cookies_dict(driver)
-        
-        save_session(account_name, t, eid or "", extra_cookies=all_c)
-        res = {"shopee_tob_token": t, "shopee_tob_entity_id": eid or "", "extra_cookies": all_c}
-        if not close_browser: res["driver"] = driver
-        session_success = True
-        return res
+            if not is_logged_in:
+                log.info(f"⚠️ [SESSION] Logging in to '{account_name}'...")
+                if "/login" not in driver.current_url.lower() and "authenticate" not in driver.current_url.lower():
+                    driver.get("https://partner.shopee.co.id/login")
+                    time.sleep(5)
+                
+                current_url = driver.current_url.lower()
+                if "login" in current_url or "authenticate" in current_url or "about:blank" in current_url:
+                    # Always prefer username/password; phone is only fallback
+                    success = _perform_login(driver, wait, username, password, phone if not (username and password) else None)
+                    if not success:
+                        log.error(f"❌ [AUTH] _perform_login failed for '{account_name}'.")
+                        driver.quit()
+                        continue
+                    
+                time.sleep(3)
+                # Handle merchant selector page (onboarding selector) by selecting first available
+                if "onboarding" in driver.current_url or "merchant-selector" in driver.current_url:
+                    log.info("📍 [SESSION] Onboarding/Selector page detected. Auto-selecting first merchant/portal...")
+                    bypass_js = """
+                        var loaders = document.querySelectorAll('.ant-spin, [class*="loading"], .shopee-loading, .ant-spin-nested-loading');
+                        loaders.forEach(el => el.remove());
+                        var target = document.querySelector('.merchantInfo, .ant-list-item, .shop-name');
+                        if (target) {
+                            target.scrollIntoView({block: 'center'});
+                            target.click();
+                            setTimeout(() => {
+                                var btns = document.querySelectorAll('button');
+                                for (var b of btns) {
+                                    var bText = (b.innerText || "").toLowerCase();
+                                    if (bText.includes('masuk') || bText.includes('konfirmasi') || bText.includes('lanjutkan') || bText.includes('ok')) {
+                                        b.click();
+                                    }
+                                }
+                            }, 500);
+                            return true;
+                        }
+                        return false;
+                    """
+                    for loop_attempt in range(10):
+                        if driver.execute_script(bypass_js):
+                            try:
+                                wait.until(lambda d: "/food/dashboard" in d.current_url)
+                                log.debug("  ✅ Landed on dashboard.")
+                                break
+                            except: pass
+                        time.sleep(1)
+                    time.sleep(2)
+            
+            # Ensure we are on dashboard or settings to trigger tokens
+            if "/food/dashboard" not in driver.current_url:
+                driver.get(PARTNER_DASHBOARD)
+                time.sleep(2)
 
-    except Exception as e:
-        log.error(f"❌ [BROWSER] Session error for '{account_name}': {e}")
-        return None
-    finally:
-        if (close_browser or not session_success) and driver is not None:
-            try:
+            # 3. Final Token Extraction
+            t, eid = _trigger_and_extract_tokens(driver)
+            if not t:
+                log.warning(f"⚠️ [SESSION] Token extraction failed for '{account_name}'.")
                 driver.quit()
-            except Exception as e:
-                log.debug(f"Failed to quit driver: {e}")
+                continue
+            
+            all_c = get_all_cookies_dict(driver)
+            save_session(account_name, t, eid or "", extra_cookies=all_c)
+            res = {"shopee_tob_token": t, "shopee_tob_entity_id": eid or "", "extra_cookies": all_c}
+            if not close_browser: res["driver"] = driver
+            session_success = True
+            return res
+
+        except Exception as e:
+            log.error(f"❌ [BROWSER] Session error for '{account_name}' on attempt {attempt+1}: {e}")
+        finally:
+            if (close_browser or not session_success) and driver is not None:
+                try:
+                    driver.quit()
+                except Exception as e:
+                    log.debug(f"Failed to quit driver: {e}")
+
+    log.error(f"❌ [BROWSER] Max login retries reached for '{account_name}'.")
+    return None
 
 def refresh_tokens(driver, account_name: str) -> dict:
     t, eid = _trigger_and_extract_tokens(driver)

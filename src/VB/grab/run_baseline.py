@@ -120,15 +120,6 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
         end_str = date_end or "all"
         laporan_dir = Path("laporan") / f"{start_str}_{end_str}"
     
-    # Auto-cleanup old CSV files
-    if laporan_dir.exists():
-        old_csvs = list(laporan_dir.glob("*.csv"))
-        if old_csvs:
-            log.info(f"Cleaning up {len(old_csvs)} old CSV files in {laporan_dir}...")
-            for f in old_csvs:
-                try: f.unlink()
-                except: pass
-
     log.info("="*60)
     log.info(f"  GRAB MULTI-PORTAL AUTOMATION ({len(portals)} portals)")
     
@@ -144,6 +135,21 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     
     log.info(f"  Unique Accounts: {len(unique_users)}")
     log.info("="*60)
+    
+    # Auto-cleanup old CSV files for the active portals only
+    if laporan_dir.exists():
+        to_clean = []
+        for u, info in unique_users.items():
+            for portal in info["portals"]:
+                portal_safe_name = f"{portal['outlet']}_{portal['branch']}".replace("/", "_").replace("\\", "_")
+                p_file = laporan_dir / f"{portal_safe_name}.csv"
+                if p_file.exists():
+                    to_clean.append(p_file)
+        if to_clean:
+            log.info(f"Cleaning up {len(to_clean)} old CSV files for active portal(s) in {laporan_dir}...")
+            for f in to_clean:
+                try: f.unlink()
+                except: pass
     
     from playwright.async_api import async_playwright
     

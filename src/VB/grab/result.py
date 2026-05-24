@@ -57,7 +57,15 @@ def summarize_monthly(
 ) -> pd.DataFrame:
 	working = df.copy()
 
-	working["Updated On"] = pd.to_datetime(working["Updated On"], errors="coerce", format="%d %b %Y %I:%M %p")
+	# Parse date columns — use 'Created On' as primary date for filtering
+	# 'Updated On' is the settlement/disbursement date and can fall outside the order range
+	date_fmt = "%d %b %Y %I:%M %p"
+	working["Created On"] = pd.to_datetime(working.get("Created On"), errors="coerce", format=date_fmt)
+	working["Updated On"] = pd.to_datetime(working.get("Updated On"), errors="coerce", format=date_fmt)
+	
+	# Use Created On for filtering; fall back to Updated On if Created On is missing
+	working["_filter_date"] = working["Created On"].fillna(working["Updated On"])
+
 	working["Long Order ID"] = working["Long Order ID"].fillna("").astype(str).str.strip()
 	working["Category"] = working["Category"].fillna("").astype(str).str.strip().str.casefold()
 	working["Net Sales"] = pd.to_numeric(working["Net Sales"], errors="coerce").fillna(0)
@@ -71,12 +79,12 @@ def summarize_monthly(
 	is_not_cancelled = working["Status"].ne("cancelled")
 	
 	valid_orders = working.loc[valid_long_order_id & is_order_category & is_not_cancelled].copy()
-	valid_orders = valid_orders.loc[valid_orders["Updated On"].notna()].copy()
+	valid_orders = valid_orders.loc[valid_orders["_filter_date"].notna()].copy()
 	if date_start is not None:
-		valid_orders = valid_orders.loc[valid_orders["Updated On"] >= date_start].copy()
+		valid_orders = valid_orders.loc[valid_orders["_filter_date"] >= date_start].copy()
 	if date_end is not None:
-		valid_orders = valid_orders.loc[valid_orders["Updated On"] <= date_end].copy()
-	valid_orders["Month"] = valid_orders["Updated On"].dt.to_period("M").dt.to_timestamp()
+		valid_orders = valid_orders.loc[valid_orders["_filter_date"] <= date_end].copy()
+	valid_orders["Month"] = valid_orders["_filter_date"].dt.to_period("M").dt.to_timestamp()
 
 	summary = (
 		valid_orders.groupby("Month", as_index=False)

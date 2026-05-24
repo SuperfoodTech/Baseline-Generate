@@ -1,2 +1,3 @@
-2026/05/23-10:42:26.809 9e60 Creating DB /home/akbarhann/project/task-weekly/src/VB/data/chrome_profiles/portal_l/profile_portal_l/Sync Data/LevelDB since it was missing.
-2026/05/23-10:42:26.818 9e60 Reusing MANIFEST /home/akbarhann/project/task-weekly/src/VB/data/chrome_profiles/portal_l/profile_portal_l/Sync Data/LevelDB/MANIFEST-000001
+2026/05/24-19:12:47.744 7712 Reusing MANIFEST /home/akbarhann/project/task-weekly/src/VB/data/chrome_profiles/portal_l/profile_portal_l/Sync Data/LevelDB/MANIFEST-000001
+2026/05/24-19:12:47.755 7712 Recovering log #3
+2026/05/24-19:12:47.755 7712 Reusing old log /home/akbarhann/project/task-weekly/src/VB/data/chrome_profiles/portal_l/profile_portal_l/Sync Data/LevelDB/000003.log 

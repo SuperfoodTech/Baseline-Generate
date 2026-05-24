@@ -320,15 +320,6 @@ def run_pipeline():
         report_dir = os.path.join(_script_src, "laporan", "shopee_vb", f"{_start}_to_{_end}")
 
 
-    # Pre-run cleanup of old Excel files in custom or download runs to ensure clean master aggregation
-    if not args.skip_download and os.path.exists(report_dir):
-        old_excels = glob.glob(os.path.join(report_dir, "*.xlsx"))
-        if old_excels:
-            log.info(f"🧹 Clearing {len(old_excels)} old Excel files in {report_dir} to prepare for fresh run...")
-            for f in old_excels:
-                try: os.unlink(f)
-                except Exception as e: log.debug(f"Failed to delete {f}: {e}")
-
     # Determine date range
     now = datetime.now()
     if args.start and args.end:
@@ -368,6 +359,20 @@ def run_pipeline():
         return
 
     log.info(f"📋 [PROGRESS] Found {len(portals_to_run)} portal(s) ready to process.")
+
+    # Pre-run cleanup of old Excel files for the active portals in custom or download runs
+    if not args.skip_download and os.path.exists(report_dir):
+        to_clean = []
+        for portal in portals_to_run:
+            safe_merchant = portal["merchant_name"].replace(" ", "_")
+            pattern = os.path.join(report_dir, f"{safe_merchant}_*.xlsx")
+            to_clean.extend(glob.glob(pattern))
+            
+        if to_clean:
+            log.info(f"🧹 Clearing {len(to_clean)} old Excel files for active portal(s) in {report_dir} to prepare for fresh run...")
+            for f in to_clean:
+                try: os.unlink(f)
+                except Exception as e: log.debug(f"Failed to delete {f}: {e}")
 
     # ── 1. Phase 1: Authentication / Session Check (Sequential) ──
     if args.skip_download:

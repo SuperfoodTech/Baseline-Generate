@@ -45,8 +45,11 @@ async def run_all():
             if pd.notna(user) and pd.notna(pwd) and str(user).strip() != "-" and str(pwd).strip() != "-":
                 u_str = str(user).strip()
                 p_str = str(pwd).strip()
-                outlet = row.get("Nama Outlet", "Unknown")
-                branch = row.get("Cabang", "Unknown")
+                outlet = str(row.get("Nama Outlet", "Unknown")).strip()
+                
+                # Di Master DB, kolom Cabang tidak ada, gunakan Brand
+                branch_val = row.get("Cabang", row.get("Brand", ""))
+                branch = str(branch_val).strip() if pd.notna(branch_val) else ""
                 
                 # Smart credential validation
                 is_valid, err_msg = validate_credentials(u_str, p_str)
@@ -80,7 +83,7 @@ async def run_all():
     for portal in portals:
         user = portal["user"]
         pwd = portal["pwd"]
-        outlet_name = f"{portal['outlet']} ({portal['branch']})"
+        outlet_name = f"{portal['outlet']} ({portal['branch']})" if portal['branch'] else portal['outlet']
         success = False
 
         for attempt in range(1, MAX_RETRIES + 1):
