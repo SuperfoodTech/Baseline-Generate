@@ -95,6 +95,16 @@ cli.py
 !src/VB/shopee/sessions/
 !src/VB/shopee/sessions/*.json
 
+# Allow Grab and GoFood sessions (agar tidak minta OTP di PC/Server lain)
+!**/grab-reportperformance/sessions/
+!**/grab-reportperformance/sessions/*.json
+!**/grab-reportperformance/weekly/sessions/
+!**/grab-reportperformance/weekly/sessions/*.json
+!**/goscrapperv2/sessions/
+!**/goscrapperv2/sessions/*.json
+!src/VB/grab/sessions/
+!src/VB/grab/sessions/*.json
+
 # Allow Shopee Weekly session
 !**/shopee-omzet-automation/data/
 **/shopee-omzet-automation/data/*
