@@ -225,10 +225,14 @@ def _resolve_shopee_merchant(outlet_name: str, branch_name: str = None) -> str:
         # ── Strategi 1: Lookup dengan Cabang (paling presisi) ──────────
         if branch_name:
             branch_lower = branch_name.strip().lower()
-            sf_with_branch = df[
-                base_filter &
-                (df['Cabang'].str.strip().str.lower() == branch_lower)
-            ]
+            branch_col = 'Cabang' if 'Cabang' in df.columns else 'Brand'
+            if branch_col in df.columns:
+                sf_with_branch = df[
+                    base_filter &
+                    (df[branch_col].str.strip().str.lower() == branch_lower)
+                ]
+            else:
+                sf_with_branch = pd.DataFrame()
             if not sf_with_branch.empty:
                 merchant_name = _clean(sf_with_branch.iloc[0]['Merchant Name'])
                 if merchant_name and merchant_name not in ('-', 'nan'):
@@ -764,7 +768,8 @@ def interactive_mode():
                             branch = []
                         else:
                             df_branch = df_grab[df_grab["Nama Outlet"] == outlet[0]]
-                            branches = sorted(df_branch["Cabang"].dropna().unique())
+                            branch_col = "Cabang" if "Cabang" in df_branch.columns else "Brand"
+                            branches = sorted(df_branch[branch_col].dropna().unique()) if branch_col in df_branch.columns else []
                             print(f"\n  {BOLD}Pilih Cabang Grab untuk '{outlet[0]}':{RESET}")
                             for idx, b_name in enumerate(branches):
                                 print(f"    {GREEN}[{idx + 1}]{RESET} {b_name}")

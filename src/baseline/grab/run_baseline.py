@@ -208,6 +208,22 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
 
         tasks = [process_user(u, info) for u, info in unique_users.items()]
         await asyncio.gather(*tasks)
+        
+        # --- Sequential Retry for Failed Accounts ---
+        if failures:
+            log.info("\n" + "="*60)
+            log.info(f"  [RETRY] Attempting to re-run {len(failures)} failed accounts sequentially to resolve network/concurrency issues...")
+            log.info("="*60)
+            
+            retry_failures = list(failures)
+            failures.clear() # Clear so it only contains true failures after retry
+            
+            for f in retry_failures:
+                username = f["user"]
+                info = unique_users[username]
+                log.info(f"\n  [RETRY ACCOUNT] Re-running sequentially for: {username}")
+                await process_user(username, info)
+                
         await browser.close()
 
     log.info("="*60)
