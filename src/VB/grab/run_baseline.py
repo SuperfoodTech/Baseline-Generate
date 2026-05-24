@@ -58,7 +58,7 @@ def setup_logger():
 
 log = setup_logger()
 
-CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv"
+CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYSUnKOqk29LCktTxdb0wPLbWMbRaWRP3eC_UA4AwYod1FW6zDMhtLMC5ghIvot2B8upCDfBsn-TCP/pub?gid=978201567&single=true&output=csv"
 
 async def run_all(date_start: str = None, date_end: str = None, output_dir: str = None, user_filter: str = None, outlet_filter: str = None, branch_filter: str = None):
     # Reload env just in case
@@ -70,30 +70,28 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
         resp.raise_for_status()
         df = pd.read_csv(io.StringIO(resp.text))
         
-        # Filter for GrabFood and Status Live
-        grab_df = df[df["Aplikasi"].str.contains("Grab", na=False, case=False)]
-        grab_df = grab_df[grab_df["Status"].str.contains("Live", na=False, case=False)]
+        # Drop rows where 'Notes' is 'Restricted' (case-insensitive)
+        if "Notes" in df.columns:
+            grab_df = df[~df["Notes"].astype(str).str.contains("restricted", na=False, case=False)]
+        else:
+            grab_df = df
+        
+        # We also need to drop rows where Portal/Username/Password are empty
+        grab_df = grab_df.dropna(subset=["Portal", "Username", "Password"])
         
         portals = []
         for idx, row in grab_df.iterrows():
-            user_sf = row.get("Nama Pengguna.1")
-            user_mt = row.get("Nama Pengguna")
-            pwd_sf = row.get("Kata Sandi.1")
-            pwd_mt = row.get("Kata Sandi")
-            
-            user = user_sf if pd.notna(user_sf) and str(user_sf).strip() != "-" else user_mt
-            pwd = pwd_sf if pd.notna(pwd_sf) and str(pwd_sf).strip() != "-" else pwd_mt
+            user = row.get("Username")
+            pwd = row.get("Password")
             
             if pd.notna(user) and pd.notna(pwd) and str(user).strip() != "-" and str(pwd).strip() != "-":
                 u_str = str(user).strip()
                 p_str = str(pwd).strip()
-                outlet = row.get("Nama Outlet", "Unknown")
-                branch = row.get("Cabang", "Unknown")
+                outlet = row.get("Portal", "Unknown")
+                branch = ""  # No branch in VB Grab
                 
                 # Apply custom outlet and branch filters internally
                 if outlet_filter and str(outlet).strip().lower() != str(outlet_filter).strip().lower():
-                    continue
-                if branch_filter and str(branch).strip().lower() != str(branch_filter).strip().lower():
                     continue
                 
                 # Smart credential validation
@@ -217,143 +215,7 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
         log.info("  ✓ ALL ACCOUNTS PROCESSED SUCCESSFULLY")
     log.info("="*60)
 
-    # --- Gabungkan semua CSV menjadi file master ---
-    if output_dir:
-        laporan_dir = Path(output_dir)
-    else:
-        start_str = date_start or "all"
-        end_str = date_end or "all"
-        laporan_dir = Path("laporan") / f"{start_str}_{end_str}"
-
-    csv_files = sorted(laporan_dir.glob("*.csv")) if laporan_dir.exists() else []
-    # Exclude master file jika sudah ada dari run sebelumnya
-    csv_files = [f for f in csv_files if f.stem != "MASTER"]
-
-    if not csv_files:
-        print("\n[SKIP] Tidak ada file CSV untuk digabung.")
-        return
-
-    print(f"\nScanning and validating {len(csv_files)} raw CSV files for master merging...")
-    frames = []
-    for csv_path in csv_files:
-        try:
-            df = pd.read_csv(csv_path)
-            if df.empty or len(df) == 0:
-                print(f"  ⚠️ [CHECK] Raw file '{csv_path.name}' is EMPTY (no transaction rows). Skipping merger.")
-                continue
-                
-            print(f"  🔍 [CHECK] Raw file '{csv_path.name}' has {len(df)} rows. Including in MASTER...")
-            df.insert(0, "Merchant", csv_path.stem)
-            frames.append(df)
-        except Exception as e:
-            print(f"  ❌ [CHECK] Gagal membaca atau memproses '{csv_path.name}': {e}")
-
-    if not frames:
-        log.info("⏭️ [SKIP] Tidak ada file CSV yang memiliki data untuk digabung.")
-        return
-
-    master_df = pd.concat(frames, ignore_index=True)
-
-    # --- APPLY BASELINE LOGIC (From result.py) ---
-    working = master_df.copy()
-    
-    # Preprocess columns
-    if "Updated On" in working.columns:
-        working["Updated On"] = pd.to_datetime(working["Updated On"], errors="coerce", format="%d %b %Y %I:%M %p")
-    if "Long Order ID" in working.columns:
-        working["Long Order ID"] = working["Long Order ID"].fillna("").astype(str).str.strip()
-    if "Category" in working.columns:
-        working["Category"] = working["Category"].fillna("").astype(str).str.strip().str.casefold()
-    if "Net Sales" in working.columns:
-        working["Net Sales"] = pd.to_numeric(working["Net Sales"], errors="coerce").fillna(0)
-    if "Status" in working.columns:
-        working["Status"] = working["Status"].fillna("").astype(str).str.strip().str.casefold()
-
-    valid_long_order_id = working["Long Order ID"].str.match(r"^[A-Za-z0-9-]+$", na=False) if "Long Order ID" in working.columns else pd.Series(True, index=working.index)
-    is_order_category = working["Category"].isin(["payment", "adjustment"]) if "Category" in working.columns else pd.Series(True, index=working.index)
-    is_not_cancelled = working["Status"].ne("cancelled") if "Status" in working.columns else pd.Series(True, index=working.index)
-    
-    valid_orders = working.loc[valid_long_order_id & is_order_category & is_not_cancelled].copy()
-    
-    if "Updated On" in valid_orders.columns:
-        valid_orders = valid_orders.loc[valid_orders["Updated On"].notna()].copy()
-    
-    # Filter Custom Date Range (No Hardcoding)
-    if date_start and "Updated On" in valid_orders.columns:
-        valid_orders = valid_orders.loc[valid_orders["Updated On"] >= pd.Timestamp(date_start)].copy()
-    if date_end and "Updated On" in valid_orders.columns:
-        end_ts = pd.Timestamp(date_end).replace(hour=23, minute=59, second=59)
-        valid_orders = valid_orders.loc[valid_orders["Updated On"] <= end_ts].copy()
-
-    if valid_orders.empty:
-        log.warning("⚠️ Tidak ada transaksi valid yang masuk dalam range tanggal dan filter ini untuk dihitung baseline-nya.")
-        return
-
-    valid_orders["Month"] = valid_orders["Updated On"].dt.to_period("M").dt.to_timestamp()
-
-    # Aggregate by Merchant and Month
-    summary = (
-        valid_orders.groupby(["Merchant", "Month"], as_index=False)
-        .agg(
-            Order_Count=("Long Order ID", "count"),
-            Omzet_Net_Sales=("Net Sales", "sum"),
-        )
-        .sort_values(["Merchant", "Month"])
-        .reset_index(drop=True)
-    )
-
-    # Convert to Wide Format
-    months = sorted(summary["Month"].unique())
-    wide_rows = []
-    
-    for merchant, group in summary.groupby("Merchant"):
-        row = {"Merchant": merchant}
-        total_omzet = 0.0
-        total_order = 0
-        
-        for idx, month in enumerate(months, start=1):
-            month_data = group[group["Month"] == month]
-            if not month_data.empty:
-                omzet = float(month_data["Omzet_Net_Sales"].iloc[0])
-                order = int(month_data["Order_Count"].iloc[0])
-            else:
-                omzet = 0.0
-                order = 0
-                
-            row[f"Omzet Bulan ke-{idx}"] = omzet
-            row[f"Order Bulan ke-{idx}"] = order
-            
-            total_omzet += omzet
-            total_order += order
-            
-        num_months = len(months)
-        row["Rata-rata Omzet"] = total_omzet / num_months if num_months > 0 else 0.0
-        row["Rata-rata Order"] = round(total_order / num_months, 2) if num_months > 0 else 0
-        
-        wide_rows.append(row)
-
-    wide_summary = pd.DataFrame(wide_rows)
-    wide_summary.insert(1, "Aplikasi", "Grab")
-
-    # Simpan sebagai Excel Lokal
-    if outlet_filter or branch_filter:
-        outlet_safe = str(outlet_filter or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
-        branch_safe = str(branch_filter or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
-        filename_prefix = f"BASELINE_CUSTOM_{outlet_safe}_{branch_safe}"
-    else:
-        filename_prefix = "BASELINE_MASTER"
-
-    master_xlsx = laporan_dir / f"{filename_prefix}.xlsx"
-    
-    # Save with formatting
-    with pd.ExcelWriter(master_xlsx, engine="openpyxl") as writer:
-        wide_summary.to_excel(writer, index=False, sheet_name="Baseline Summary")
-
-    log.info(f"✓ Laporan Baseline Excel: {master_xlsx}")
-    log.info(f"  Total merchant diproses: {len(wide_summary)}")
-
-    # Matikan push ke GSheets dan PostgreSQL
-    log.info("⏭️ [SKIP] Push ke Google Sheets dan database dimatikan secara global untuk mode Baseline.")
+    log.info("🎉 SUCCESS! Semua laporan mentah VB telah berhasil diunduh ke folder laporan.")
 
 
 if __name__ == "__main__":

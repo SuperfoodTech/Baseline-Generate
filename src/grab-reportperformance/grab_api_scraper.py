@@ -51,11 +51,8 @@ def validate_credentials(username, password):
     if len(p) < 6:
         return False, f"Password is too short (less than 6 characters): '{p}'"
         
-    # Check if password contains the username, or username contains the password
-    if len(u) > 5 and u.lower() in p.lower():
-        return False, f"Password contains the username (likely copy-paste or duplicate error): '{p}'"
-    if len(p) > 8 and p.lower() in u.lower():
-        return False, f"Password is a substring of the username (likely copy-paste or duplicate error): '{p}'"
+    # We removed the check that prevents password from containing username 
+    # because Grab VB credentials actually use this pattern (e.g. automationde1s / Automationde1s@)
         
     # Check if password looks like an email/username (usually contains @ or domain)
     email_pattern = r'[^@\s]+@[^@\s]+\.[^@\s]+'

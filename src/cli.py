@@ -319,6 +319,51 @@ def run_grab(start_date: str, end_date: str, user_filter: str = None, outlet_fil
         print(f"\n{RED}✗ Grab pipeline exited with code {result.returncode}.{RESET}")
         return False
 
+def run_grab_vb(start_date: str, end_date: str, user_filter: str = None, outlet_filter: str = None, branch_filter: str = None):
+    """
+    Delegates to the Grab VB pipeline.
+    Output is routed to task-weekly/src/laporan/grab_vb/{start}_to_{end}.
+    """
+    grab_vb_dir = os.path.join(os.path.dirname(__file__), "VB", "grab")
+    
+    if not os.path.isdir(grab_vb_dir):
+        print(f"{RED}[ERROR]{RESET} Grab VB directory not found: {grab_vb_dir}")
+        return False
+
+    output_dir = _resolve_output_dir("grab_vb", start_date, end_date)
+
+    import subprocess
+    
+    python_exe = _resolve_python_executable()
+    cmd = [
+        python_exe, "run_baseline.py",
+        "--start-date", start_date,
+        "--end-date", end_date,
+        "--output-dir", output_dir,
+    ]
+    if user_filter:
+        cmd.extend(["--user", user_filter])
+    if outlet_filter:
+        cmd.extend(["--outlet", outlet_filter])
+    if branch_filter:
+        cmd.extend(["--branch", branch_filter])
+
+    print(f"\n{MAGENTA}{BOLD}▶ GRAB VB PIPELINE{RESET}")
+    print(f"  {DIM}Directory : {grab_vb_dir}{RESET}")
+    print(f"  {DIM}Output    : {output_dir}{RESET}")
+    print(f"  {DIM}Date Range: {start_date} → {end_date}{RESET}")
+    print()
+
+    result = subprocess.run(cmd, cwd=grab_vb_dir)
+    
+    if result.returncode == 0:
+        print(f"\n{GREEN}✓ Grab VB pipeline completed successfully.{RESET}")
+        return True
+    else:
+        print(f"\n{RED}✗ Grab VB pipeline exited with code {result.returncode}.{RESET}")
+        return False
+
+
 
 def run_grab_baseline(start_date: str, end_date: str, user_filter: str = None, outlet_filter: str = None, branch_filter: str = None):
     grab_baseline_dir = os.path.join(os.path.dirname(__file__), "baseline", "grab")
@@ -673,10 +718,26 @@ def interactive_mode():
 
             # --- FILTER CUSTOM GRAB ---
             if platform in ("grab", "all"):
-                df_grab = df_main[df_main["Aplikasi"].str.contains("Grab", na=False, case=False) & df_main["Status"].str.contains("Live", na=False, case=False)]
-                # (For VB mode we might use Grab from main sheet if Grab VB isn't on a separate sheet)
                 if task_choice == "3":
-                    pass
+                    CSV_URL_VB_GRAB = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYSUnKOqk29LCktTxdb0wPLbWMbRaWRP3eC_UA4AwYod1FW6zDMhtLMC5ghIvot2B8upCDfBsn-TCP/pub?gid=978201567&single=true&output=csv"
+                    try:
+                        resp_grab_vb = requests.get(CSV_URL_VB_GRAB, timeout=30)
+                        resp_grab_vb.raise_for_status()
+                        df_grab_vb = pd.read_csv(io.StringIO(resp_grab_vb.text))
+                        if "Notes" in df_grab_vb.columns:
+                            df_grab = df_grab_vb[~df_grab_vb["Notes"].astype(str).str.contains("restricted", na=False, case=False)].copy()
+                        else:
+                            df_grab = df_grab_vb.copy()
+                        # Map Portal to Nama Outlet
+                        if "Portal" in df_grab.columns:
+                            df_grab["Nama Outlet"] = df_grab["Portal"]
+                        else:
+                            df_grab["Nama Outlet"] = "Unknown"
+                    except Exception as e:
+                        print(f"  {RED}[ERROR] Gagal mengunduh Google Sheets Grab VB: {e}{RESET}")
+                        sys.exit(1)
+                else:
+                    df_grab = df_main[df_main["Aplikasi"].str.contains("Grab", na=False, case=False) & df_main["Status"].str.contains("Live", na=False, case=False)]
                 
                 if not df_grab.empty:
                     outlets_list = sorted(df_grab["Nama Outlet"].dropna().unique())
@@ -699,25 +760,28 @@ def interactive_mode():
                         print(f"  {RED}Pilihan tidak valid.{RESET}")
 
                     if len(outlet) == 1:
-                        df_branch = df_grab[df_grab["Nama Outlet"] == outlet[0]]
-                        branches = sorted(df_branch["Cabang"].dropna().unique())
-                        print(f"\n  {BOLD}Pilih Cabang Grab untuk '{outlet[0]}':{RESET}")
-                        for idx, b_name in enumerate(branches):
-                            print(f"    {GREEN}[{idx + 1}]{RESET} {b_name}")
-                        print()
-                        while True:
-                            try:
-                                b_choices = input(f"  {BOLD}Pilih nomor cabang Grab (contoh: 1,2 atau 'all'):{RESET} ").strip()
-                                if b_choices.lower() == "all":
-                                    branch = branches
-                                    break
-                                else:
-                                    indices = [int(x.strip()) for x in b_choices.split(",") if x.strip()]
-                                    if all(1 <= i <= len(branches) for i in indices):
-                                        branch = [branches[i - 1] for i in indices]
+                        if task_choice == "3":
+                            branch = []
+                        else:
+                            df_branch = df_grab[df_grab["Nama Outlet"] == outlet[0]]
+                            branches = sorted(df_branch["Cabang"].dropna().unique())
+                            print(f"\n  {BOLD}Pilih Cabang Grab untuk '{outlet[0]}':{RESET}")
+                            for idx, b_name in enumerate(branches):
+                                print(f"    {GREEN}[{idx + 1}]{RESET} {b_name}")
+                            print()
+                            while True:
+                                try:
+                                    b_choices = input(f"  {BOLD}Pilih nomor cabang Grab (contoh: 1,2 atau 'all'):{RESET} ").strip()
+                                    if b_choices.lower() == "all":
+                                        branch = branches
                                         break
-                            except ValueError: pass
-                            print(f"  {RED}Pilihan tidak valid.{RESET}")
+                                    else:
+                                        indices = [int(x.strip()) for x in b_choices.split(",") if x.strip()]
+                                        if all(1 <= i <= len(branches) for i in indices):
+                                            branch = [branches[i - 1] for i in indices]
+                                            break
+                                except ValueError: pass
+                                print(f"  {RED}Pilihan tidak valid.{RESET}")
                     else:
                         # Multiple outlets chosen -> all branches for those outlets
                         branch = []
@@ -989,6 +1053,8 @@ Examples:
                 name_key = f"Grab_{o}_{b}" if o and b else (f"Grab_{o}" if o else "Grab")
                 if task_choice == "1":
                     results[name_key] = run_grab_baseline(start_date, end_date, user_filter=args.user, outlet_filter=o, branch_filter=b)
+                elif task_choice == "3":
+                    results[name_key] = run_grab_vb(start_date, end_date, user_filter=args.user, outlet_filter=o, branch_filter=b)
                 else:
                     results[name_key] = run_grab(start_date, end_date, user_filter=args.user, outlet_filter=o, branch_filter=b)
 
