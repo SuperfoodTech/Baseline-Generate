@@ -87,3 +87,23 @@ node_modules/
 src/gofood-automation/
 cli.py
 
+# ── Chrome Profiles ────────────────────────────────────────────────────────
+**/chrome_profiles/
+
+# ── Session Exceptions ──────────────────────────────────────────────────────
+# Allow Shopee VB sessions
+!src/VB/shopee/sessions/
+!src/VB/shopee/sessions/*.json
+
+# Allow Shopee Weekly session
+!**/shopee-omzet-automation/data/
+**/shopee-omzet-automation/data/*
+!**/shopee-omzet-automation/data/session.json
+
+# Allow Shopee Baseline session
+!**/baseline/*/data/
+**/baseline/*/data/*
+!**/baseline/*/data/session.json
+
+
+
