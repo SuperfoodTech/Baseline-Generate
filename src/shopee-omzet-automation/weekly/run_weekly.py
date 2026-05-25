@@ -53,7 +53,12 @@ def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=
             sf_df = df[(df['Aplikasi'] == app_name) & (df['Status'] == 'Live')]
             
             if merchant_filter:
-                sf_df = sf_df[sf_df['Merchant Name'].str.strip().str.lower() == merchant_filter.strip().lower()]
+                if "|" in merchant_filter:
+                    filter_vals = [m.strip().lower().rstrip('_') for m in merchant_filter.split("|")]
+                    sf_df = sf_df[sf_df['Merchant Name'].str.strip().str.lower().str.rstrip('_').isin(filter_vals)]
+                else:
+                    filter_val = merchant_filter.strip().lower().rstrip('_')
+                    sf_df = sf_df[sf_df['Merchant Name'].str.strip().str.lower().str.rstrip('_') == filter_val]
                 
             sf_df = sf_df[(sf_df['Merchant Name'] != '-') & (sf_df['Merchant Name'].notna())]
             sf_df = sf_df.drop_duplicates(subset=['Merchant Name'])
@@ -68,7 +73,12 @@ def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=
         sf_df = df[(df['Aplikasi'] == app_name) & (df['Status'] == 'Live')]
         
         if merchant_filter:
-            sf_df = sf_df[sf_df['Merchant Name'].str.strip().str.lower() == merchant_filter.strip().lower()]
+            if "|" in merchant_filter:
+                filter_vals = [m.strip().lower().rstrip('_') for m in merchant_filter.split("|")]
+                sf_df = sf_df[sf_df['Merchant Name'].str.strip().str.lower().str.rstrip('_').isin(filter_vals)]
+            else:
+                filter_val = merchant_filter.strip().lower().rstrip('_')
+                sf_df = sf_df[sf_df['Merchant Name'].str.strip().str.lower().str.rstrip('_') == filter_val]
             
         sf_df = sf_df[(sf_df['Merchant Name'] != '-') & (sf_df['Merchant Name'].notna())]
         sf_df = sf_df.drop_duplicates(subset=['Merchant Name'])
@@ -118,7 +128,15 @@ def run_pipeline():
     # Pre-run cleanup of old Excel files in custom or download runs to ensure clean master aggregation
     import glob
     if not args.skip_download and os.path.exists(report_dir):
-        old_excels = glob.glob(os.path.join(report_dir, "*.xlsx"))
+        if args.merchant:
+            m_underscored = args.merchant.replace(' ', '_').replace('|', '_')
+            if len(m_underscored) > 50:
+                old_excels = glob.glob(os.path.join(report_dir, "Master_Weekly_Report_ShopeeFood*.xlsx"))
+            else:
+                old_excels = glob.glob(os.path.join(report_dir, f"*{m_underscored}*.xlsx"))
+        else:
+            old_excels = glob.glob(os.path.join(report_dir, "*.xlsx"))
+            
         if old_excels:
             log.info(f"🧹 Clearing {len(old_excels)} old Excel files in {report_dir} to prepare for fresh run...")
             for f in old_excels:
@@ -208,6 +226,7 @@ def run_pipeline():
             driver = session_data.get("driver")
 
             merchants_context = {} # Store tokens/ids for each merchant
+            failed_merchants = []
             start_time_all = int(time.time())
 
             for i, merchant_name in enumerate(target_merchants):
@@ -226,11 +245,16 @@ def run_pipeline():
                 
                     if not switch_success:
                         log.warning(f"  ❌ Skipping {merchant_name} after 2 failed switch attempts.")
+                        if merchant_name not in failed_merchants: failed_merchants.append(merchant_name)
                         continue
                     time.sleep(3) # Wait for cookies to sync
             
                 # Get tokens and VERIFY ID
                 session = refresh_tokens(driver)
+                if not session or "shopee_tob_token" not in session:
+                    log.warning(f"  ❌ Failed to get auth data for {merchant_name}. Skipping.")
+                    if merchant_name not in failed_merchants: failed_merchants.append(merchant_name)
+                    continue
                 active_id = str(session.get("shopee_tob_entity_id") or "")
             
                 # Double check if the ID actually changed from previous
@@ -334,9 +358,89 @@ def run_pipeline():
             # ── Summary ──────────────────────────────────────────────────────────
             log.info("📋 [PROGRESS] Download Phase Complete. Summary:")
             for m_name, ctx in merchants_context.items():
+                if len(ctx['downloaded']) < len(global_ranges):
+                    if m_name not in failed_merchants:
+                        failed_merchants.append(m_name)
                 log.info(f"  🏪 {m_name}: {len(ctx['downloaded'])}/{len(global_ranges)} files")
                 for fpath, label in ctx["downloaded"]:
                     log.info(f"     📄 {fpath}")
+
+            # ── Sequential Retry ────────────────────────────────────────────────
+            if failed_merchants:
+                log.info("\n" + "="*60)
+                log.info(f"  [RETRY] Attempting to re-run {len(failed_merchants)} failed merchants sequentially...")
+                log.info("="*60)
+                
+                for f_idx, m_name in enumerate(failed_merchants):
+                    log.info(f"\n  [RETRY {f_idx+1}/{len(failed_merchants)}] Re-running sequentially for: {m_name}")
+                    
+                    # 1. Switch
+                    switch_success = False
+                    for retry in range(2):
+                        if auto_switch_merchant(driver, m_name):
+                            switch_success = True
+                            break
+                        else:
+                            time.sleep(3)
+                    
+                    if not switch_success:
+                        log.error(f"  ❌ [RETRY] Failed to switch to {m_name}.")
+                        continue
+                    time.sleep(3)
+                    
+                    # 2. Auth
+                    session = refresh_tokens(driver)
+                    if not session or "shopee_tob_token" not in session:
+                        log.error(f"  ❌ [RETRY] Failed to get auth for {m_name}.")
+                        continue
+                    
+                    active_id = str(session.get("shopee_tob_entity_id") or "")
+                    client = ShopeeClient(tob_token=session["shopee_tob_token"], entity_id=active_id, extra_cookies=session.get("extra_cookies", {}))
+                    
+                    # 3. Trigger & Poll Sequentially
+                    for r in global_ranges:
+                        # Trigger
+                        trigger_success = False
+                        for trigger_retry in range(3):
+                            res = client.export_transaction_report(merchant_ids=[active_id], start_time=r["start"], end_time=r["end"])
+                            if res is True:
+                                trigger_success = True
+                                break
+                            elif res is None:
+                                time.sleep(10)
+                            else:
+                                break
+                        
+                        if not trigger_success:
+                            log.error(f"  ❌ [RETRY] Failed to trigger export for {m_name}.")
+                            continue
+                            
+                        # Poll just this merchant
+                        start_trigger_time = int(time.time())
+                        poll_timeout = 1800
+                        start_poll = time.time()
+                        downloaded = False
+                        
+                        while not downloaded and (time.time() - start_poll) < poll_timeout:
+                            reports = client.get_report_list()
+                            if reports is None:
+                                time.sleep(10)
+                                continue
+                                
+                            for rep in reports:
+                                if rep.get("status") in [2, 3] and rep.get("download_url"):
+                                    if rep.get("create_time", 0) and rep["create_time"] >= start_trigger_time:
+                                        report_name = rep.get("name", f"report_{rep.get('id')}.xlsx")
+                                        target_path = os.path.join(report_dir, f"{m_name.replace(' ', '_')}_{report_name}")
+                                        if download_file(rep.get("download_url"), target_path):
+                                            log.info(f"  ✅ [RETRY DOWNLOAD] SUCCESS: {m_name} -> {report_name}")
+                                            downloaded = True
+                                            break
+                            if not downloaded:
+                                time.sleep(5)
+                        
+                        if not downloaded:
+                            log.error(f"  ❌ [RETRY] Timeout waiting for download: {m_name}")
 
         finally:
             if driver is not None:
@@ -372,12 +476,9 @@ def run_pipeline():
                 break
                 
         if not matched_merchant:
-            if '_Transactions_' in filename:
-                matched_merchant = filename.split('_Transactions_')[0].replace('_', ' ')
-            elif '_report_' in filename:
-                matched_merchant = filename.split('_report_')[0].replace('_', ' ')
-            else:
-                matched_merchant = filename.split('_')[0].replace('_', ' ')
+            # Skip files that do not match the current target merchants to prevent merging them!
+            log.info(f"  ⏭️ [SKIP] Raw file '{filename}' does not belong to target merchants. Skipping.")
+            continue
                 
         try:
             # Pengecekan apakah file memiliki data (tidak kosong)
@@ -492,8 +593,11 @@ def run_pipeline():
         max_end_str = datetime.fromtimestamp(max_end).strftime('%d%m%Y')
         
         if args.merchant:
-            merchant_safe = str(args.merchant).strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
-            master_filename = f"CUSTOM_{merchant_safe}_{min_start_str}_{max_end_str}.xlsx"
+            merchant_safe = str(args.merchant).strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
+            if len(merchant_safe) > 50:
+                master_filename = f"Master_Weekly_Report_ShopeeFood_{min_start_str}_{max_end_str}.xlsx"
+            else:
+                master_filename = f"CUSTOM_{merchant_safe}_{min_start_str}_{max_end_str}.xlsx"
         else:
             master_filename = f"Master_Weekly_Report_ShopeeFood_{min_start_str}_{max_end_str}.xlsx"
             

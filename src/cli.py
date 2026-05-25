@@ -860,18 +860,31 @@ def interactive_mode():
     # ─ Date input ─
     print()
     
-    # Default: last 7 days
-    default_end = datetime.now().strftime("%Y-%m-%d")
-    default_start = (datetime.now() - timedelta(days=6)).strftime("%Y-%m-%d")
+    # Calculate previous Monday to Sunday week
+    today = datetime.now()
+    days_to_last_sunday = today.weekday() + 1
+    last_sunday = today - timedelta(days=days_to_last_sunday)
+    last_monday = last_sunday - timedelta(days=6)
+    
+    default_end = last_sunday.strftime("%Y-%m-%d")
+    default_start = last_monday.strftime("%Y-%m-%d")
+    
+    while True:
+        date_choice = input(f"  {BOLD}Gunakan tanggal 7 hari terakhir (Senin-Minggu: {default_start} s/d {default_end})? (y/n):{RESET} ").strip().lower()
+        if date_choice in ("y", "yes", "n", "no"):
+            break
+        print(f"  {RED}Input tidak valid. Masukkan y atau n.{RESET}")
 
-    print(f"  {DIM}Default: {default_start} s/d {default_end} (7 hari terakhir){RESET}")
-    print()
+    if date_choice in ("y", "yes"):
+        start_date = default_start
+        end_date = default_end
+    else:
+        print()
+        start_input = input(f"  {BOLD}Start date (YYYY-MM-DD){RESET} [{default_start}]: ").strip()
+        end_input   = input(f"  {BOLD}End date   (YYYY-MM-DD){RESET} [{default_end}]: ").strip()
 
-    start_input = input(f"  {BOLD}Start date (YYYY-MM-DD){RESET} [{default_start}]: ").strip()
-    end_input   = input(f"  {BOLD}End date   (YYYY-MM-DD){RESET} [{default_end}]: ").strip()
-
-    start_date = start_input or default_start
-    end_date   = end_input or default_end
+        start_date = start_input or default_start
+        end_date   = end_input or default_end
 
     # Validate dates
     try:
@@ -1051,17 +1064,15 @@ Examples:
     start_time = datetime.now()
 
     if "grab" in platform or platform == "all":
-        outlets_to_run = outlet if outlet else [None]
-        branches_to_run = branch if branch else [None]
-        for o in outlets_to_run:
-            for b in branches_to_run:
-                name_key = f"Grab_{o}_{b}" if o and b else (f"Grab_{o}" if o else "Grab")
-                if task_choice == "1":
-                    results[name_key] = run_grab_baseline(start_date, end_date, user_filter=args.user, outlet_filter=o, branch_filter=b)
-                elif task_choice == "3":
-                    results[name_key] = run_grab_vb(start_date, end_date, user_filter=args.user, outlet_filter=o, branch_filter=b)
-                else:
-                    results[name_key] = run_grab(start_date, end_date, user_filter=args.user, outlet_filter=o, branch_filter=b)
+        o_str = "|".join(outlet) if outlet else None
+        b_str = "|".join(branch) if branch else None
+        name_key = "Grab"
+        if task_choice == "1":
+            results[name_key] = run_grab_baseline(start_date, end_date, user_filter=args.user, outlet_filter=o_str, branch_filter=b_str)
+        elif task_choice == "3":
+            results[name_key] = run_grab_vb(start_date, end_date, user_filter=args.user, outlet_filter=o_str, branch_filter=b_str)
+        else:
+            results[name_key] = run_grab(start_date, end_date, user_filter=args.user, outlet_filter=o_str, branch_filter=b_str)
 
     if "shopee" in platform or platform == "all":
         if task_choice == "3":
@@ -1069,13 +1080,12 @@ Examples:
             m_str = "|".join(shopee_merchant) if shopee_merchant else None
             results["Shopee_VB"] = run_shopee_vb(start_date, end_date, merchant_filter=m_str)
         else:
-            merchants_to_run = shopee_merchant if shopee_merchant else [None]
-            for m in merchants_to_run:
-                name_key = f"Shopee_{m}" if m else "Shopee"
-                if task_choice == "1":
-                    results[name_key] = run_shopee_baseline(start_date, end_date, merchant_filter=m)
-                elif task_choice == "2":
-                    results[name_key] = run_shopee(start_date, end_date, merchant_filter=m)
+            m_str = "|".join(shopee_merchant) if shopee_merchant else None
+            name_key = "Shopee"
+            if task_choice == "1":
+                results[name_key] = run_shopee_baseline(start_date, end_date, merchant_filter=m_str)
+            elif task_choice == "2":
+                results[name_key] = run_shopee(start_date, end_date, merchant_filter=m_str)
 
     if ("gofood" in platform or platform == "all") and task_choice != "3":
         outlets_to_run = outlet if outlet else [None]
@@ -1106,14 +1116,23 @@ Examples:
             if "grab" in platform or platform == "all":
                 # In run_baseline Grab, branches are appended. We check branch-specific file first, then fallback to empty branch file.
                 grab_paths_to_check = []
-                if branch:
-                    branch_safe = str(branch).strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
-                    grab_paths_to_check.append(os.path.join(base_dir, "laporan", "grab_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}_{branch_safe}.xlsx"))
-                grab_paths_to_check.append(os.path.join(base_dir, "laporan", "grab_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}_.xlsx"))
+                o_str = "|".join(outlet) if outlet else None
+                b_str = "|".join(branch) if branch else None
+                outlet_safe = str(o_str or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
+                if b_str:
+                    branch_safe = str(b_str).strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
+                    filename_prefix = f"BASELINE_CUSTOM_{outlet_safe}_{branch_safe}"
+                else:
+                    filename_prefix = f"BASELINE_CUSTOM_{outlet_safe}_"
+                
+                if len(filename_prefix) > 50:
+                    filename_prefix = "BASELINE_CUSTOM_MULTIPLE_OUTLETS"
+                
+                grab_paths_to_check.append(os.path.join(base_dir, "laporan", "grab_baseline", date_folder, f"{filename_prefix}.xlsx"))
                 
                 # Fallback glob pattern for any BASELINE_CUSTOM_{outlet_safe}_*.xlsx
                 import glob
-                glob_pattern = os.path.join(base_dir, "laporan", "grab_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}_*.xlsx")
+                glob_pattern = os.path.join(base_dir, "laporan", "grab_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}*.xlsx")
                 for gp in glob.glob(glob_pattern):
                     if gp not in grab_paths_to_check:
                         grab_paths_to_check.append(gp)
@@ -1133,7 +1152,10 @@ Examples:
             # Find Shopee Baseline output
             if "shopee" in platform or platform == "all":
                 shopee_paths_to_check = []
-                shopee_safe = str(shopee_merchant or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
+                m_str = "|".join(shopee_merchant) if shopee_merchant else None
+                shopee_safe = str(m_str or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
+                if len(shopee_safe) > 50:
+                    shopee_safe = "MULTIPLE_MERCHANTS"
                 shopee_paths_to_check.append(os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}.xlsx"))
                 shopee_paths_to_check.append(os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}_.xlsx"))
                 

@@ -94,10 +94,18 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                 branch = str(branch_val).strip() if pd.notna(branch_val) else ""
                 
                 # Apply custom outlet and branch filters internally
-                if outlet_filter and str(outlet).strip().lower() != str(outlet_filter).strip().lower():
-                    continue
-                if branch_filter and str(branch).strip().lower() != str(branch_filter).strip().lower():
-                    continue
+                if outlet_filter:
+                    if "|" in outlet_filter:
+                        valid_outlets = [o.strip().lower() for o in outlet_filter.split("|")]
+                        if str(outlet).strip().lower() not in valid_outlets: continue
+                    elif str(outlet).strip().lower() != str(outlet_filter).strip().lower():
+                        continue
+                if branch_filter:
+                    if "|" in branch_filter:
+                        valid_branches = [b.strip().lower() for b in branch_filter.split("|")]
+                        if str(branch).strip().lower() not in valid_branches: continue
+                    elif str(branch).strip().lower() != str(branch_filter).strip().lower():
+                        continue
                 
                 # Smart credential validation
                 is_valid, err_msg = validate_credentials(u_str, p_str)
@@ -127,12 +135,29 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     
     # Auto-cleanup old CSV files
     if laporan_dir.exists():
-        old_csvs = list(laporan_dir.glob("*.csv"))
-        if old_csvs:
-            log.info(f"Cleaning up {len(old_csvs)} old CSV files in {laporan_dir}...")
-            for f in old_csvs:
-                try: f.unlink()
-                except: pass
+        if outlet_filter or branch_filter:
+            for p_info in portals:
+                portal_safe_name = f"{p_info['outlet']}_{p_info['branch']}" if p_info['branch'] else f"{p_info['outlet']}"
+                portal_safe_name = portal_safe_name.replace("/", "_").replace("\\", "_")
+                for ext in [".csv", ".xlsx"]:
+                    f = laporan_dir / f"{portal_safe_name}{ext}"
+                    if f.exists():
+                        try: f.unlink()
+                        except: pass
+            
+            filename_prefix = "MASTER"
+            for ext in [".csv", ".xlsx"]:
+                f = laporan_dir / f"{filename_prefix}{ext}"
+                if f.exists():
+                    try: f.unlink()
+                    except: pass
+        else:
+            old_files = list(laporan_dir.glob("*.csv")) + list(laporan_dir.glob("*.xlsx"))
+            if old_files:
+                log.info(f"Cleaning up {len(old_files)} old files in {laporan_dir}...")
+                for f in old_files:
+                    try: f.unlink()
+                    except: pass
 
     log.info("="*60)
     log.info(f"  GRAB MULTI-PORTAL AUTOMATION ({len(portals)} portals)")
@@ -199,9 +224,12 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                         
                         portal_safe_name = f"{portal['outlet']}_{portal['branch']}" if portal['branch'] else f"{portal['outlet']}"
                         portal_safe_name = portal_safe_name.replace("/", "_").replace("\\", "_")
-                        dest = laporan_dir / f"{portal_safe_name}.csv"
-                        shutil.copy2(downloaded_file, dest)
-                        log.info(f"  ✓ [PORTAL {portal_id}] {outlet_name} — Saved to: {dest.name}")
+                        dest_xlsx = laporan_dir / f"{portal_safe_name}.xlsx"
+                        
+                        # Convert CSV to XLSX
+                        tmp_df = pd.read_csv(downloaded_file)
+                        tmp_df.to_excel(dest_xlsx, index=False)
+                        log.info(f"  ✓ [PORTAL {portal_id}] {outlet_name} — Saved to: {dest_xlsx.name}")
 
                 except Exception as e:
                     log.error(f"  ✗ [ACCOUNT] {username} CRITICAL ERROR: {str(e)}")
@@ -245,28 +273,35 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
         end_str = date_end or "all"
         laporan_dir = Path("laporan") / f"{start_str}_{end_str}"
 
-    csv_files = sorted(laporan_dir.glob("*.csv")) if laporan_dir.exists() else []
+    xlsx_files = sorted(laporan_dir.glob("*.xlsx")) if laporan_dir.exists() else []
     # Exclude master file jika sudah ada dari run sebelumnya
-    csv_files = [f for f in csv_files if f.stem != "MASTER"]
+    xlsx_files = [f for f in xlsx_files if f.stem != "MASTER" and not f.stem.startswith("CUSTOM_") and not f.stem.startswith("BASELINE_CUSTOM_")]
+    if outlet_filter or branch_filter:
+        valid_stems = []
+        for p_info in portals:
+            portal_safe_name = f"{p_info['outlet']}_{p_info['branch']}" if p_info['branch'] else f"{p_info['outlet']}"
+            portal_safe_name = portal_safe_name.replace("/", "_").replace("\\", "_")
+            valid_stems.append(portal_safe_name)
+        xlsx_files = [f for f in xlsx_files if f.stem in valid_stems]
 
-    if not csv_files:
-        print("\n[SKIP] Tidak ada file CSV untuk digabung.")
+    if not xlsx_files:
+        print("\n[SKIP] Tidak ada file XLSX untuk digabung.")
         return
 
-    print(f"\nScanning and validating {len(csv_files)} raw CSV files for master merging...")
+    print(f"\nScanning and validating {len(xlsx_files)} raw XLSX files for master merging...")
     frames = []
-    for csv_path in csv_files:
+    for xlsx_path in xlsx_files:
         try:
-            df = pd.read_csv(csv_path)
+            df = pd.read_excel(xlsx_path)
             if df.empty or len(df) == 0:
-                print(f"  ⚠️ [CHECK] Raw file '{csv_path.name}' is EMPTY (no transaction rows). Skipping merger.")
+                print(f"  ⚠️ [CHECK] Raw file '{xlsx_path.name}' is EMPTY (no transaction rows). Skipping merger.")
                 continue
                 
-            print(f"  🔍 [CHECK] Raw file '{csv_path.name}' has {len(df)} rows. Including in MASTER...")
-            df.insert(0, "Merchant", csv_path.stem)
+            print(f"  🔍 [CHECK] Raw file '{xlsx_path.name}' has {len(df)} rows. Including in MASTER...")
+            df.insert(0, "Merchant", xlsx_path.stem)
             frames.append(df)
         except Exception as e:
-            print(f"  ❌ [CHECK] Gagal membaca atau memproses '{csv_path.name}': {e}")
+            print(f"  ❌ [CHECK] Gagal membaca atau memproses '{xlsx_path.name}': {e}")
 
     if not frames:
         log.info("⏭️ [SKIP] Tidak ada file CSV yang memiliki data untuk digabung.")
@@ -292,21 +327,12 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                 parsed[mask_failed] = pd.to_datetime(master_df.loc[mask_failed, col], errors="coerce")
             master_df[col] = parsed.dt.strftime("%Y-%m-%d at %H:%M").where(parsed.notna(), other=master_df[col])
 
-    # Simpan sebagai CSV & Excel (Pemisahan Penamaan Pelaporan)
-    if outlet_filter or branch_filter:
-        outlet_safe = str(outlet_filter or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
-        branch_safe = str(branch_filter or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
-        filename_prefix = f"CUSTOM_{outlet_safe}_{branch_safe}"
-    else:
-        filename_prefix = "MASTER"
-
-    master_csv = laporan_dir / f"{filename_prefix}.csv"
-    master_df.to_csv(master_csv, index=False)
+    # Simpan sebagai Excel Lokal (Pemisahan Penamaan Pelaporan)
+    filename_prefix = "MASTER"
 
     master_xlsx = laporan_dir / f"{filename_prefix}.xlsx"
     master_df.to_excel(master_xlsx, index=False, sheet_name="All Merchants")
 
-    log.info(f"✓ Laporan CSV  : {master_csv}")
     log.info(f"✓ Laporan Excel: {master_xlsx}")
     log.info(f"  Total baris  : {len(master_df):,} | Merchant: {master_df['Merchant'].nunique()}")
 
