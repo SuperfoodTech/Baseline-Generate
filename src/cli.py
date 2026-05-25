@@ -860,17 +860,29 @@ def interactive_mode():
     # ─ Date input ─
     print()
     
-    # Calculate previous Monday to Sunday week
+    # Calculate dynamic shortcut dates
     today = datetime.now()
-    days_to_last_sunday = today.weekday() + 1
-    last_sunday = today - timedelta(days=days_to_last_sunday)
-    last_monday = last_sunday - timedelta(days=6)
-    
-    default_end = last_sunday.strftime("%Y-%m-%d")
-    default_start = last_monday.strftime("%Y-%m-%d")
+    if task_choice == "3":
+        # VB: Senin ke Senin
+        days_since_monday = today.weekday()
+        recent_monday = today - timedelta(days=days_since_monday)
+        previous_monday = recent_monday - timedelta(days=7)
+        
+        default_end = recent_monday.strftime("%Y-%m-%d")
+        default_start = previous_monday.strftime("%Y-%m-%d")
+        shortcut_label = "Senin-Senin"
+    else:
+        # Weekly/Baseline: Senin ke Minggu
+        days_to_last_sunday = today.weekday() + 1
+        last_sunday = today - timedelta(days=days_to_last_sunday)
+        last_monday = last_sunday - timedelta(days=6)
+        
+        default_end = last_sunday.strftime("%Y-%m-%d")
+        default_start = last_monday.strftime("%Y-%m-%d")
+        shortcut_label = "Senin-Minggu"
     
     while True:
-        date_choice = input(f"  {BOLD}Gunakan tanggal 7 hari terakhir (Senin-Minggu: {default_start} s/d {default_end})? (y/n):{RESET} ").strip().lower()
+        date_choice = input(f"  {BOLD}Gunakan tanggal 7 hari terakhir ({shortcut_label}: {default_start} s/d {default_end})? (y/n):{RESET} ").strip().lower()
         if date_choice in ("y", "yes", "n", "no"):
             break
         print(f"  {RED}Input tidak valid. Masukkan y atau n.{RESET}")
