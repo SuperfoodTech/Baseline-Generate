@@ -65,12 +65,10 @@ def summarize_monthly(
 
 	valid_long_order_id = working["Long Order ID"].str.match(r"^[A-Za-z0-9-]+$", na=False)
 	
-	# An order is valid if it has a proper ID and is a Payment OR an Adjustment
 	# We exclude Cancelled orders
-	is_order_category = working["Category"].isin(["payment", "adjustment"])
 	is_not_cancelled = working["Status"].ne("cancelled")
 	
-	valid_orders = working.loc[valid_long_order_id & is_order_category & is_not_cancelled].copy()
+	valid_orders = working.loc[valid_long_order_id & is_not_cancelled].copy()
 	valid_orders = valid_orders.loc[valid_orders["Updated On"].notna()].copy()
 	if date_start is not None:
 		valid_orders = valid_orders.loc[valid_orders["Updated On"] >= date_start].copy()

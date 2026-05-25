@@ -137,6 +137,8 @@ def run_pipeline():
         else:
             old_excels = glob.glob(os.path.join(report_dir, "*.xlsx"))
             
+        old_excels = [f for f in old_excels if not os.path.basename(f).startswith("Master_Weekly_Report_ShopeeFood")]
+            
         if old_excels:
             log.info(f"🧹 Clearing {len(old_excels)} old Excel files in {report_dir} to prepare for fresh run...")
             for f in old_excels:
@@ -595,13 +597,17 @@ def run_pipeline():
         if args.merchant:
             merchant_safe = str(args.merchant).strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
             if len(merchant_safe) > 50:
-                master_filename = f"Master_Weekly_Report_ShopeeFood_{min_start_str}_{max_end_str}.xlsx"
+                master_filename = f"Master_Weekly_Report_ShopeeFood_{min_start_str}_{max_end_str}"
             else:
-                master_filename = f"CUSTOM_{merchant_safe}_{min_start_str}_{max_end_str}.xlsx"
+                master_filename = f"CUSTOM_{merchant_safe}_{min_start_str}_{max_end_str}"
         else:
-            master_filename = f"Master_Weekly_Report_ShopeeFood_{min_start_str}_{max_end_str}.xlsx"
+            master_filename = f"Master_Weekly_Report_ShopeeFood_{min_start_str}_{max_end_str}"
             
-        master_filepath = os.path.join(report_dir, master_filename)
+        master_filepath = os.path.join(report_dir, f"{master_filename}.xlsx")
+        version = 1
+        while os.path.exists(master_filepath):
+            version += 1
+            master_filepath = os.path.join(report_dir, f"{master_filename}-{version:02d}.xlsx")
         
         master_df.to_excel(master_filepath, index=False)
         log.info(f"🎉 [SUCCESS] Laporan created: {master_filepath}")

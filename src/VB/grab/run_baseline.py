@@ -147,10 +147,7 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                     if p_file.exists():
                         to_clean.append(p_file)
         
-        # Also clean MASTER if it exists
-        master_file = laporan_dir / "MASTER.xlsx"
-        if master_file.exists():
-            to_clean.append(master_file)
+        # Do not clean MASTER files as per user request
         if to_clean:
             log.info(f"Cleaning up {len(to_clean)} old CSV files for active portal(s) in {laporan_dir}...")
             for f in to_clean:
@@ -239,7 +236,7 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     
     xlsx_files = sorted(laporan_dir.glob("*.xlsx"))
     for fpath in xlsx_files:
-        if fpath.name == "MASTER.xlsx":
+        if fpath.name.startswith("MASTER"):
             continue
         try:
             df = pd.read_excel(fpath, dtype=str)
@@ -252,6 +249,11 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     if all_data:
         master_df = pd.concat(all_data, ignore_index=True)
         master_xlsx = laporan_dir / "MASTER.xlsx"
+        version = 1
+        while master_xlsx.exists():
+            version += 1
+            master_xlsx = laporan_dir / f"MASTER-{version:02d}.xlsx"
+            
         master_df.to_excel(master_xlsx, index=False)
         log.info(f"✅ Successfully merged into: {master_xlsx.name}")
     else:

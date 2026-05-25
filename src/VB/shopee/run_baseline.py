@@ -369,10 +369,13 @@ def run_pipeline():
             to_clean.extend(glob.glob(pattern))
             
         if to_clean:
-            log.info(f"🧹 Clearing {len(to_clean)} old Excel files for active portal(s) in {report_dir} to prepare for fresh run...")
-            for f in to_clean:
-                try: os.unlink(f)
-                except Exception as e: log.debug(f"Failed to delete {f}: {e}")
+            # exclude MASTER files from cleanup
+            to_clean = [f for f in to_clean if not os.path.basename(f).startswith("MASTER")]
+            if to_clean:
+                log.info(f"🧹 Clearing {len(to_clean)} old Excel files for active portal(s) in {report_dir} to prepare for fresh run...")
+                for f in to_clean:
+                    try: os.unlink(f)
+                    except Exception as e: log.debug(f"Failed to delete {f}: {e}")
 
     # ── 1. Phase 1: Authentication / Session Check (Sequential) ──
     if args.skip_download:
@@ -430,7 +433,7 @@ def run_pipeline():
     
     for fpath in xlsx_files:
         filename = os.path.basename(fpath)
-        if filename == "MASTER.xlsx":
+        if filename.startswith("MASTER"):
             continue
             
         try:
@@ -444,8 +447,13 @@ def run_pipeline():
     if all_data:
         master_df = pd.concat(all_data, ignore_index=True)
         master_filepath = os.path.join(report_dir, "MASTER.xlsx")
+        version = 1
+        while os.path.exists(master_filepath):
+            version += 1
+            master_filepath = os.path.join(report_dir, f"MASTER-{version:02d}.xlsx")
+            
         master_df.to_excel(master_filepath, index=False)
-        log.info(f"✅ Successfully merged into: {master_filepath}")
+        log.info(f"✅ Successfully merged into: {os.path.basename(master_filepath)}")
     else:
         log.warning("⚠️ No valid data found to merge into MASTER.")
 

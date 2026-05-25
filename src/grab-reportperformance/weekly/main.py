@@ -145,14 +145,12 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                         try: f.unlink()
                         except: pass
             
-            filename_prefix = "MASTER"
-            for ext in [".csv", ".xlsx"]:
-                f = laporan_dir / f"{filename_prefix}{ext}"
-                if f.exists():
-                    try: f.unlink()
-                    except: pass
+            # Do not wipe MASTER files as per user request
+            pass
         else:
             old_files = list(laporan_dir.glob("*.csv")) + list(laporan_dir.glob("*.xlsx"))
+            # Filter out MASTER files from being wiped
+            old_files = [f for f in old_files if not f.stem.startswith("MASTER")]
             if old_files:
                 log.info(f"Cleaning up {len(old_files)} old files in {laporan_dir}...")
                 for f in old_files:
@@ -331,6 +329,10 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     filename_prefix = "MASTER"
 
     master_xlsx = laporan_dir / f"{filename_prefix}.xlsx"
+    version = 1
+    while master_xlsx.exists():
+        version += 1
+        master_xlsx = laporan_dir / f"{filename_prefix}-{version:02d}.xlsx"
     master_df.to_excel(master_xlsx, index=False, sheet_name="All Merchants")
 
     log.info(f"✓ Laporan Excel: {master_xlsx}")
