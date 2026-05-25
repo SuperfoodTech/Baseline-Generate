@@ -421,7 +421,35 @@ def run_pipeline():
                 except Exception as e:
                     log.error(f"❌ [PROGRESS] Portal '{portal['account_name']}' raised exception: {e}")
 
-    log.info("🎉 SUCCESS! Semua laporan mentah VB telah berhasil diunduh ke folder laporan.")
+    # ── 3. Phase 3: Merging to MASTER.xlsx ──
+    log.info("📊 [PROGRESS] PHASE 3: Merging all downloaded VB files to MASTER.xlsx...")
+    all_data = []
+    
+    xlsx_files = glob.glob(os.path.join(report_dir, "*.xlsx"))
+    xlsx_files.sort()
+    
+    for fpath in xlsx_files:
+        filename = os.path.basename(fpath)
+        if filename == "MASTER.xlsx":
+            continue
+            
+        try:
+            df = pd.read_excel(fpath, dtype=str)
+            if not df.empty:
+                df.insert(0, 'Merchant Filter Name', filename)
+                all_data.append(df)
+        except Exception as e:
+            log.warning(f"⚠️ Failed to read {filename} for merging: {e}")
+            
+    if all_data:
+        master_df = pd.concat(all_data, ignore_index=True)
+        master_filepath = os.path.join(report_dir, "MASTER.xlsx")
+        master_df.to_excel(master_filepath, index=False)
+        log.info(f"✅ Successfully merged into: {master_filepath}")
+    else:
+        log.warning("⚠️ No valid data found to merge into MASTER.")
+
+    log.info("🎉 SUCCESS! Semua laporan mentah VB telah berhasil diunduh ke folder laporan dan di-merge ke MASTER.")
 
 if __name__ == "__main__":
     run_pipeline()

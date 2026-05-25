@@ -142,9 +142,15 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
         for u, info in unique_users.items():
             for portal in info["portals"]:
                 portal_safe_name = f"{portal['outlet']}_{portal['branch']}".replace("/", "_").replace("\\", "_")
-                p_file = laporan_dir / f"{portal_safe_name}.csv"
-                if p_file.exists():
-                    to_clean.append(p_file)
+                for ext in [".csv", ".xlsx"]:
+                    p_file = laporan_dir / f"{portal_safe_name}{ext}"
+                    if p_file.exists():
+                        to_clean.append(p_file)
+        
+        # Also clean MASTER if it exists
+        master_file = laporan_dir / "MASTER.xlsx"
+        if master_file.exists():
+            to_clean.append(master_file)
         if to_clean:
             log.info(f"Cleaning up {len(to_clean)} old CSV files for active portal(s) in {laporan_dir}...")
             for f in to_clean:
@@ -199,9 +205,15 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                         laporan_dir.mkdir(parents=True, exist_ok=True)
                         
                         portal_safe_name = f"{portal['outlet']}_{portal['branch']}".replace("/", "_").replace("\\", "_")
-                        dest = laporan_dir / f"{portal_safe_name}.csv"
-                        shutil.copy2(downloaded_file, dest)
-                        log.info(f"  ✓ [PORTAL {portal_id}] {outlet_name} — Saved to: {dest.name}")
+                        dest_xlsx = laporan_dir / f"{portal_safe_name}.xlsx"
+                        
+                        try:
+                            # Convert directly to XLSX
+                            df_temp = pd.read_csv(downloaded_file, dtype=str)
+                            df_temp.to_excel(dest_xlsx, index=False)
+                            log.info(f"  ✓ [PORTAL {portal_id}] {outlet_name} — Saved to: {dest_xlsx.name}")
+                        except Exception as e:
+                            log.error(f"  ✗ [PORTAL {portal_id}] {outlet_name} — Failed to convert to excel: {e}")
 
                 except Exception as e:
                     log.error(f"  ✗ [ACCOUNT] {username} CRITICAL ERROR: {str(e)}")
@@ -221,7 +233,31 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
         log.info("  ✓ ALL ACCOUNTS PROCESSED SUCCESSFULLY")
     log.info("="*60)
 
-    log.info("🎉 SUCCESS! Semua laporan mentah VB telah berhasil diunduh ke folder laporan.")
+    # ── Merging Phase to MASTER.xlsx ──
+    log.info("📊 Merging all downloaded VB files to MASTER.xlsx...")
+    all_data = []
+    
+    xlsx_files = sorted(laporan_dir.glob("*.xlsx"))
+    for fpath in xlsx_files:
+        if fpath.name == "MASTER.xlsx":
+            continue
+        try:
+            df = pd.read_excel(fpath, dtype=str)
+            if not df.empty:
+                df.insert(0, 'Portal Filter Name', fpath.stem)
+                all_data.append(df)
+        except Exception as e:
+            log.warning(f"Failed to read {fpath.name} for merging: {e}")
+            
+    if all_data:
+        master_df = pd.concat(all_data, ignore_index=True)
+        master_xlsx = laporan_dir / "MASTER.xlsx"
+        master_df.to_excel(master_xlsx, index=False)
+        log.info(f"✅ Successfully merged into: {master_xlsx.name}")
+    else:
+        log.warning("⚠️ No valid data found to merge into MASTER.")
+
+    log.info("🎉 SUCCESS! Semua laporan mentah VB telah berhasil diunduh ke folder laporan dan di-merge.")
 
 
 if __name__ == "__main__":
