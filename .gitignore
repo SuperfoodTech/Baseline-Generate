@@ -97,3 +97,7 @@ cli.py
 **/sessions/
 **/session*.json
 **/data/session.json
+
+# Allow Shopee baseline session for server
+!src/baseline/shopee/data/
+!src/baseline/shopee/data/session.json
