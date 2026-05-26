@@ -20,7 +20,6 @@ const CACHE_DURATION = 5 * 60 * 1000; // 5 menit cache
 
 const makeProgressEmbed = (step, title, description, fields = []) => {
     const steps = [
-        { name: 'Tagihan', icon: '📝' },
         { name: 'Outlet', icon: '🏢' },
         { name: 'Brand', icon: '📍' },
         { name: 'Aplikator', icon: '📱' },
@@ -66,9 +65,6 @@ module.exports = {
             .setTitle('📊 Sinkronisasi Laporan Mingguan')
             .setDescription(
                 'Halo! Saya siap membantu merekap data laporan mingguan Anda. Mari kita mulai proses sinkronisasi datanya.\n\n' +
-                '**Pilih tipe laporan yang ingin Anda generate:**\n\n' +
-                '🔹 **Baseline:** Untuk perbandingan standar performa.\n' +
-                '🔹 **Weekly Billing:** Untuk rincian transaksi mingguan.\n\n' +
                 'Klik tombol di bawah untuk mengisi formulir...'
             )
             .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
@@ -105,35 +101,9 @@ module.exports = {
             const { outlets, outletBranchMap, outletAppMap, outletCabangAppMap } = await this.fetchSheetData();
             const formData = {};
 
-            // 1. Pilih Jenis Tagihan
-            const taskResult = await this.askSelection(interaction, {
-                title: 'Pilih Jenis Laporan',
-                step: 0,
-                placeholder: 'Pilih Jenis Tagihan',
-                options: [
-                    { label: 'Baseline', value: 'baseline', description: 'Laporan perbandingan standar performa' },
-                    { label: 'Weekly (Coming Soon)', value: 'weekly_disabled', description: '⚠️ Fitur ini belum tersedia' }
-                ],
-                isFirstStep: true
-            });
+            formData.tagihan = 'baseline';
 
-            // Blokir jika user pilih Weekly (disabled)
-            if (taskResult.values[0] === 'weekly_disabled') {
-                await taskResult.lastInteraction.update({
-                    embeds: [
-                        new EmbedBuilder()
-                            .setColor(0xFFAA00)
-                            .setTitle('⚠️ Fitur Weekly Belum Tersedia')
-                            .setDescription('Saat ini hanya mode **Baseline** yang tersedia. Fitur Weekly akan segera hadir.\nSilakan jalankan `/start` dan pilih **Baseline**.')
-                            .setTimestamp()
-                    ],
-                    components: []
-                });
-                return;
-            }
-            formData.tagihan = taskResult.values[0];
-
-            // 2. Pilih Outlet
+            // 1. Pilih Outlet
             const maxOutletOpts = outlets.length > 99 ? 99 : outlets.length;
             const outletOptions = [
                 { label: '🌟 Pilih Semua', value: 'all' },
@@ -143,13 +113,14 @@ module.exports = {
                 }))
             ];
 
-            const outletResult = await this.askSelection(taskResult.lastInteraction, {
+            const outletResult = await this.askSelection(interaction, {
                 title: 'Pilih Outlet',
-                step: 1,
+                step: 0,
                 placeholder: 'Pilih satu atau lebih outlet...',
                 options: outletOptions,
                 minValues: 1,
                 maxValues: maxOutletOpts + 1,
+                isFirstStep: true,
                 fields: [
                     { name: 'Jenis Laporan', value: formData.tagihan.toUpperCase(), inline: true }
                 ]
@@ -192,7 +163,7 @@ module.exports = {
 
             const cabangResult = await this.askSelection(outletResult.lastInteraction, {
                 title: 'Pilih Brand',
-                step: 2,
+                step: 1,
                 placeholder: 'Pilih satu atau lebih brand...',
                 options: cabangOptions,
                 minValues: 1,
@@ -277,7 +248,7 @@ module.exports = {
 
             const aplikatorResult = await this.askSelection(cabangResult.lastInteraction, {
                 title: 'Pilih Aplikator',
-                step: 3,
+                step: 2,
                 placeholder: 'Pilih satu atau lebih aplikator...',
                 options: aplikatorOptions,
                 minValues: 1,
@@ -314,7 +285,7 @@ module.exports = {
                 { name: 'Brand Terpilih', value: formData.cabang.length > 512 ? formData.cabang.substring(0, 508) + '...' : formData.cabang, inline: false }
             ];
 
-            const dateResult = await this.askDateModal(aplikatorResult.lastInteraction, 4, dateFields);
+            const dateResult = await this.askDateModal(aplikatorResult.lastInteraction, 3, dateFields);
             formData.tanggalMulai = dateResult.tanggalMulai;
             formData.tanggalSelesai = dateResult.tanggalSelesai;
 
