@@ -134,10 +134,10 @@ module.exports = {
             formData.tagihan = taskResult.values[0];
 
             // 2. Pilih Outlet
-            const maxOutletOpts = outlets.length > 24 ? 24 : outlets.length;
+            const maxOutletOpts = outlets.length > 99 ? 99 : outlets.length;
             const outletOptions = [
                 { label: '🌟 Pilih Semua', value: 'all' },
-                ...outlets.slice(0, 24).map(name => ({
+                ...outlets.slice(0, 99).map(name => ({
                     label: name.substring(0, 100),
                     value: name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100)
                 }))
@@ -158,7 +158,7 @@ module.exports = {
             const selectedOutletValues = outletResult.values;
             let selectedOutletNames;
             if (selectedOutletValues.includes('all')) {
-                selectedOutletNames = outlets.slice(0, 24);
+                selectedOutletNames = outlets.slice(0, 99);
             } else {
                 selectedOutletNames = outlets.filter(name =>
                     selectedOutletValues.includes(name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100))
@@ -170,7 +170,7 @@ module.exports = {
             let filteredBranchesSet = new Set();
             let outletValuesForBranches = selectedOutletValues;
             if (selectedOutletValues.includes('all')) {
-                outletValuesForBranches = outlets.slice(0, 24).map(name =>
+                outletValuesForBranches = outlets.slice(0, 99).map(name =>
                     name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100)
                 );
             }
@@ -181,10 +181,10 @@ module.exports = {
             let filteredBranches = Array.from(filteredBranchesSet);
             if (filteredBranches.length === 0) filteredBranches = ['Pilih Brand (Tidak ada data)'];
 
-            const maxCabangOpts = filteredBranches.length > 24 ? 24 : filteredBranches.length;
+            const maxCabangOpts = filteredBranches.length > 99 ? 99 : filteredBranches.length;
             const cabangOptions = [
                 { label: '🌟 Pilih Semua', value: 'all' },
-                ...filteredBranches.slice(0, 24).map(name => ({
+                ...filteredBranches.slice(0, 99).map(name => ({
                     label: name.substring(0, 100),
                     value: name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100)
                 }))
@@ -206,7 +206,7 @@ module.exports = {
             const selectedCabangValues = cabangResult.values;
             let selectedCabangNames;
             if (selectedCabangValues.includes('all')) {
-                selectedCabangNames = filteredBranches.slice(0, 24);
+                selectedCabangNames = filteredBranches.slice(0, 99);
             } else {
                 selectedCabangNames = filteredBranches.filter(name =>
                     selectedCabangValues.includes(name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100))
@@ -805,39 +805,54 @@ module.exports = {
     },
 
     async askSelection(interaction, { title, step, placeholder, options, minValues = 1, maxValues = 1, fields = [], isFirstStep = false }) {
-        let selectedValues = [];
+        let selectedValues = new Set();
 
         const getComponents = () => {
-            const selectMenu = new StringSelectMenuBuilder()
-                .setCustomId('selection_menu')
-                .setPlaceholder(placeholder)
-                .setMinValues(minValues)
-                .setMaxValues(maxValues)
-                .addOptions(options.map(opt => ({
-                    ...opt,
-                    default: selectedValues.includes(opt.value)
-                })));
+            const rows = [];
+            
+            const chunks = [];
+            for (let i = 0; i < options.length; i += 25) {
+                chunks.push(options.slice(i, i + 25));
+            }
 
-            const selectRow = new ActionRowBuilder().addComponents(selectMenu);
+            const safeChunks = chunks.slice(0, 4);
 
-            const hasDisabledSelected = selectedValues.some(val => val.endsWith('_disabled'));
-            const isDisabled = selectedValues.length === 0 || hasDisabledSelected;
+            safeChunks.forEach((chunk, index) => {
+                const currentMax = Math.min(maxValues, chunk.length);
+                
+                const selectMenu = new StringSelectMenuBuilder()
+                    .setCustomId(`selection_menu_${index}`)
+                    .setPlaceholder(placeholder + (safeChunks.length > 1 ? ` (Bagian ${index + 1})` : ''))
+                    .setMinValues(0)
+                    .setMaxValues(currentMax)
+                    .addOptions(chunk.map(opt => ({
+                        ...opt,
+                        default: selectedValues.has(opt.value)
+                    })));
+
+                rows.push(new ActionRowBuilder().addComponents(selectMenu));
+            });
+
+            const selectedArray = Array.from(selectedValues);
+            const hasDisabledSelected = selectedArray.some(val => val.endsWith('_disabled'));
+            const isDisabled = selectedValues.size < minValues || hasDisabledSelected;
 
             const nextButton = new ButtonBuilder()
                 .setCustomId('continue_btn')
-                .setLabel(hasDisabledSelected ? '⚠️ Opsi tidak tersedia terpilih' : (selectedValues.length > 0 ? '➡️ Lanjutkan' : 'Pilih opsi terlebih dahulu'))
-                .setStyle(hasDisabledSelected ? ButtonStyle.Danger : (selectedValues.length > 0 ? ButtonStyle.Success : ButtonStyle.Secondary))
+                .setLabel(hasDisabledSelected ? '⚠️ Opsi tidak tersedia terpilih' : (selectedValues.size >= minValues ? '➡️ Lanjutkan' : (minValues === 1 ? 'Pilih opsi terlebih dahulu' : `Pilih minimal ${minValues} opsi`)))
+                .setStyle(hasDisabledSelected ? ButtonStyle.Danger : (selectedValues.size >= minValues ? ButtonStyle.Success : ButtonStyle.Secondary))
                 .setDisabled(isDisabled);
 
-            const buttonRow = new ActionRowBuilder().addComponents(nextButton);
+            rows.push(new ActionRowBuilder().addComponents(nextButton));
 
-            return [selectRow, buttonRow];
+            return rows;
         };
 
         const getEmbed = () => {
+            const selectedArray = Array.from(selectedValues);
             let description = `Silakan pilih opsi dari menu di bawah, lalu klik **Lanjutkan**.\n\n`;
-            if (selectedValues.length > 0) {
-                const labelList = selectedValues.map(val => {
+            if (selectedArray.length > 0) {
+                const labelList = selectedArray.map(val => {
                     const found = options.find(opt => opt.value === val);
                     return found ? found.label : val;
                 }).join(', ');
@@ -875,8 +890,13 @@ module.exports = {
 
             collector.on('collect', async i => {
                 latestInteraction = i;
-                if (i.customId === 'selection_menu') {
-                    selectedValues = i.values;
+                if (i.customId.startsWith('selection_menu')) {
+                    const menuIndex = parseInt(i.customId.split('_').pop());
+                    const currentChunk = options.slice(menuIndex * 25, (menuIndex + 1) * 25);
+                    
+                    currentChunk.forEach(opt => selectedValues.delete(opt.value));
+                    i.values.forEach(val => selectedValues.add(val));
+
                     await i.update({
                         embeds: [getEmbed()],
                         components: getComponents()
@@ -888,7 +908,7 @@ module.exports = {
 
             collector.on('end', (collected, reason) => {
                 if (reason === 'confirmed' && latestInteraction) {
-                    resolve({ values: selectedValues, lastInteraction: latestInteraction });
+                    resolve({ values: Array.from(selectedValues), lastInteraction: latestInteraction });
                 } else {
                     reject(new Error('Timeout or cancelled'));
                 }
