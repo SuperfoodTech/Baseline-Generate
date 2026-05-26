@@ -1043,7 +1043,7 @@ Examples:
         # Lookup Merchant Name Shopee dari GSheets berdasarkan Nama Outlet
         # Ini mengatasi mismatch nama outlet (Discord) vs merchant name Shopee (GSheets)
         shopee_merchant = _resolve_shopee_merchant(outlet, branch_name=branch) if outlet else None
-        print(f"\n{CYAN}[DISCORD MODE] Task={task_choice} | Platform={platform} | Outlet={outlet} | Cabang={branch}{RESET}")
+        print(f"\n{CYAN}[DISCORD MODE] Task={task_choice} | Platform={platform} | Outlet={outlet} | Brand={branch}{RESET}")
         banner()
     # ── Normal CLI Mode ─────────────────────────────────────────────────
     elif args.platform is None or args.start is None or args.end is None:

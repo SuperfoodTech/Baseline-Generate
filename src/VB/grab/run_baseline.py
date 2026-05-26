@@ -137,22 +137,7 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     log.info("="*60)
     
     # Auto-cleanup old CSV files for the active portals only
-    if laporan_dir.exists():
-        to_clean = []
-        for u, info in unique_users.items():
-            for portal in info["portals"]:
-                portal_safe_name = f"{portal['outlet']}_{portal['branch']}".replace("/", "_").replace("\\", "_")
-                for ext in [".csv", ".xlsx"]:
-                    p_file = laporan_dir / f"{portal_safe_name}{ext}"
-                    if p_file.exists():
-                        to_clean.append(p_file)
-        
-        # Do not clean MASTER files as per user request
-        if to_clean:
-            log.info(f"Cleaning up {len(to_clean)} old CSV files for active portal(s) in {laporan_dir}...")
-            for f in to_clean:
-                try: f.unlink()
-                except: pass
+    # Auto-cleanup old CSV files is disabled as per user request
     
     from playwright.async_api import async_playwright
     
@@ -202,7 +187,12 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                         laporan_dir.mkdir(parents=True, exist_ok=True)
                         
                         portal_safe_name = f"{portal['outlet']}_{portal['branch']}".replace("/", "_").replace("\\", "_")
+                        
+                        version = 1
                         dest_xlsx = laporan_dir / f"{portal_safe_name}.xlsx"
+                        while dest_xlsx.exists():
+                            version += 1
+                            dest_xlsx = laporan_dir / f"{portal_safe_name}-{version:02d}.xlsx"
                         
                         try:
                             # Convert directly to XLSX

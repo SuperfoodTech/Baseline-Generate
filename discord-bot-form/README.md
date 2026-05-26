@@ -11,9 +11,9 @@ Selamat datang di **v2** dari Bot Discord Agency! Versi ini menghadirkan peromba
 ## 🚀 Fitur Utama & Keunggulan v2
 
 *   **Sequential Form Wizard (Step-by-Step)**: Alur pengisian form bergantian secara bertahap dari langkah 1 sampai 5 langsung di dalam chat secara interaktif.
-*   **Dynamic Cascading Filter (Penyaringan Cabang)**:
+*   **Dynamic Cascading Filter (Penyaringan Brand)**:
     *   Pada **Langkah 2 (Pilih Outlet)**, pengguna dapat memilih satu atau beberapa outlet.
-    *   Pada **Langkah 3 (Pilih Cabang)**, menu dropdown secara dinamis **hanya menampilkan cabang-cabang yang merupakan bagian dari outlet yang dipilih sebelumnya**, berdasarkan pemetaan data *real-time* dari Google Sheets!
+    *   Pada **Langkah 3 (Pilih Brand)**, menu dropdown secara dinamis **hanya menampilkan brand-brand yang merupakan bagian dari outlet yang dipilih sebelumnya**, berdasarkan pemetaan data *real-time* dari Google Sheets!
 *   **Custom Paginated Date Picker**:
     *   Sistem pemilihan tanggal interaktif yang dibangun menggunakan komponen asli Discord (*String Select Menus* dan *Buttons*).
     *   Mendukung pemilihan Bulan, Tahun, dan Hari secara instan.
@@ -22,8 +22,8 @@ Selamat datang di **v2** dari Bot Discord Agency! Versi ini menghadirkan peromba
 *   **Batas Aman API Discord (Auto Capping)**: Secara otomatis memotong daftar opsi menjadi maksimal 25 data teratas untuk mencegah kegagalan *Invalid Form Body* akibat limitasi API Discord.
 *   **Penghapusan Komponen Otomatis**: Setelah pengisian selesai, semua tombol dan dropdown interaktif otomatis dihapus dari chat sehingga tampilan tetap rapi dan menghindari pengiriman ulang secara tidak sengaja.
 *   **Keamanan & Privasi (Ephemeral)**: Seluruh langkah interaksi pengisian form bersifat *ephemeral* (hanya dapat dilihat oleh pengisi), sehingga tidak menyepam channel dengan pilihan dropdown Anda.
-*   **Opsi "Pilih Semua" (Select All)**: Pilihan `🌟 Pilih Semua` tersedia untuk **Pilih Outlet**, **Pilih Cabang**, dan **Pilih Aplikator** untuk rekapitulasi data menyeluruh secara instan tanpa perlu memilih satu per satu.
-*   **Visual Progress Tracker**: Menampilkan progress bar interaktif di atas Embed (`📝 Tagihan ➔ 🏢 Outlet ➔ 📍 Cabang ➔ 📱 Aplikator ➔ 📅 Tanggal`) agar pengguna tahu letak langkah pengisian saat ini.
+*   **Opsi "Pilih Semua" (Select All)**: Pilihan `🌟 Pilih Semua` tersedia untuk **Pilih Outlet**, **Pilih Brand**, dan **Pilih Aplikator** untuk rekapitulasi data menyeluruh secara instan tanpa perlu memilih satu per satu.
+*   **Visual Progress Tracker**: Menampilkan progress bar interaktif di atas Embed (`📝 Tagihan ➔ 🏢 Outlet ➔ 📍 Brand ➔ 📱 Aplikator ➔ 📅 Tanggal`) agar pengguna tahu letak langkah pengisian saat ini.
 *   **Rangkuman Final Publik (Public Final Summary)**: Setelah pengisian selesai, bot secara otomatis menerbitkan rekapitulasi hasil final secara **publik** ke channel agar dapat dilihat, direview, dan diakses oleh semua orang di server.
 
 ---
@@ -35,7 +35,7 @@ graph TD
     A[Mulai: Perintah /start] --> B[Klik 'Klik untuk mengisi formulir!']
     B --> C[Step 1: Pilih Jenis Tagihan - Weekly / Baseline]
     C --> D[Step 2: Pilih Satu/Lebih Outlet]
-    D --> E[Step 3: Pilih Cabang - Terfilter Otomatis Sesuai Outlet]
+    D --> E[Step 3: Pilih Brand - Terfilter Otomatis Sesuai Outlet]
     E --> F[Step 4: Pilih Aplikator - GoFood/GrabFood/ShopeeFood]
     F --> G[Step 5: Pilih Tanggal Mulai - Custom Date Picker]
     G --> H[Step 6: Pilih Tanggal Selesai - Custom Date Picker]
@@ -117,7 +117,7 @@ node index.js
 ## ⚠️ Batas Waktu Pengisian & Keandalan Tingkat Tinggi
 
 Untuk menjaga kenyamanan pengguna dan stabilitas memori bot:
-*   **Waktu Batas Sangat Leluasa**: Setiap langkah pengisian (tipe, outlet, cabang, aplikator, dan tanggal) diberikan batas waktu yang longgar sebesar **300 detik (5 menit)** per langkah sebelum memicu pembatalan otomatis.
+*   **Waktu Batas Sangat Leluasa**: Setiap langkah pengisian (tipe, outlet, brand, aplikator, dan tanggal) diberikan batas waktu yang longgar sebesar **300 detik (5 menit)** per langkah sebelum memicu pembatalan otomatis.
 *   **Chaining Active Interactions**: Menggunakan sistem respons berantai atomik (`interaction.update`) yang memastikan status interaksi terus diperbarui secara instan. Ini menjamin sistem **100% bebas dari error API Discord** seperti `40060 (Interaction already acknowledged)` dan `10062 (Unknown interaction)`.
 
 ---

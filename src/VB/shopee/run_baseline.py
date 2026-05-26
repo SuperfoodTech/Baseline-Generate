@@ -253,7 +253,13 @@ def process_portal(portal, global_ranges, report_dir):
                 if status == 3 and rep.get("download_url"):
                     safe_merchant = merchant_name.replace(" ", "_")
                     rep_name = (rep.get("name") or f"wallet_report_{matched_task_id}").replace(" ", "_")
-                    target_path = os.path.join(report_dir, f"{safe_merchant}_{rep_name}.xlsx")
+                    base_target_path = os.path.join(report_dir, f"{safe_merchant}_{rep_name}.xlsx")
+                    target_path = base_target_path
+                    version = 1
+                    while os.path.exists(target_path):
+                        version += 1
+                        name_part, ext_part = os.path.splitext(base_target_path)
+                        target_path = f"{name_part}-{version:02d}{ext_part}"
                     log.info(
                         f"📥 [PORTAL - {account_name}] Export task {matched_task_id} ready. "
                         f"Downloading → {target_path}..."
@@ -360,22 +366,7 @@ def run_pipeline():
 
     log.info(f"📋 [PROGRESS] Found {len(portals_to_run)} portal(s) ready to process.")
 
-    # Pre-run cleanup of old Excel files for the active portals in custom or download runs
-    if not args.skip_download and os.path.exists(report_dir):
-        to_clean = []
-        for portal in portals_to_run:
-            safe_merchant = portal["merchant_name"].replace(" ", "_")
-            pattern = os.path.join(report_dir, f"{safe_merchant}_*.xlsx")
-            to_clean.extend(glob.glob(pattern))
-            
-        if to_clean:
-            # exclude MASTER files from cleanup
-            to_clean = [f for f in to_clean if not os.path.basename(f).startswith("MASTER")]
-            if to_clean:
-                log.info(f"🧹 Clearing {len(to_clean)} old Excel files for active portal(s) in {report_dir} to prepare for fresh run...")
-                for f in to_clean:
-                    try: os.unlink(f)
-                    except Exception as e: log.debug(f"Failed to delete {f}: {e}")
+    # Pre-run cleanup of old Excel files is disabled as per user request
 
     # ── 1. Phase 1: Authentication / Session Check (Sequential) ──
     if args.skip_download:

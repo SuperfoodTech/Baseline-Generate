@@ -22,7 +22,7 @@ const makeProgressEmbed = (step, title, description, fields = []) => {
     const steps = [
         { name: 'Tagihan', icon: '📝' },
         { name: 'Outlet', icon: '🏢' },
-        { name: 'Cabang', icon: '📍' },
+        { name: 'Brand', icon: '📍' },
         { name: 'Aplikator', icon: '📱' },
         { name: 'Tanggal', icon: '📅' }
     ];
@@ -95,7 +95,7 @@ module.exports = {
         const loadingEmbed = new EmbedBuilder()
             .setColor(0x5865F2)
             .setTitle('🔄 Menghubungkan ke Google Sheets...')
-            .setDescription('Mohon tunggu sejenak, kami sedang menyinkronkan daftar outlet dan cabang terbaru secara langsung...')
+            .setDescription('Mohon tunggu sejenak, kami sedang menyinkronkan daftar outlet dan brand terbaru secara langsung...')
             .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
             .setTimestamp();
 
@@ -179,7 +179,7 @@ module.exports = {
                 branchesForOutlet.forEach(b => filteredBranchesSet.add(b));
             });
             let filteredBranches = Array.from(filteredBranchesSet);
-            if (filteredBranches.length === 0) filteredBranches = ['Pilih Cabang (Tidak ada data)'];
+            if (filteredBranches.length === 0) filteredBranches = ['Pilih Brand (Tidak ada data)'];
 
             const maxCabangOpts = filteredBranches.length > 24 ? 24 : filteredBranches.length;
             const cabangOptions = [
@@ -191,9 +191,9 @@ module.exports = {
             ];
 
             const cabangResult = await this.askSelection(outletResult.lastInteraction, {
-                title: 'Pilih Cabang',
+                title: 'Pilih Brand',
                 step: 2,
-                placeholder: 'Pilih satu atau lebih cabang...',
+                placeholder: 'Pilih satu atau lebih brand...',
                 options: cabangOptions,
                 minValues: 1,
                 maxValues: maxCabangOpts + 1,
@@ -269,15 +269,8 @@ module.exports = {
                     aplikatorOptions.push({
                         label: app.label,
                         value: app.value,
-                        description: `Tersedia untuk outlet/cabang terpilih`,
+                        description: `Tersedia untuk outlet/brand terpilih`,
                         emoji: app.emoji
-                    });
-                } else {
-                    aplikatorOptions.push({
-                        label: `${app.label} (Tidak Tersedia)`,
-                        value: `${app.value}_disabled`,
-                        description: `❌ Tidak aktif untuk outlet/cabang terpilih`,
-                        emoji: '⚪'
                     });
                 }
             });
@@ -292,7 +285,7 @@ module.exports = {
                 fields: [
                     { name: 'Jenis Laporan', value: formData.tagihan.toUpperCase(), inline: true },
                     { name: 'Outlet Terpilih', value: formData.outlet.length > 512 ? formData.outlet.substring(0, 508) + '...' : formData.outlet, inline: false },
-                    { name: 'Cabang Terpilih', value: formData.cabang.length > 512 ? formData.cabang.substring(0, 508) + '...' : formData.cabang, inline: false }
+                    { name: 'Brand Terpilih', value: formData.cabang.length > 512 ? formData.cabang.substring(0, 508) + '...' : formData.cabang, inline: false }
                 ]
             });
 
@@ -318,7 +311,7 @@ module.exports = {
                 { name: 'Jenis Laporan', value: formData.tagihan.toUpperCase(), inline: true },
                 { name: 'Aplikator', value: formData.aplikator, inline: true },
                 { name: 'Outlet Terpilih', value: formData.outlet.length > 512 ? formData.outlet.substring(0, 508) + '...' : formData.outlet, inline: false },
-                { name: 'Cabang Terpilih', value: formData.cabang.length > 512 ? formData.cabang.substring(0, 508) + '...' : formData.cabang, inline: false }
+                { name: 'Brand Terpilih', value: formData.cabang.length > 512 ? formData.cabang.substring(0, 508) + '...' : formData.cabang, inline: false }
             ];
 
             const dateResult = await this.askDateModal(aplikatorResult.lastInteraction, 4, dateFields);
@@ -335,7 +328,7 @@ module.exports = {
                     { name: 'Aplikator', value: formData.aplikator, inline: true },
                     { name: 'Rentang Tanggal', value: `📅 ${formData.tanggalMulai} s/d ${formData.tanggalSelesai}`, inline: false },
                     { name: 'Outlet', value: formData.outlet.length > 512 ? formData.outlet.substring(0, 508) + '...' : formData.outlet },
-                    { name: 'Cabang', value: formData.cabang.length > 512 ? formData.cabang.substring(0, 508) + '...' : formData.cabang }
+                    { name: 'Brand', value: formData.cabang.length > 512 ? formData.cabang.substring(0, 508) + '...' : formData.cabang }
                 )
                 .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
                 .setTimestamp();
@@ -398,7 +391,7 @@ module.exports = {
                     { name: 'Aplikator', value: formData.aplikator, inline: true },
                     { name: 'Rentang Tanggal', value: `📅 ${formData.tanggalMulai} s/d ${formData.tanggalSelesai}`, inline: false },
                     { name: 'Outlet', value: formData.outlet.length > 1024 ? formData.outlet.substring(0, 1020) + '...' : formData.outlet },
-                    { name: 'Cabang', value: formData.cabang.length > 1024 ? formData.cabang.substring(0, 1020) + '...' : formData.cabang }
+                    { name: 'Brand', value: formData.cabang.length > 1024 ? formData.cabang.substring(0, 1020) + '...' : formData.cabang }
                 )
                 .setFooter({ text: 'Sistem Rekap Laporan Otomatis • Antigravity' })
                 .setTimestamp();
@@ -929,7 +922,7 @@ module.exports = {
                             const headers = lines[0].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
                             const nameIdx = headers.findIndex(h => h.trim().replace(/^"|"$/g, '') === 'Nama Outlet');
                             const statusIdx = headers.findIndex(h => h.trim().replace(/^"|"$/g, '') === 'Status');
-                            const cabangIdx = headers.findIndex(h => h.trim().replace(/^"|"$/g, '') === 'Cabang');
+                            const cabangIdx = headers.findIndex(h => h.trim().replace(/^"|"$/g, '') === 'Brand');
                             const aplikasiIdx = headers.findIndex(h => h.trim().replace(/^"|"$/g, '').toLowerCase() === 'aplikasi');
 
                             const outletSet = new Set();

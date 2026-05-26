@@ -133,29 +133,7 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
         end_str = date_end or "all"
         laporan_dir = Path("laporan") / f"{start_str}_{end_str}"
     
-    # Auto-cleanup old CSV files
-    if laporan_dir.exists():
-        if outlet_filter or branch_filter:
-            for p_info in portals:
-                portal_safe_name = f"{p_info['outlet']}_{p_info['branch']}" if p_info['branch'] else f"{p_info['outlet']}"
-                portal_safe_name = portal_safe_name.replace("/", "_").replace("\\", "_")
-                for ext in [".csv", ".xlsx"]:
-                    f = laporan_dir / f"{portal_safe_name}{ext}"
-                    if f.exists():
-                        try: f.unlink()
-                        except: pass
-            
-            # Do not wipe MASTER files as per user request
-            pass
-        else:
-            old_files = list(laporan_dir.glob("*.csv")) + list(laporan_dir.glob("*.xlsx"))
-            # Filter out MASTER files from being wiped
-            old_files = [f for f in old_files if not f.stem.startswith("MASTER")]
-            if old_files:
-                log.info(f"Cleaning up {len(old_files)} old files in {laporan_dir}...")
-                for f in old_files:
-                    try: f.unlink()
-                    except: pass
+    # Auto-cleanup old CSV files is disabled as per user request to keep existing files
 
     log.info("="*60)
     log.info(f"  GRAB MULTI-PORTAL AUTOMATION ({len(portals)} portals)")
@@ -222,7 +200,12 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                         
                         portal_safe_name = f"{portal['outlet']}_{portal['branch']}" if portal['branch'] else f"{portal['outlet']}"
                         portal_safe_name = portal_safe_name.replace("/", "_").replace("\\", "_")
+                        
+                        version = 1
                         dest_xlsx = laporan_dir / f"{portal_safe_name}.xlsx"
+                        while dest_xlsx.exists():
+                            version += 1
+                            dest_xlsx = laporan_dir / f"{portal_safe_name}-{version:02d}.xlsx"
                         
                         # Convert CSV to XLSX
                         tmp_df = pd.read_csv(downloaded_file)

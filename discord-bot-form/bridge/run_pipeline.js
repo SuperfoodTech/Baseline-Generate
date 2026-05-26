@@ -115,7 +115,7 @@ function runPipeline(formData, onLog = () => {}) {
 
         onLog(`🚀 Menjalankan: \`${PYTHON_EXE} cli.py ${args.slice(1).join(' ')}\``);
         onLog(`📦 Mode: **${formData.tagihan.toUpperCase()}** | Platform: **${platform.toUpperCase()}**`);
-        onLog(`📍 Outlet: **${outlet}** | Cabang: **${cabang || '(semua)'}**`);
+        onLog(`📍 Outlet: **${outlet}** | Brand: **${cabang || '(semua)'}**`);
 
         let output = '';
 

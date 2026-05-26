@@ -336,7 +336,13 @@ def run_pipeline():
                             if rep.get("create_time", 0) and rep["create_time"] >= ctx["start_trigger_time"]:
                                 # Use report name for file naming (e.g. "Transactions_01022026_28022026_ShopeeFood.xlsx")
                                 report_name = rep.get("name", f"report_{rep.get('id')}.xlsx")
-                                target_path = os.path.join(report_dir, f"{m_name.replace(' ', '_')}_{report_name}")
+                                base_target_path = os.path.join(report_dir, f"{m_name.replace(' ', '_')}_{report_name}")
+                                target_path = base_target_path
+                                version = 1
+                                while os.path.exists(target_path):
+                                    version += 1
+                                    name_part, ext_part = os.path.splitext(base_target_path)
+                                    target_path = f"{name_part}-{version:02d}{ext_part}"
                             
                                 if target_path not in [d[0] for d in ctx["downloaded"]]:
                                     if download_file(rep.get("download_url"), target_path):
@@ -433,7 +439,14 @@ def run_pipeline():
                                 if rep.get("status") in [2, 3] and rep.get("download_url"):
                                     if rep.get("create_time", 0) and rep["create_time"] >= start_trigger_time:
                                         report_name = rep.get("name", f"report_{rep.get('id')}.xlsx")
-                                        target_path = os.path.join(report_dir, f"{m_name.replace(' ', '_')}_{report_name}")
+                                        base_target_path = os.path.join(report_dir, f"{m_name.replace(' ', '_')}_{report_name}")
+                                        target_path = base_target_path
+                                        version = 1
+                                        while os.path.exists(target_path):
+                                            version += 1
+                                            name_part, ext_part = os.path.splitext(base_target_path)
+                                            target_path = f"{name_part}-{version:02d}{ext_part}"
+                                            
                                         if download_file(rep.get("download_url"), target_path):
                                             log.info(f"  ✅ [RETRY DOWNLOAD] SUCCESS: {m_name} -> {report_name}")
                                             downloaded = True
