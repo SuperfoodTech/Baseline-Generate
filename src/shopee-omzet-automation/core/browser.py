@@ -32,7 +32,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 from core.logger import get_logger
-from core.otp import get_latest_otp
+
 
 log = get_logger("browser")
 
@@ -188,9 +188,15 @@ def _init_driver(headless: bool):
         options.add_argument("--start-maximized")
     
     script_dir = Path(__file__).parent.parent
-    profile_dir = script_dir / "data" / "chrome_profile"
-    options.add_argument(f"--user-data-dir={profile_dir.resolve()}")
-    options.add_argument("--profile-directory=shopee_profile")
+    if SESSION_FILE.stem == "session":
+        profile_dir = script_dir / "data" / "chrome_profile"
+        options.add_argument(f"--user-data-dir={profile_dir.resolve()}")
+        options.add_argument("--profile-directory=shopee_profile")
+    else:
+        account_name = SESSION_FILE.stem.replace("session_", "")
+        profile_dir = script_dir / "data" / f"chrome_profile_{account_name}"
+        options.add_argument(f"--user-data-dir={profile_dir.resolve()}")
+        options.add_argument(f"--profile-directory=profile_{account_name}")
 
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     driver.set_page_load_timeout(60)
@@ -203,7 +209,9 @@ def _perform_login(driver, wait, username: str = None, password: str = None, pho
     log.info("➡️  [AUTH] Starting login sequence...")
     if not phone and (not username or not password):
         raise Exception("Shopee credentials are not configured! Please configure them in 'credentials.json' at the project root directory.")
-    if phone:
+    
+    use_phone = phone and not (username and password)
+    if use_phone:
         try:
             wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(text(), 'Log in dengan no. HP')]"))).click()
             time.sleep(1)
@@ -288,20 +296,36 @@ def _perform_login(driver, wait, username: str = None, password: str = None, pho
                     if el.is_displayed(): otp_input = el; break
                 if otp_input: break
 
-            if otp_input and not otp_attempted:
-                otp_code = get_latest_otp(timeout_mins=3)
+            if otp_input:
+                log.warning(f"⚠️ [OTP REQUIRED] Akun '{username or phone}' memerlukan kode verifikasi OTP.")
+                otp_code = input(f"🔑 Masukkan 6-digit OTP (atau tekan Enter jika Anda mengisinya langsung di browser): ").strip()
                 if otp_code:
-                    log.info(f"⌨️  [AUTH] Filling OTP: {otp_code}")
-                    otp_input.click()
-                    human_like_typing(otp_input, otp_code)
-                    time.sleep(0.5)
-                    otp_input.send_keys(Keys.ENTER)
-                    otp_attempted = True
-                elif time.time() - last_resend_time > 65:
-                    btns = driver.find_elements(By.XPATH, "//button[contains(., 'Kirim ulang') or contains(., 'Resend')]")
-                    for b in btns:
-                        if b.is_displayed() and not any(c.isdigit() for c in b.text):
-                            b.click(); last_resend_time = time.time(); break
+                    log.info(f"⌨️  [AUTH] Menginput OTP: {otp_code}")
+                    try:
+                        otp_input.click()
+                        otp_input.send_keys(Keys.CONTROL + "a", Keys.BACKSPACE)
+                        human_like_typing(otp_input, otp_code)
+                        time.sleep(0.5)
+                        otp_input.send_keys(Keys.ENTER)
+                    except Exception as err:
+                        log.warning(f"⚠️ Gagal memasukkan OTP ke elemen browser: {err}")
+                    time.sleep(5)
+                else:
+                    log.info("ℹ️ Menunggu 10 detik untuk input langsung di browser...")
+                    time.sleep(10)
+                otp_attempted = True
+                
+                # Check resend button if needed
+                if time.time() - last_resend_time > 65:
+                    try:
+                        btns = driver.find_elements(By.XPATH, "//button[contains(., 'Kirim ulang') or contains(., 'Resend')]")
+                        for b in btns:
+                            if b.is_displayed() and not any(c.isdigit() for c in b.text):
+                                b.click()
+                                last_resend_time = time.time()
+                                log.info("🔄 Mengirim ulang kode OTP...")
+                                break
+                    except: pass
 
             if otp_attempted or not otp_input:
                 for cs in ["//button[contains(., 'Lanjutkan')]", "//button[contains(., 'Confirm')]", ".shopee-button--primary"]:
@@ -481,7 +505,8 @@ def auto_switch_merchant(driver, target_name):
 
 
 
-def _handle_merchant_selection(driver, active_id_forced=None):
+def _handle_merchant_selection(driver, active_id_forced=None, interactive=True):
+    log.info("===========================================================================")
     """
     Handles merchant selection, either automatically if a target is known 
     or interactively if needed.
@@ -550,7 +575,13 @@ def _handle_merchant_selection(driver, active_id_forced=None):
         print("\n" + "="*75 + f"\n  DAFTAR MERCHANT ({len(merchants)} ditemukan):\n" + "="*75)
         for i, m in enumerate(merchants, 1):
             print(f"  {i:2}. {m['name']} (ID: {m['id']})")
-        choice = input(f"\nPilih nomor (1-{len(merchants)}) atau Enter untuk lanjut: ").strip()
+            
+        if interactive:
+            choice = input(f"\nPilih nomor (1-{len(merchants)}) atau Enter untuk lanjut: ").strip()
+        else:
+            log.info("⏭️  [MERCHANT] Mode otomatis (tanpa timeout), memilih Enter (lanjut) secara otomatis...")
+            choice = ""
+            
         if not choice: return True
         
         idx = int(choice)-1
@@ -640,7 +671,7 @@ def return_to_selector(driver) -> bool:
         driver.get("https://partner.shopee.co.id/authenticate/merchant-selector")
         return True
 
-def get_session(username=None, password=None, phone=None, headless=True, close_browser=True, target_name=None) -> dict | None:
+def get_session(username=None, password=None, phone=None, headless=True, close_browser=True, target_name=None, interactive=True) -> dict | None:
     for attempt in range(3):
         log.info(f"🌐 [BROWSER] Launching (headless={headless}, attempt={attempt+1}/3)...")
         driver = _init_driver(headless=headless)
@@ -803,8 +834,9 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
             else:
                 if active_id and active_id != "None":
                     log.info(f"📍 [MERCHANT] Current: {active_name} (ID: {active_id})")
-                    choice = input(f"❓ Switch merchant? (y/N): ").strip().lower()
-                    if choice == 'y': do_switch = True
+                    if interactive:
+                        choice = input(f"❓ Switch merchant? (y/N): ").strip().lower()
+                        if choice == 'y': do_switch = True
                 else:
                     log.info("📍 [MERCHANT] No active merchant detected. Redirecting...")
                     do_switch = True
@@ -816,7 +848,7 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
                     if "/food/dashboard" in driver.current_url:
                         log.info("🔄 Navigating to merchant selector...")
                         return_to_selector(driver)
-                    success = _handle_merchant_selection(driver, active_id_forced=active_id)
+                    success = _handle_merchant_selection(driver, active_id_forced=active_id, interactive=interactive)
                 if not success:
                     log.error("❌ Merchant selection failed.")
                     driver.quit()
