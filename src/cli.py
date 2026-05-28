@@ -163,7 +163,7 @@ def _resolve_output_dir(platform_name: str, start_date: str, end_date: str) -> s
     return out
 
 
-def _resolve_shopee_merchant(outlet_name: str, branch_name: str = None) -> str:
+def _resolve_shopee_merchant(outlet_name: str, branch_name: str = None, task_choice: str = "2") -> str:
     """
     Lookup 'Merchant Name' Shopee dari Google Sheets berdasarkan 'Nama Outlet'
     dan opsional 'Cabang'.
@@ -179,13 +179,21 @@ def _resolve_shopee_merchant(outlet_name: str, branch_name: str = None) -> str:
     Returns:
         str: Merchant Name yang bersih (tanpa trailing underscore/spasi)
     """
-    GSHEETS_URL = (
-        "https://docs.google.com/spreadsheets/d/e/"
-        "2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4"
-        "/pub?gid=0&single=true&output=csv"
-    )
     base = os.path.dirname(os.path.abspath(__file__))
-    cache_path = os.path.join(base, "baseline", "shopee", "data", "master_merchants_cache.csv")
+    if task_choice == "1":
+        GSHEETS_URL = (
+            "https://docs.google.com/spreadsheets/d/e/"
+            "2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4"
+            "/pub?gid=880434015&single=true&output=csv"
+        )
+        cache_path = os.path.join(base, "baseline", "shopee", "data", "master_merchants_cache.csv")
+    else:
+        GSHEETS_URL = (
+            "https://docs.google.com/spreadsheets/d/e/"
+            "2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4"
+            "/pub?gid=0&single=true&output=csv"
+        )
+        cache_path = os.path.join(base, "shopee-omzet-automation", "data", "master_merchants_cache.csv")
 
     def _clean(name: str) -> str:
         return str(name).strip().rstrip('_').strip()
@@ -215,12 +223,18 @@ def _resolve_shopee_merchant(outlet_name: str, branch_name: str = None) -> str:
 
         outlet_lower = outlet_name.strip().lower()
 
-        # Base filter: ShopeeFood + Live + Nama Outlet cocok
-        base_filter = (
-            (df['Aplikasi'] == 'ShopeeFood') &
-            (df['Status'] == 'Live') &
-            (df['Nama Outlet'].str.strip().str.lower() == outlet_lower)
-        )
+        # Base filter: ShopeeFood + Nama Outlet cocok
+        if task_choice == "1":
+            base_filter = (
+                (df['Aplikasi'].str.contains("Shopee", na=False, case=False)) &
+                (df['Nama Outlet'].str.strip().str.lower() == outlet_lower)
+            )
+        else:
+            base_filter = (
+                (df['Aplikasi'] == 'ShopeeFood') &
+                (df['Status'] == 'Live') &
+                (df['Nama Outlet'].str.strip().str.lower() == outlet_lower)
+            )
 
         # ── Strategi 1: Lookup dengan Cabang (paling presisi) ──────────
         if branch_name:
@@ -453,7 +467,7 @@ def run_shopee(start_date: str, end_date: str, merchant_filter: str = None):
         return False
 
 
-def run_shopee_baseline(start_date: str, end_date: str, merchant_filter: str = None):
+def run_shopee_baseline(start_date: str, end_date: str, merchant_filter: str = None, bd_filter: str = None):
     shopee_baseline_dir = os.path.join(os.path.dirname(__file__), "baseline", "shopee")
     
     if not os.path.isdir(shopee_baseline_dir):
@@ -473,6 +487,8 @@ def run_shopee_baseline(start_date: str, end_date: str, merchant_filter: str = N
     ]
     if merchant_filter:
         cmd.extend(["--merchant", merchant_filter])
+    if bd_filter:
+        cmd.extend(["--bd", bd_filter])
 
     print(f"\n{MAGENTA}{BOLD}▶ SHOPEE BASELINE PIPELINE{RESET}")
     print(f"  {DIM}Directory : {shopee_baseline_dir}{RESET}")
@@ -607,7 +623,7 @@ def interactive_mode():
         import io
 
         print(f"\n  {CYAN}[INFO] Mengunduh daftar outlet terbaru dari Google Sheets...{RESET}")
-        CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv"
+        CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=880434015&single=true&output=csv"
         try:
             resp = requests.get(CSV_URL, timeout=30)
             resp.raise_for_status()
@@ -616,8 +632,7 @@ def interactive_mode():
             print(f"  {RED}[ERROR] Gagal mengunduh Google Sheets: {e}{RESET}")
             sys.exit(1)
             
-        # Filter hanya outlet yang memiliki minimal 1 aplikasi berstatus "Live"
-        df_live = df[df["Status"].str.contains("Live", na=False, case=False)]
+        df_live = df.copy()
         outlets = sorted(df_live["Nama Outlet"].dropna().unique())
         print(f"\n  {BOLD}Pilih Outlet untuk Baseline (Menarik seluruh cabang Grab, Shopee, & GoFood sekaligus):{RESET}")
         for idx, o_name in enumerate(outlets):
@@ -627,8 +642,8 @@ def interactive_mode():
             try:
                 o_choice = int(input(f"  {BOLD}Pilih nomor outlet (1-{len(outlets)}):{RESET} ").strip())
                 if 1 <= o_choice <= len(outlets):
-                    unified_outlet = outlets[o_choice - 1]
-                    break
+                     unified_outlet = outlets[o_choice - 1]
+                     break
             except ValueError: pass
             print(f"  {RED}Pilihan tidak valid.{RESET}")
 
@@ -1027,12 +1042,14 @@ Examples:
     parser.add_argument("--task",  type=str, choices=["1", "2", "3"], default=None, help="Task type: 1 for Baseline, 2 for Weekly, 3 for VB")
     parser.add_argument("--outlet", type=str, default=None, help="Filter specific outlet name")
     parser.add_argument("--branch", type=str, default=None, help="Filter specific branch name")
+    parser.add_argument("--bd", type=str, default=None, help="Filter specific BD name (Shopee Baseline)")
 
     args = parser.parse_args()
 
     # ── Discord Bridge Mode ─────────────────────────────────────────────
     # Dipanggil dari bridge/run_pipeline.js — bypass interactive mode.
     # Ketika dijalankan manual dari terminal, blok ini diabaikan sepenuhnya.
+    bd = None
     if os.environ.get("OFD_DISCORD_MODE") == "1":
         task_choice     = os.environ.get("OFD_TASK_CHOICE", "2")
         platform        = os.environ.get("OFD_PLATFORM", args.platform or "all")
@@ -1040,10 +1057,11 @@ Examples:
         end_date        = args.end   or os.environ.get("OFD_END", "")
         outlet          = os.environ.get("OFD_OUTLET") or None
         branch          = os.environ.get("OFD_CABANG") or None
+        bd              = os.environ.get("OFD_BD") or None
         # Lookup Merchant Name Shopee dari GSheets berdasarkan Nama Outlet
         # Ini mengatasi mismatch nama outlet (Discord) vs merchant name Shopee (GSheets)
-        shopee_merchant = _resolve_shopee_merchant(outlet, branch_name=branch) if outlet else None
-        print(f"\n{CYAN}[DISCORD MODE] Task={task_choice} | Platform={platform} | Outlet={outlet} | Brand={branch}{RESET}")
+        shopee_merchant = _resolve_shopee_merchant(outlet, branch_name=branch, task_choice=task_choice) if outlet else None
+        print(f"\n{CYAN}[DISCORD MODE] Task={task_choice} | Platform={platform} | Outlet={outlet} | Brand={branch} | BD={bd}{RESET}")
         banner()
     # ── Normal CLI Mode ─────────────────────────────────────────────────
     elif args.platform is None or args.start is None or args.end is None:
@@ -1055,7 +1073,7 @@ Examples:
         end_date   = args.end
         outlet     = args.outlet
         branch     = args.branch
-        shopee_merchant = _resolve_shopee_merchant(outlet, branch_name=branch) if outlet else None
+        shopee_merchant = _resolve_shopee_merchant(outlet, branch_name=branch, task_choice=task_choice) if outlet else None
         banner()
 
     # Standardize/Normalize date strings to YYYY-MM-DD
@@ -1095,7 +1113,7 @@ Examples:
             m_str = "|".join(shopee_merchant) if shopee_merchant else None
             name_key = "Shopee"
             if task_choice == "1":
-                results[name_key] = run_shopee_baseline(start_date, end_date, merchant_filter=m_str)
+                results[name_key] = run_shopee_baseline(start_date, end_date, merchant_filter=m_str, bd_filter=args.bd or bd)
             elif task_choice == "2":
                 results[name_key] = run_shopee(start_date, end_date, merchant_filter=m_str)
 
@@ -1125,87 +1143,95 @@ Examples:
             outlet_safe = str(outlet or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
             
             # Find Grab Baseline output
-            if "grab" in platform or platform == "all":
-                # In run_baseline Grab, branches are appended. We check branch-specific file first, then fallback to empty branch file.
-                grab_paths_to_check = []
-                o_str = "|".join(outlet) if outlet else None
-                b_str = "|".join(branch) if branch else None
-                outlet_safe = str(o_str or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
-                if b_str:
-                    branch_safe = str(b_str).strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
-                    filename_prefix = f"BASELINE_CUSTOM_{outlet_safe}_{branch_safe}"
-                else:
-                    filename_prefix = f"BASELINE_CUSTOM_{outlet_safe}_"
-                
-                if len(filename_prefix) > 50:
-                    filename_prefix = "BASELINE_CUSTOM_MULTIPLE_OUTLETS"
-                
-                grab_paths_to_check.append(os.path.join(base_dir, "laporan", "grab_baseline", date_folder, f"{filename_prefix}.xlsx"))
-                
-                # Fallback glob pattern for any BASELINE_CUSTOM_{outlet_safe}_*.xlsx
-                import glob
-                glob_pattern = os.path.join(base_dir, "laporan", "grab_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}*.xlsx")
-                for gp in glob.glob(glob_pattern):
-                    if gp not in grab_paths_to_check:
-                        grab_paths_to_check.append(gp)
+            grab_paths_to_check = []
+            o_str = "|".join(outlet) if outlet else None
+            b_str = "|".join(branch) if branch else None
+            outlet_safe = str(o_str or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
+            if b_str:
+                branch_safe = str(b_str).strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
+                filename_prefix = f"BASELINE_CUSTOM_{outlet_safe}_{branch_safe}"
+            else:
+                filename_prefix = f"BASELINE_CUSTOM_{outlet_safe}_"
+            
+            if len(filename_prefix) > 50:
+                filename_prefix = "BASELINE_CUSTOM_MULTIPLE_OUTLETS"
+            
+            grab_paths_to_check.append(os.path.join(base_dir, "laporan", "grab_baseline", date_folder, f"{filename_prefix}.xlsx"))
+            
+            # Fallback glob pattern for any BASELINE_CUSTOM_{outlet_safe}_*.xlsx
+            import glob
+            glob_pattern = os.path.join(base_dir, "laporan", "grab_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}*.xlsx")
+            for gp in glob.glob(glob_pattern):
+                if gp not in grab_paths_to_check:
+                    grab_paths_to_check.append(gp)
 
-                grab_path = None
-                for p_check in grab_paths_to_check:
-                    if os.path.exists(p_check):
-                        grab_path = p_check
-                        break
-                        
-                if grab_path:
-                    print(f"  [INFO] Menemukan file Grab baseline: {grab_path}")
-                    frames.append(pd.read_excel(grab_path))
-                else:
-                    print(f"  [INFO] File Grab baseline tidak ditemukan untuk: {outlet_safe}")
+            grab_path = None
+            for p_check in grab_paths_to_check:
+                if os.path.exists(p_check):
+                    grab_path = p_check
+                    break
+                    
+            if grab_path:
+                print(f"  [INFO] Menemukan file Grab baseline: {grab_path}")
+                frames.append(pd.read_excel(grab_path))
+            else:
+                print(f"  [INFO] File Grab baseline tidak ditemukan untuk: {outlet_safe}")
             
             # Find Shopee Baseline output
-            if "shopee" in platform or platform == "all":
-                shopee_paths_to_check = []
-                m_str = "|".join(shopee_merchant) if shopee_merchant else None
-                shopee_safe = str(m_str or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
-                if len(shopee_safe) > 50:
-                    shopee_safe = "MULTIPLE_MERCHANTS"
-                shopee_paths_to_check.append(os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}.xlsx"))
-                shopee_paths_to_check.append(os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}_.xlsx"))
-                
-                # Fallback glob pattern for any BASELINE_CUSTOM_{shopee_safe}*.xlsx
-                import glob
-                glob_pattern_sf = os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}*.xlsx")
-                for gp in glob.glob(glob_pattern_sf):
-                    if gp not in shopee_paths_to_check:
-                        shopee_paths_to_check.append(gp)
-                        
-                shopee_path = None
-                for p_check in shopee_paths_to_check:
-                    if os.path.exists(p_check):
-                        shopee_path = p_check
-                        break
-                        
-                if shopee_path:
-                    print(f"  [INFO] Menemukan file Shopee baseline: {shopee_path}")
-                    frames.append(pd.read_excel(shopee_path))
-                else:
-                    print(f"  [INFO] File Shopee baseline tidak ditemukan untuk: {shopee_safe}")
+            shopee_paths_to_check = []
+            m_str = "|".join(shopee_merchant) if shopee_merchant else None
+            shopee_safe = str(m_str or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
+            if len(shopee_safe) > 50:
+                shopee_safe = "MULTIPLE_MERCHANTS"
+            shopee_paths_to_check.append(os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}.xlsx"))
+            shopee_paths_to_check.append(os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}_.xlsx"))
+            
+            # Fallback glob pattern for any BASELINE_CUSTOM_{shopee_safe}*.xlsx
+            glob_pattern_sf = os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}*.xlsx")
+            for gp in glob.glob(glob_pattern_sf):
+                if gp not in shopee_paths_to_check:
+                    shopee_paths_to_check.append(gp)
+                    
+            # Check for BASELINE_MASTER_SHOPEE.xlsx
+            shopee_paths_to_check.append(os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, "BASELINE_MASTER_SHOPEE.xlsx"))
+                    
+            shopee_path = None
+            for p_check in shopee_paths_to_check:
+                if os.path.exists(p_check):
+                    shopee_path = p_check
+                    break
+                    
+            if shopee_path:
+                print(f"  [INFO] Menemukan file Shopee baseline: {shopee_path}")
+                sf_df = pd.read_excel(shopee_path)
+                if "BASELINE_MASTER_SHOPEE" in shopee_path and shopee_merchant:
+                    m_lower = [str(m).strip().lower() for m in shopee_merchant]
+                    sf_df = sf_df[sf_df['Merchant'].astype(str).str.strip().str.lower().isin(m_lower)]
+                if not sf_df.empty:
+                    frames.append(sf_df)
+            else:
+                print(f"  [INFO] File Shopee baseline tidak ditemukan untuk: {shopee_safe}")
 
             # Find GoFood Baseline output
-            if "gofood" in platform or platform == "all":
-                gofood_paths_to_check = []
-                gofood_paths_to_check.append(os.path.join(base_dir, "laporan", "gofood_baseline", date_folder, f"BASELINE_GOFOOD_{start_date}_to_{end_date}.xlsx"))
-                
-                gofood_path = None
-                for p_check in gofood_paths_to_check:
-                    if os.path.exists(p_check):
-                        gofood_path = p_check
-                        break
-                        
-                if gofood_path:
-                    print(f"  [INFO] Menemukan file GoFood baseline: {gofood_path}")
-                    frames.append(pd.read_excel(gofood_path))
-                else:
-                    print(f"  [INFO] File GoFood baseline tidak ditemukan untuk: {start_date} s/d {end_date}")
+            gofood_paths_to_check = []
+            gofood_paths_to_check.append(os.path.join(base_dir, "laporan", "gofood_baseline", date_folder, f"BASELINE_GOFOOD_{start_date}_to_{end_date}.xlsx"))
+            
+            gofood_path = None
+            for p_check in gofood_paths_to_check:
+                if os.path.exists(p_check):
+                    gofood_path = p_check
+                    break
+                    
+            if gofood_path:
+                print(f"  [INFO] Menemukan file GoFood baseline: {gofood_path}")
+                gf_df = pd.read_excel(gofood_path)
+                if outlet:
+                    o_lower = [str(o).strip().lower() for o in outlet]
+                    gf_df = gf_df[gf_df['Merchant'].astype(str).str.strip().str.lower().isin(o_lower)]
+                if not gf_df.empty:
+                    frames.append(gf_df)
+            else:
+                print(f"  [INFO] File GoFood baseline tidak ditemukan untuk: {start_date} s/d {end_date}")
                 
             if frames:
                 combined_df = pd.concat(frames, ignore_index=True)
@@ -1233,11 +1259,12 @@ Examples:
                         # 1. Fetch Owner from Credentials CSV
                         CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv"
                         owner_name = "-"
+                        outlet_val = outlet[0] if isinstance(outlet, (list, tuple)) and len(outlet) > 0 else outlet
                         try:
                             resp = requests.get(CSV_URL, timeout=10)
                             if resp.status_code == 200:
                                 df_cred = pd.read_csv(io.StringIO(resp.text))
-                                owner_row = df_cred[df_cred["Nama Outlet"].str.lower() == str(outlet).lower()].iloc[0]
+                                owner_row = df_cred[df_cred["Nama Outlet"].str.lower() == str(outlet_val).lower()].iloc[0]
                                 owner_name = str(owner_row.get("Owner", "-"))
                         except Exception as e:
                             print(f"  {DIM}Gagal mengambil nama Owner: {e}{RESET}")
@@ -1271,13 +1298,13 @@ Examples:
                             "bulan": indo_months[now.month - 1],
                             "tahun": str(now.year),
                             "owner": owner_name,
-                            "nama_outlet": str(outlet),
+                            "nama_outlet": str(outlet_val),
                             "omzet_go": format_rp(omzet_go),
-                            "order_go": str(round(order_go, 1)),
+                            "order_go": str(round(order_go)),
                             "omzet_gr": format_rp(omzet_gr),
-                            "order_gr": str(round(order_gr, 1)),
+                            "order_gr": str(round(order_gr)),
                             "omzet_sf": format_rp(omzet_sf),
-                            "order_sf": str(round(order_sf, 1))
+                            "order_sf": str(round(order_sf))
                         }
                         
                         print(f"  {CYAN}[INFO] Mengirim data agregasi ke Google Apps Script...{RESET}")
@@ -1290,7 +1317,7 @@ Examples:
                                 print(f"  {GREEN}  URL: {pdf_url}{RESET}")
                                 # ── Kirim notifikasi PDF ke Discord channel ──
                                 _notify_discord_pdf(
-                                    outlet=str(outlet),
+                                    outlet=str(outlet_val),
                                     start_date=start_date,
                                     end_date=end_date,
                                     aplikator=os.environ.get("OFD_APLIKATOR", "Grab + Shopee"),
@@ -1298,10 +1325,10 @@ Examples:
                                     pdf_name=data.get('pdf_name', 'Baseline Report'),
                                     omzet_gr=format_rp(omzet_gr),
                                     omzet_sf=format_rp(omzet_sf),
-                                    order_gr=str(round(order_gr, 1)),
-                                    order_sf=str(round(order_sf, 1)),
+                                    order_gr=str(round(order_gr)),
+                                    order_sf=str(round(order_sf)),
                                     omzet_go=format_rp(omzet_go),
-                                    order_go=str(round(order_go, 1)),
+                                    order_go=str(round(order_go)),
                                 )
                             else:
                                 print(f"  {RED}✗ Gagal membuat PDF: {data.get('error')}{RESET}")

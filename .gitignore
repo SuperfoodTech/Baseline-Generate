@@ -90,6 +90,8 @@ cli.py
 # ── Chrome Profiles ────────────────────────────────────────────────────────
 **/chrome_profiles/
 **/chrome_profile/
+**/chrome_profile_*/
+**/chrome_profile_*
 
 # ── Session Exceptions ──────────────────────────────────────────────────────
 # Note: We now ignore all session files so that git pull on laptops does not 
@@ -99,5 +101,9 @@ cli.py
 **/data/session.json
 
 # Allow Shopee baseline session for server
+!.env.example
 !src/baseline/shopee/data/
 !src/baseline/shopee/data/session.json
+!src/shopee-omzet-automation/data/session*.json
+!src/VB/shopee/sessions/
+!src/VB/shopee/sessions/*.json

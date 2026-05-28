@@ -81,7 +81,9 @@ def run_pipeline():
     else:
         # AUTOMATIC DISCOVERY: Load all merchants from API/response.json
         try:
-            with open("API/response.json", "r") as f:
+            from pathlib import Path
+            api_response_path = Path(__file__).resolve().parent.parent / "API" / "response.json"
+            with open(api_response_path, "r") as f:
                 data = json.load(f)
                 merchant_list = data.get("data", {}).get("selectMerchant", {}).get("merchantList", [])
                 target_merchants = [m["merchantName"] for m in merchant_list]

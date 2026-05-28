@@ -37,7 +37,7 @@ from core.logger import get_logger
 log = get_logger("browser")
 
 # ── Constants ──────────────────────────────────────────────────────────────────
-SESSION_FILE    = Path("data/session.json")
+SESSION_FILE    = Path(__file__).resolve().parent.parent / "data" / "session.json"
 PARTNER_DASHBOARD = "https://partner.shopee.co.id/food/dashboard"
 TOKEN_TRIGGER_PAGE = "https://partner.shopee.co.id/settings/shopee-food/business-hours-settings"
 VALIDATE_URL    = "https://api.partner.shopee.co.id/nb/mss/web-api/PartnerAccountServer/GetUserInfo"
@@ -524,7 +524,8 @@ def _handle_merchant_selection(driver, active_id_forced=None, interactive=True):
         all_found = {}
         all_merchants_data = {}
         try:
-            with open("API/response.json", "r") as f:
+            api_response_path = Path(__file__).resolve().parent.parent / "API" / "response.json"
+            with open(api_response_path, "r") as f:
                 data = json.load(f)
                 for m in data.get("data", {}).get("selectMerchant", {}).get("merchantList", []):
                     all_merchants_data[m["merchantName"].lower()] = str(m["merchantId"])
@@ -558,6 +559,17 @@ def _handle_merchant_selection(driver, active_id_forced=None, interactive=True):
                     name = r['name']
                     name_key = name.lower()
                     m_id = all_merchants_data.get(name_key) or "Unknown"
+                    
+                    # Jika kita punya data API (all_merchants_data tidak kosong), 
+                    # HANYA masukkan merchant yang ID-nya dikenali (valid).
+                    if all_merchants_data and m_id == "Unknown":
+                        continue
+                        
+                    # Filter out obvious non-merchant generic texts jika terpaksa
+                    generic_texts = ["akun", "pengaturan", "log out", "halaman utama", "baru", "menu", "outlet", "shopeefood", "terapkan", "sembunyikan", "notifikasi", "pilih merchant lain", "pusat bantuan", "transaksi berhasil", "baris per halaman", "ringkasan toko", "nama toko", "jumlah total", "laporan saya", "penghasilan", "performa outlet", "periode transaksi", "ubah bahasa"]
+                    if m_id == "Unknown" and (len(name) < 4 or any(g == name_key for g in generic_texts) or "diupdate pada" in name_key):
+                        continue
+
                     if m_id != active_id and name not in all_found:
                         all_found[name] = {"name": name, "element": all_els[r['index']], "id": m_id}
             
@@ -811,7 +823,8 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
                         time.sleep(1)
                     if ui_name:
                         active_name = ui_name
-                        with open("API/response.json", "r") as f:
+                        api_response_path = Path(__file__).resolve().parent.parent / "API" / "response.json"
+                        with open(api_response_path, "r") as f:
                             m_data = json.load(f)
                             for m in m_data.get("data", {}).get("selectMerchant", {}).get("merchantList", []):
                                 if m["merchantName"].lower() == ui_name.lower():

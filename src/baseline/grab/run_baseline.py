@@ -58,7 +58,7 @@ def setup_logger():
 
 log = setup_logger()
 
-CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv"
+CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=880434015&single=true&output=csv"
 
 async def run_all(date_start: str = None, date_end: str = None, output_dir: str = None, user_filter: str = None, outlet_filter: str = None, branch_filter: str = None):
     # Reload env just in case
@@ -70,19 +70,13 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
         resp.raise_for_status()
         df = pd.read_csv(io.StringIO(resp.text))
         
-        # Filter for GrabFood and Status Live
+        # Filter for GrabFood
         grab_df = df[df["Aplikasi"].str.contains("Grab", na=False, case=False)]
-        grab_df = grab_df[grab_df["Status"].str.contains("Live", na=False, case=False)]
         
         portals = []
         for idx, row in grab_df.iterrows():
-            user_sf = row.get("Nama Pengguna.1")
-            user_mt = row.get("Nama Pengguna")
-            pwd_sf = row.get("Kata Sandi.1")
-            pwd_mt = row.get("Kata Sandi")
-            
-            user = user_sf if pd.notna(user_sf) and str(user_sf).strip() != "-" else user_mt
-            pwd = pwd_sf if pd.notna(pwd_sf) and str(pwd_sf).strip() != "-" else pwd_mt
+            user = row.get("Nama Pengguna")
+            pwd = row.get("Kata Sandi")
             
             if pd.notna(user) and pd.notna(pwd) and str(user).strip() != "-" and str(pwd).strip() != "-":
                 u_str = str(user).strip()
@@ -387,7 +381,7 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
             
         num_months = len(months)
         row["Rata-rata Omzet"] = total_omzet / num_months if num_months > 0 else 0.0
-        row["Rata-rata Order"] = round(total_order / num_months, 2) if num_months > 0 else 0
+        row["Rata-rata Order"] = round(total_order / num_months) if num_months > 0 else 0
         
         wide_rows.append(row)
 

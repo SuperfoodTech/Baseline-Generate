@@ -31,7 +31,67 @@ def subtract_months(dt, months):
         dt = (dt - timedelta(days=1)).replace(day=1)
     return dt
 
-def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=None):
+def resolve_bd_to_usernames(bd_filter, max_age_hours=24):
+    if not bd_filter:
+        return []
+        
+    import os
+    import time
+    import requests
+    import pandas as pd
+    
+    creds_cache = "data/shopee_credentials_cache.csv"
+    creds_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYSUnKOqk29LCktTxdb0wPLbWMbRaWRP3eC_UA4AwYod1FW6zDMhtLMC5ghIvot2B8upCDfBsn-TCP/pub?gid=565510790&single=true&output=csv"
+    
+    # Download credentials if not exists or too old
+    os.makedirs("data", exist_ok=True)
+    download = True
+    if os.path.exists(creds_cache):
+        mtime = os.path.getmtime(creds_cache)
+        age_hours = (time.time() - mtime) / 3600
+        if age_hours < max_age_hours:
+            download = False
+            
+    if download:
+        try:
+            resp = requests.get(creds_url, timeout=15)
+            resp.raise_for_status()
+            with open(creds_cache, "w", encoding="utf-8") as f:
+                f.write(resp.text)
+        except Exception as e:
+            log.warning(f"⚠️ Failed to download credentials in resolve_bd_to_usernames: {e}")
+            
+    if not os.path.exists(creds_cache):
+        return [b.strip().lower() for b in bd_filter.split("|")]
+        
+    try:
+        df_creds = pd.read_csv(creds_cache)
+        inputs = [b.strip().lower() for b in bd_filter.split("|")]
+        resolved = []
+        for inp in inputs:
+            clean_inp = inp
+            if clean_inp.startswith("bd "):
+                clean_inp = clean_inp[3:].strip()
+                
+            matched = False
+            for _, row in df_creds.iterrows():
+                username_val = str(row.get('Username', '')).strip().lower()
+                bd_val = str(row.get('BD', '')).strip().lower()
+                clean_bd = bd_val
+                if clean_bd.startswith("bd "):
+                    clean_bd = clean_bd[3:].strip()
+                    
+                if clean_bd == clean_inp or bd_val == inp or username_val == inp:
+                    resolved.append(username_val)
+                    matched = True
+            if not matched:
+                resolved.append(inp)
+        return resolved
+    except Exception as e:
+        log.error(f"⚠️ Error resolving BD filter: {e}")
+        return [b.strip().lower() for b in bd_filter.split("|")]
+
+def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=None, bd_filter=None):
     """
     Fetches live merchants from Google Sheets and caches them locally.
     Uses cached data if it's less than max_age_hours old.
@@ -39,7 +99,7 @@ def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=
     import os
     from datetime import datetime
     
-    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv"
+    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=880434015&single=true&output=csv"
     cache_path = "data/master_merchants_cache.csv"
     os.makedirs("data", exist_ok=True)
     
@@ -50,7 +110,11 @@ def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=
         if age_hours < max_age_hours:
             log.info(f"🔄 [DATA] Using cached merchant list (Age: {age_hours:.1f}h)")
             df = pd.read_csv(cache_path)
-            sf_df = df[(df['Aplikasi'] == app_name) & (df['Status'] == 'Live')]
+            sf_df = df[df['Aplikasi'] == app_name]
+            
+            if bd_filter:
+                resolved_bds = resolve_bd_to_usernames(bd_filter, max_age_hours)
+                sf_df = sf_df[sf_df['Nama Pengguna'].astype(str).str.strip().str.lower().isin(resolved_bds)]
             
             if merchant_filter:
                 if "|" in merchant_filter:
@@ -70,7 +134,11 @@ def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=
         df = pd.read_csv(url)
         df.to_csv(cache_path, index=False)
         
-        sf_df = df[(df['Aplikasi'] == app_name) & (df['Status'] == 'Live')]
+        sf_df = df[df['Aplikasi'] == app_name]
+        
+        if bd_filter:
+            resolved_bds = resolve_bd_to_usernames(bd_filter, max_age_hours)
+            sf_df = sf_df[sf_df['Nama Pengguna'].astype(str).str.strip().str.lower().isin(resolved_bds)]
         
         if merchant_filter:
             if "|" in merchant_filter:
@@ -112,6 +180,134 @@ def download_file(url, filename, cookies=None, max_retries=3):
     return False
 
 
+def get_shopee_baseline_credentials(merchant_name, max_age_hours=24):
+    """
+    Fetches the credentials for a merchant's BD by checking Google Sheets:
+    Sheet 1: Master Merchants (to find BD name associated with merchant_name)
+    Sheet 2: Shopee Credentials (to find shopee credentials for that BD name)
+    """
+    import os
+    import time
+    import pandas as pd
+    import requests
+    
+    # Fallback/Default credentials
+    phone_fallback    = os.getenv("SHOPEE_PHONE", "").strip()
+    username_fallback = os.getenv("SHOPEE_USERNAME", "").strip()
+    password_fallback = os.getenv("SHOPEE_PASSWORD", "").strip()
+    
+    if not username_fallback or not password_fallback:
+        try:
+            from pathlib import Path
+            import json
+            for parent in Path(__file__).resolve().parents:
+                cred_file = parent / "credentials.json"
+                if cred_file.exists():
+                    with open(cred_file, "r") as f:
+                        creds = json.load(f)
+                        if not username_fallback:
+                            username_fallback = creds.get("shopee_username", "").strip()
+                        if not password_fallback:
+                            password_fallback = creds.get("shopee_password", "").strip()
+                        if not phone_fallback:
+                            phone_fallback = creds.get("shopee_phone", "").strip()
+                    break
+        except Exception:
+            pass
+            
+    default_creds = {
+        "username": username_fallback or "allvbadmin",
+        "password": password_fallback or "Shopee@321",
+        "phone": phone_fallback or "6285136517286"
+    }
+    
+    cache_merchants = "data/master_merchants_cache.csv"
+    cache_creds = "data/shopee_credentials_cache.csv"
+    os.makedirs("data", exist_ok=True)
+    
+    url_merchants = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=880434015&single=true&output=csv"
+    url_creds = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYSUnKOqk29LCktTxdb0wPLbWMbRaWRP3eC_UA4AwYod1FW6zDMhtLMC5ghIvot2B8upCDfBsn-TCP/pub?gid=565510790&single=true&output=csv"
+    
+    def check_and_download(url, cache_path):
+        download = True
+        if os.path.exists(cache_path):
+            mtime = os.path.getmtime(cache_path)
+            age_hours = (time.time() - mtime) / 3600
+            if age_hours < max_age_hours:
+                download = False
+        if download:
+            log.info(f"🌐 [CREDENTIALS] Downloading fresh data from: {url}")
+            try:
+                resp = requests.get(url, timeout=15)
+                resp.raise_for_status()
+                with open(cache_path, "w", encoding="utf-8") as f:
+                    f.write(resp.text)
+            except Exception as e:
+                log.warning(f"⚠️ [CREDENTIALS] Failed to download {url}: {e}. Will use cache if available.")
+                if not os.path.exists(cache_path):
+                    raise e
+                    
+    try:
+        check_and_download(url_merchants, cache_merchants)
+        check_and_download(url_creds, cache_creds)
+        
+        df_merchants = pd.read_csv(cache_merchants)
+        df_creds = pd.read_csv(cache_creds)
+        
+        def _normalize(name):
+            if pd.isna(name):
+                return ""
+            return str(name).strip().lower().rstrip('_').strip()
+            
+        # Match norm_merchant in sf_merchants
+        df_merchants['norm_name'] = df_merchants['Merchant Name'].apply(_normalize)
+        norm_merchant = _normalize(merchant_name)
+        
+        matched_rows = df_merchants[
+            (df_merchants['norm_name'] == norm_merchant) &
+            (df_merchants['Aplikasi'].str.contains("Shopee", na=False, case=False))
+        ]
+        
+        if matched_rows.empty:
+            log.warning(f"⚠️ [CREDENTIALS] Merchant '{merchant_name}' not found in Master list. Using default credentials.")
+            return default_creds
+            
+        username = str(matched_rows.iloc[0].get('Nama Pengguna', '')).strip()
+        password = str(matched_rows.iloc[0].get('Kata Sandi', '')).strip()
+        
+        if not username or pd.isna(username) or username == "" or username == "-":
+            log.info(f"ℹ️ [CREDENTIALS] No username assigned to merchant '{merchant_name}'. Using default credentials.")
+            return default_creds
+            
+        if not password or pd.isna(password):
+            password = default_creds.get("password")
+            
+        # Look up phone number from df_creds
+        norm_username = _normalize(username)
+        df_creds['norm_username'] = df_creds['Username'].fillna("").apply(_normalize)
+        
+        matched_cred = df_creds[df_creds['norm_username'] == norm_username]
+        if matched_cred.empty:
+            log.warning(f"⚠️ [CREDENTIALS] Username '{username}' has no mapped credentials in Credentials sheet. Trying default phone.")
+            phone = default_creds.get("phone")
+        else:
+            row_cred = matched_cred.iloc[0]
+            phone = str(row_cred.get('Phone', '')).strip()
+            
+        if phone.startswith("+"):
+            phone = phone[1:]
+            
+        log.info(f"🔑 [CREDENTIALS] Successfully mapped '{merchant_name}' to staff account '{username}' (Phone: {phone})")
+        return {
+            "username": username,
+            "password": password,
+            "phone": phone
+        }
+    except Exception as e:
+        log.error(f"❌ [CREDENTIALS] Error resolving credentials for '{merchant_name}': {e}. Using default.")
+        return default_creds
+
+
 def run_pipeline():
     import argparse
     parser = argparse.ArgumentParser(description="Shopee Omzet Baseline Pipeline")
@@ -120,6 +316,7 @@ def run_pipeline():
     parser.add_argument("--output-dir", type=str, help="Override output directory for reports", default=None)
     parser.add_argument("--skip-download", action="store_true", help="Skip browser automation and only process/merge raw files in output directory")
     parser.add_argument("--merchant", type=str, help="Filter specific merchant name to run", default=None)
+    parser.add_argument("--bd", type=str, help="Filter specific BD name to run", default=None)
     args = parser.parse_args()
 
     # Determine output directory
@@ -162,29 +359,6 @@ def run_pipeline():
     print(f"  Range: {label}")
     print("=" * 60)
 
-    phone    = os.getenv("SHOPEE_PHONE", "").strip()
-    username = os.getenv("SHOPEE_USERNAME", "").strip()
-    password = os.getenv("SHOPEE_PASSWORD", "").strip()
-
-    # Fallback: Load Shopee credentials from credentials.json in parent directories if not in env
-    if not username or not password:
-        try:
-            from pathlib import Path
-            import json
-            for parent in Path(__file__).resolve().parents:
-                cred_file = parent / "credentials.json"
-                if cred_file.exists():
-                    with open(cred_file, "r") as f:
-                        creds = json.load(f)
-                        if not username:
-                            username = creds.get("shopee_username", "").strip()
-                        if not password:
-                            password = creds.get("shopee_password", "").strip()
-                        if not phone:
-                            phone = creds.get("shopee_phone", "").strip()
-                    break
-        except Exception:
-            pass
     # Load headless setting from config.json walk-up
     headless = True
     try:
@@ -202,167 +376,190 @@ def run_pipeline():
     if os.environ.get("HEADLESS") == "true":
         headless = True
 
-
-
     # ── 1. Determine Merchants to Process (Data-Driven via G-Sheets) ────
-    target_merchants = get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=args.merchant)
+    target_merchants = get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=args.merchant, bd_filter=args.bd)
     log.info(f"📋 [PROGRESS] Found {len(target_merchants)} live merchants ready to process.")
 
     if not target_merchants:
         log.error("❌ No merchants to process. Aborting.")
         return
 
-    driver = None
     if args.skip_download:
         log.info("⏭️ [SKIP] Bypassing browser download phase (Phases 1 & 2) as --skip-download is enabled.")
     else:
-        try:
-            # ── 2. Phase 1: Rapid Trigger (Trigger exports for all) ────────────
-            log.info(f"🚀 [PROGRESS] PHASE 1: Triggering Exports for {len(target_merchants)} merchants...")
-        
-            # Initialize session
-            session_data = get_session(username=username or None, password=password or None, phone=phone or None, 
-                                       headless=headless, close_browser=False, target_name=target_merchants[0])
-            if not session_data: return
-            driver = session_data.get("driver")
-
-            merchants_context = {} # Store tokens/ids for each merchant
-            start_time_all = int(time.time())
-
-            for i, merchant_name in enumerate(target_merchants):
-                log.info(f"  [{i+1}/{len(target_merchants)}] Triggering: {merchant_name}")
-            
-                # Switch if not already there
-                if i > 0:
-                    switch_success = False
-                    for retry in range(2):
-                        if auto_switch_merchant(driver, merchant_name):
-                            switch_success = True
-                            break
-                        else:
-                            log.warning(f"  ⚠️ Retrying switch for {merchant_name} (Attempt {retry+2}/2)...")
-                            time.sleep(3)
-                
-                    if not switch_success:
-                        log.warning(f"  ❌ Skipping {merchant_name} after 2 failed switch attempts.")
-                        continue
-                    time.sleep(3) # Wait for cookies to sync
-            
-                # Get tokens and VERIFY ID
-                session = refresh_tokens(driver)
-                active_id = str(session.get("shopee_tob_entity_id") or "")
-            
-                # Double check if the ID actually changed from previous
-                if i > 0 and active_id == merchants_context.get(target_merchants[i-1], {}).get("entity_id"):
-                     log.warning("  ⚠️ ID hasn't changed yet. Retrying token refresh...")
-                     time.sleep(3)
-                     session = refresh_tokens(driver)
-                     active_id = str(session.get("shopee_tob_entity_id") or "")
-
-                log.debug(f"  📍 Confirmed ID for {merchant_name}: {active_id}")
-            
-                # Store context for polling
-                merchants_context[merchant_name] = {
-                    "entity_id": active_id,
-                    "tob_token": session["shopee_tob_token"],
-                    "cookies": session.get("extra_cookies", {}),
-                    "start_trigger_time": int(time.time())
+        # Group target merchants by resolved credentials username
+        merchants_by_user = {}
+        for m_name in target_merchants:
+            creds = get_shopee_baseline_credentials(m_name)
+            u = creds["username"]
+            if u not in merchants_by_user:
+                merchants_by_user[u] = {
+                    "creds": creds,
+                    "merchants": []
                 }
-
-                # Initialize client and trigger
-                client = ShopeeClient(tob_token=session["shopee_tob_token"], entity_id=active_id, extra_cookies=session.get("extra_cookies", {}))
+            merchants_by_user[u]["merchants"].append(m_name)
             
-                # Assign ranges based on CLI arguments
-                ranges = global_ranges
-            
-                merchants_context[merchant_name]["ranges"] = ranges
-                merchants_context[merchant_name]["downloaded"] = []
+        log.info(f"📋 [GROUPS] Grouped {len(target_merchants)} merchants into {len(merchants_by_user)} credentials groups.")
 
-                # Trigger with retry on network error
-                for r in ranges:
-                    success = False
-                    for trigger_retry in range(3):
-                        res = client.export_transaction_report(merchant_ids=[active_id], start_time=r["start"], end_time=r["end"])
-                        if res is True:
-                            success = True
-                            break
-                        elif res is None: # Network Error
-                            log.warning(f"  ⚠️ Network error during trigger for {merchant_name}. Retrying in 10s... ({trigger_retry+1}/3)")
-                            time.sleep(10)
-                        else: # API Error (res is False)
-                            break
-                
-                    if not success:
-                        log.error(f"  ❌ Failed to trigger export for {merchant_name} range {r.get('label')}")
-                    time.sleep(1)
-
-            # ── 3. Phase 2: Global Polling & Download ──────────────────────────
-            log.info(f"⏳ [PROGRESS] PHASE 2: Global Polling for all reports...")
-            os.makedirs(report_dir, exist_ok=True)
-        
-            total_expected = len(merchants_context) * len(global_ranges)
-            download_count = 0
-            start_poll = time.time()
-        
-            consecutive_network_errors = 0
-            poll_iteration = 0
-            while download_count < total_expected and (time.time() - start_poll) < 1800: # Increased timeout to 30m
-                found_new = False
-                poll_iteration += 1
-                has_network_issue = False
+        for username, group_info in merchants_by_user.items():
+            creds = group_info["creds"]
+            group_merchants = group_info["merchants"]
             
-                for m_name, ctx in merchants_context.items():
-                    if len(ctx["downloaded"]) >= len(global_ranges): continue
+            log.info(f"🚀 [GROUP] Starting processing for group '{username}' with {len(group_merchants)} merchants...")
+            
+            # Set dynamic session file Path inside core.browser
+            import core.browser
+            from pathlib import Path
+            shopee_omzet_dir = Path(core.browser.__file__).resolve().parent.parent
+            core.browser.SESSION_FILE = shopee_omzet_dir / "data" / f"session_{username}.json"
+            
+            driver = None
+            try:
+                # ── 2. Phase 1: Rapid Trigger ────
+                log.info(f"🚀 [PROGRESS] PHASE 1: Triggering Exports for group '{username}' ({len(group_merchants)} merchants)...")
                 
-                    client = ShopeeClient(tob_token=ctx["tob_token"], entity_id=ctx["entity_id"], extra_cookies=ctx["cookies"])
-                    reports = client.get_report_list()
+                session_data = get_session(
+                    username=creds["username"], 
+                    password=creds["password"], 
+                    phone=creds["phone"], 
+                    headless=headless, 
+                    close_browser=False, 
+                    target_name=group_merchants[0]
+                )
+                if not session_data:
+                    log.error(f"❌ Failed to get session for group '{username}'. Skipping this group.")
+                    continue
+                driver = session_data.get("driver")
                 
-                    if reports is None: # Network/Connection Error
-                        has_network_issue = True
-                        continue
+                merchants_context = {} # Store tokens/ids for each merchant
+                
+                for i, merchant_name in enumerate(group_merchants):
+                    log.info(f"  [{i+1}/{len(group_merchants)}] Triggering: {merchant_name}")
                     
-                    consecutive_network_errors = 0 # Reset on any successful API response
+                    # Switch if not already there
+                    if i > 0:
+                        switch_success = False
+                        for retry in range(2):
+                            if auto_switch_merchant(driver, merchant_name):
+                                switch_success = True
+                                break
+                            else:
+                                log.warning(f"  ⚠️ Retrying switch for {merchant_name} (Attempt {retry+2}/2)...")
+                                time.sleep(3)
+                        
+                        if not switch_success:
+                            log.warning(f"  ❌ Skipping {merchant_name} after 2 failed switch attempts.")
+                            continue
+                        time.sleep(3) # Wait for cookies to sync
+                    
+                    # Get tokens and VERIFY ID
+                    session = refresh_tokens(driver)
+                    active_id = str(session.get("shopee_tob_entity_id") or "")
+                    
+                    # Double check if the ID actually changed from previous
+                    if i > 0 and active_id == merchants_context.get(group_merchants[i-1], {}).get("entity_id"):
+                         log.warning("  ⚠️ ID hasn't changed yet. Retrying token refresh...")
+                         time.sleep(3)
+                         session = refresh_tokens(driver)
+                         active_id = str(session.get("shopee_tob_entity_id") or "")
+                         
+                    log.debug(f"  📍 Confirmed ID for {merchant_name}: {active_id}")
+                    
+                    # Store context for polling
+                    merchants_context[merchant_name] = {
+                        "entity_id": active_id,
+                        "tob_token": session["shopee_tob_token"],
+                        "cookies": session.get("extra_cookies", {}),
+                        "start_trigger_time": int(time.time())
+                    }
+                    
+                    # Initialize client and trigger
+                    client = ShopeeClient(tob_token=session["shopee_tob_token"], entity_id=active_id, extra_cookies=session.get("extra_cookies", {}))
+                    
+                    # Assign ranges
+                    ranges = global_ranges
+                    merchants_context[merchant_name]["ranges"] = ranges
+                    merchants_context[merchant_name]["downloaded"] = []
+                    
+                    # Trigger with retry
+                    for r in ranges:
+                        success = False
+                        for trigger_retry in range(3):
+                            res = client.export_transaction_report(merchant_ids=[active_id], start_time=r["start"], end_time=r["end"])
+                            if res is True:
+                                success = True
+                                break
+                            elif res is None: # Network Error
+                                log.warning(f"  ⚠️ Network error during trigger for {merchant_name}. Retrying in 10s... ({trigger_retry+1}/3)")
+                                time.sleep(10)
+                            else: # API Error
+                                break
+                        if not success:
+                            log.error(f"  ❌ Failed to trigger export for {merchant_name} range {r.get('label')}")
+                        time.sleep(1)
                 
-                    for rep in reports:
-                        # Match: status ready (2 or 3), has download URL, created after our trigger
-                        if rep.get("status") in [2, 3] and rep.get("download_url"):
-                            if rep.get("create_time", 0) and rep["create_time"] >= ctx["start_trigger_time"]:
-                                # Use report name for file naming (e.g. "Transactions_01022026_28022026_ShopeeFood.xlsx")
-                                report_name = rep.get("name", f"report_{rep.get('id')}.xlsx")
-                                target_path = os.path.join(report_dir, f"{m_name.replace(' ', '_')}_{report_name}")
+                # ── 3. Phase 2: Global Polling & Download ────
+                log.info(f"⏳ [PROGRESS] PHASE 2: Global Polling for group '{username}'...")
+                os.makedirs(report_dir, exist_ok=True)
+                
+                total_expected = len(merchants_context) * len(global_ranges)
+                download_count = 0
+                start_poll = time.time()
+                
+                consecutive_network_errors = 0
+                poll_iteration = 0
+                while download_count < total_expected and (time.time() - start_poll) < 1800:
+                    found_new = False
+                    poll_iteration += 1
+                    has_network_issue = False
+                    
+                    for m_name, ctx in merchants_context.items():
+                        if len(ctx["downloaded"]) >= len(global_ranges): continue
+                        
+                        client = ShopeeClient(tob_token=ctx["tob_token"], entity_id=ctx["entity_id"], extra_cookies=ctx["cookies"])
+                        reports = client.get_report_list()
+                        
+                        if reports is None: # Network Error
+                            has_network_issue = True
+                            continue
                             
-                                if target_path not in [d[0] for d in ctx["downloaded"]]:
-                                    if download_file(rep.get("download_url"), target_path):
-                                        log.info(f"  ✅ [DOWNLOAD] SUCCESS: {m_name} -> {report_name}")
-                                        ctx["downloaded"].append((target_path, report_name))
-                                        download_count += 1
-                                        found_new = True
+                        consecutive_network_errors = 0
+                        for rep in reports:
+                            if rep.get("status") in [2, 3] and rep.get("download_url"):
+                                if rep.get("create_time", 0) and rep["create_time"] >= ctx["start_trigger_time"]:
+                                    report_name = rep.get("name", f"report_{rep.get('id')}.xlsx")
+                                    target_path = os.path.join(report_dir, f"{m_name.replace(' ', '_')}_{report_name}")
+                                    
+                                    if target_path not in [d[0] for d in ctx["downloaded"]]:
+                                        if download_file(rep.get("download_url"), target_path):
+                                            log.info(f"  ✅ [DOWNLOAD] SUCCESS: {m_name} -> {report_name}")
+                                            ctx["downloaded"].append((target_path, report_name))
+                                            download_count += 1
+                                            found_new = True
+                        
+                        if not found_new and poll_iteration % 3 == 0:
+                             log.info(f"  ⏳ [PROGRESS] Waiting for {m_name}... ({len(ctx['downloaded'])}/{len(global_ranges)} ready)")
+                             
+                    if has_network_issue:
+                        consecutive_network_errors += 1
+                        wait_time = min(10 * (2 ** (consecutive_network_errors - 1)), 60)
+                        log.warning(f"🌐 [NETWORK] API connection issues detected. Waiting {wait_time}s before next poll...")
+                        time.sleep(wait_time)
+                    elif download_count < total_expected:
+                        time.sleep(10)
                 
-                    # Log progress every 3 iterations (~30 seconds)
-                    if not found_new and poll_iteration % 3 == 0:
-                         log.info(f"  ⏳ [PROGRESS] Waiting for {m_name}... ({len(ctx['downloaded'])}/{len(global_ranges)} ready)")
-            
-                if has_network_issue:
-                    consecutive_network_errors += 1
-                    wait_time = min(10 * (2 ** (consecutive_network_errors - 1)), 60) # Exp backoff: 10, 20, 40, 60s
-                    log.warning(f"🌐 [NETWORK] API connection issues detected. Waiting {wait_time}s before next poll...")
-                    time.sleep(wait_time)
-                elif download_count < total_expected:
-                    time.sleep(10)
-
-            # ── Summary ──────────────────────────────────────────────────────────
-            log.info("📋 [PROGRESS] Download Phase Complete. Summary:")
-            for m_name, ctx in merchants_context.items():
-                log.info(f"  🏪 {m_name}: {len(ctx['downloaded'])}/{len(global_ranges)} files")
-                for fpath, label in ctx["downloaded"]:
-                    log.info(f"     📄 {fpath}")
-
-        finally:
-            if driver is not None:
-                try:
-                    driver.quit()
-                except Exception as e:
-                    log.debug(f"Failed to quit driver: {e}")
+                log.info(f"📋 [PROGRESS] Download Phase Complete for group '{username}'. Summary:")
+                for m_name, ctx in merchants_context.items():
+                    log.info(f"  🏪 {m_name}: {len(ctx['downloaded'])}/{len(global_ranges)} files")
+                    for fpath, label in ctx["downloaded"]:
+                        log.info(f"     📄 {fpath}")
+                        
+            finally:
+                if driver is not None:
+                    try:
+                        driver.quit()
+                    except Exception as e:
+                        log.debug(f"Failed to quit driver: {e}")
     # ── 4. Phase 3: Scanning and Validating ALL Raw Files in report folder ──
     log.info("📊 [PROGRESS] PHASE 3: Scanning and Validating ALL Raw Files in report folder...")
     all_analyzed_data = []
@@ -465,11 +662,16 @@ def run_pipeline():
                     for indo, eng in sorted(indo_months.items(), key=lambda x: len(x[0]), reverse=True):
                         temp_dates = temp_dates.str.replace(indo, eng, case=False, regex=False)
                     
-                    # Parse to datetime using robust explicit format
+                    # Parse to datetime using robust explicit format or fallback to generic parsing
                     parsed_dates = pd.to_datetime(temp_dates, format='%d %b %Y %H:%M', errors='coerce')
                     
+                    # For dates that failed to parse with the specific format, try generic parsing
+                    if parsed_dates.isna().any():
+                        failed_mask = parsed_dates.isna()
+                        parsed_dates.loc[failed_mask] = pd.to_datetime(temp_dates.loc[failed_mask], errors='coerce', dayfirst=True)
+                        
                     # Where parsing succeeded, apply the new format. Where it failed, keep original.
-                    df["Waktu Penyelesaian"] = parsed_dates.dt.strftime('%Y-%m-%d at %H:%M').fillna(df["Waktu Penyelesaian"])
+                    df["Waktu Penyelesaian"] = parsed_dates.dt.strftime('%Y-%m-%d %H:%M').fillna(df["Waktu Penyelesaian"])
                     
                 # Reorder columns to match Google Sheets format
                 desired_order = [
@@ -503,7 +705,11 @@ def run_pipeline():
         working = master_df.copy()
 
         if "Waktu Penyelesaian" in working.columns:
-            working["Updated On"] = pd.to_datetime(working["Waktu Penyelesaian"], format="%Y-%m-%d at %H:%M", errors="coerce")
+            # First try the standardized format, then fallback to generic parsing for any that fail
+            working["Updated On"] = pd.to_datetime(working["Waktu Penyelesaian"], format="%Y-%m-%d %H:%M", errors="coerce")
+            if working["Updated On"].isna().any():
+                failed_mask = working["Updated On"].isna()
+                working.loc[failed_mask, "Updated On"] = pd.to_datetime(working.loc[failed_mask, "Waktu Penyelesaian"], errors="coerce", dayfirst=True)
         else:
             working["Updated On"] = pd.NaT
 
@@ -518,8 +724,11 @@ def run_pipeline():
             working["Status"] = ""
             
         if "Net Sales" not in working.columns:
-            if "Harga Makanan" in working.columns and "Diskon" in working.columns:
-                working["Net Sales"] = pd.to_numeric(working["Harga Makanan"], errors="coerce").fillna(0) - pd.to_numeric(working["Diskon"], errors="coerce").fillna(0)
+            if "Harga Makanan" in working.columns:
+                harga_makanan = pd.to_numeric(working["Harga Makanan"], errors="coerce").fillna(0)
+                diskon = pd.to_numeric(working["Diskon"], errors="coerce").fillna(0) if "Diskon" in working.columns else 0
+                diskon_fs = pd.to_numeric(working["Diskon Flash Sale"], errors="coerce").fillna(0) if "Diskon Flash Sale" in working.columns else 0
+                working["Net Sales"] = harga_makanan - diskon - diskon_fs
             else:
                 working["Net Sales"] = pd.to_numeric(working["Nilai Transaksi"], errors="coerce").fillna(0)
         else:
@@ -527,7 +736,7 @@ def run_pipeline():
         
         # Aturan validasi: ID pesanan valid dan bukan dibatalkan
         valid_long_order_id = working["Long Order ID"].str.match(r"^[A-Za-z0-9-]+$", na=False)
-        is_not_cancelled = working["Status"].ne("dibatalkan") & working["Status"].ne("cancelled")
+        is_not_cancelled = ~working["Status"].str.contains("batal|cancel", na=False, case=False)
         
         valid_orders = working.loc[valid_long_order_id & is_not_cancelled].copy()
         
@@ -584,7 +793,7 @@ def run_pipeline():
                 
             num_months = len(months)
             row["Rata-rata Omzet"] = total_omzet / num_months if num_months > 0 else 0.0
-            row["Rata-rata Order"] = round(total_order / num_months, 2) if num_months > 0 else 0
+            row["Rata-rata Order"] = round(total_order / num_months) if num_months > 0 else 0
             
             wide_rows.append(row)
 

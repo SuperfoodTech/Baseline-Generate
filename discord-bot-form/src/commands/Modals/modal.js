@@ -11,6 +11,25 @@ const {
 } = require('discord.js');
 const https = require('https');
 
+function fetchCSV(url) {
+    return new Promise((resolve, reject) => {
+        const fetchUrl = (currentUrl) => {
+            https.get(currentUrl, (res) => {
+                if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                    return fetchUrl(res.headers.location);
+                }
+                if (res.statusCode !== 200) {
+                    return reject(new Error(`HTTP Status ${res.statusCode}`));
+                }
+                let data = '';
+                res.on('data', (chunk) => data += chunk);
+                res.on('end', () => resolve(data));
+            }).on('error', (err) => reject(err));
+        };
+        fetchUrl(url + '&t=' + Date.now());
+    });
+}
+
 const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv';
 
 let cachedSheetData = null;
@@ -20,8 +39,8 @@ const CACHE_DURATION = 5 * 60 * 1000; // 5 menit cache
 
 const makeProgressEmbed = (step, title, description, fields = []) => {
     const steps = [
+        { name: 'BD', icon: '👤' },
         { name: 'Outlet', icon: '🏢' },
-        { name: 'Brand', icon: '📍' },
         { name: 'Aplikator', icon: '📱' },
         { name: 'Tanggal', icon: '📅' }
     ];
@@ -91,124 +110,97 @@ module.exports = {
         const loadingEmbed = new EmbedBuilder()
             .setColor(0x5865F2)
             .setTitle('🔄 Menghubungkan ke Google Sheets...')
-            .setDescription('Mohon tunggu sejenak, kami sedang menyinkronkan daftar outlet dan brand terbaru secara langsung...')
+            .setDescription('Mohon tunggu sejenak, kami sedang menyinkronkan daftar outlet dan BD terbaru secara langsung...')
             .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
             .setTimestamp();
 
         let message = await interaction.editReply({ embeds: [loadingEmbed], components: [] });
 
         try {
-            const { outlets, outletBranchMap, outletAppMap, outletCabangAppMap } = await this.fetchSheetData();
+            const { outlets, bds, userToBdMap, bdToUserMap, outletAppMap, bdOutletsMap, outletBdMap } = await this.fetchSheetData();
             const formData = {};
 
             formData.tagihan = 'baseline';
+            formData.cabang = ''; // Cabang/Brand is empty for baseline
 
-            // 1. Pilih Outlet
-            const maxOutletOpts = outlets.length > 99 ? 99 : outlets.length;
-            const outletOptions = [
-                { label: '🌟 Pilih Semua', value: 'all' },
-                ...outlets.slice(0, 99).map(name => ({
-                    label: name.substring(0, 100),
-                    value: name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100)
-                }))
-            ];
+            // 1. Pilih BD (single select, tanpa opsi 'Semua')
+            const bdOptions = bds.map(name => ({
+                label: name,
+                value: name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100),
+                description: `Proses outlet di bawah BD ${name}`
+            }));
 
-            const outletResult = await this.askSelection(interaction, {
-                title: 'Pilih Outlet',
+            const bdResult = await this.askSelection(interaction, {
+                title: 'Pilih BD',
                 step: 0,
-                placeholder: 'Pilih satu atau lebih outlet...',
-                options: outletOptions,
+                placeholder: 'Pilih BD...',
+                options: bdOptions,
                 minValues: 1,
-                maxValues: maxOutletOpts + 1,
+                maxValues: 1,
                 isFirstStep: true,
                 fields: [
                     { name: 'Jenis Laporan', value: formData.tagihan.toUpperCase(), inline: true }
                 ]
             });
 
-            const selectedOutletValues = outletResult.values;
-            let selectedOutletNames;
-            if (selectedOutletValues.includes('all')) {
-                selectedOutletNames = outlets.slice(0, 99);
-            } else {
-                selectedOutletNames = outlets.filter(name =>
-                    selectedOutletValues.includes(name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100))
-                );
+            const selectedBdValues = bdResult.values;
+            const selectedBdNames = bds.filter(name =>
+                selectedBdValues.includes(name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100))
+            );
+            const selectedUsernames = [];
+            for (const name of selectedBdNames) {
+                const mappedUser = bdToUserMap[name.toLowerCase()] || name.toLowerCase();
+                selectedUsernames.push(mappedUser);
             }
-            formData.outlet = selectedOutletNames.join(', ');
+            formData.bd = selectedUsernames.join('|');
+            const bdDisplay = selectedBdNames.join(', ');
 
-            // 3. Filter Cabang berdasarkan Outlet yang dipilih
-            let filteredBranchesSet = new Set();
-            let outletValuesForBranches = selectedOutletValues;
-            if (selectedOutletValues.includes('all')) {
-                outletValuesForBranches = outlets.slice(0, 99).map(name =>
-                    name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100)
-                );
-            }
-            outletValuesForBranches.forEach(outletVal => {
-                const branchesForOutlet = outletBranchMap[outletVal] || [];
-                branchesForOutlet.forEach(b => filteredBranchesSet.add(b));
+            // Filter outlets berdasarkan BD terpilih
+            const outletNamesSet = new Set();
+            selectedBdNames.forEach(name => {
+                const bdOutlets = bdOutletsMap[name.toLowerCase()] || [];
+                bdOutlets.forEach(o => outletNamesSet.add(o));
             });
-            let filteredBranches = Array.from(filteredBranchesSet);
-            if (filteredBranches.length === 0) filteredBranches = ['Pilih Brand (Tidak ada data)'];
+            let filteredOutlets = Array.from(outletNamesSet);
+            if (filteredOutlets.length === 0) {
+                filteredOutlets = outlets;
+            }
 
-            const maxCabangOpts = filteredBranches.length > 99 ? 99 : filteredBranches.length;
-            const cabangOptions = [
-                { label: '🌟 Pilih Semua', value: 'all' },
-                ...filteredBranches.slice(0, 99).map(name => ({
-                    label: name.substring(0, 100),
-                    value: name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100)
-                }))
-            ];
+            // 2. Pilih Outlet (single select, tanpa opsi 'Semua')
+            const outletOptions = filteredOutlets.slice(0, 25).map(name => ({
+                label: name.substring(0, 100),
+                value: name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100)
+            }));
 
-            const cabangResult = await this.askSelection(outletResult.lastInteraction, {
-                title: 'Pilih Brand',
+            const outletResult = await this.askSelection(bdResult.lastInteraction, {
+                title: 'Pilih Outlet',
                 step: 1,
-                placeholder: 'Pilih satu atau lebih brand...',
-                options: cabangOptions,
+                placeholder: 'Pilih outlet...',
+                options: outletOptions,
                 minValues: 1,
-                maxValues: maxCabangOpts + 1,
+                maxValues: 1,
                 fields: [
                     { name: 'Jenis Laporan', value: formData.tagihan.toUpperCase(), inline: true },
-                    { name: 'Outlet Terpilih', value: formData.outlet.length > 1024 ? formData.outlet.substring(0, 1020) + '...' : formData.outlet, inline: false }
+                    { name: 'BD Terpilih', value: bdDisplay.length > 512 ? bdDisplay.substring(0, 508) + '...' : bdDisplay, inline: true }
                 ]
             });
 
-            const selectedCabangValues = cabangResult.values;
-            let selectedCabangNames;
-            if (selectedCabangValues.includes('all')) {
-                selectedCabangNames = filteredBranches.slice(0, 99);
-            } else {
-                selectedCabangNames = filteredBranches.filter(name =>
-                    selectedCabangValues.includes(name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100))
-                );
-            }
-            formData.cabang = selectedCabangNames.join(', ');
+            const selectedOutletValues = outletResult.values;
+            const selectedOutletNames = filteredOutlets.filter(name =>
+                selectedOutletValues.includes(name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100))
+            );
+            formData.outlet = selectedOutletNames.join(', ');
 
-            // 4. Pilih Aplikator
+            // 3. Pilih Aplikator
             const availableApps = new Set();
             let selectedOutletVals = selectedOutletValues;
             if (selectedOutletValues.includes('all')) {
-                selectedOutletVals = outlets.map(name => name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100));
+                selectedOutletVals = filteredOutlets.map(name => name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100));
             }
             
             selectedOutletVals.forEach(outletVal => {
-                let selectedCabangVals = selectedCabangValues;
-                if (selectedCabangValues.includes('all')) {
-                    const branches = outletBranchMap[outletVal] || [];
-                    selectedCabangVals = ['all', ...branches.map(name => name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100))];
-                }
-                
-                selectedCabangVals.forEach(cabangVal => {
-                    if (cabangVal === 'all') {
-                        const apps = outletAppMap[outletVal] || [];
-                        apps.forEach(a => availableApps.add(a));
-                    } else {
-                        const key = `${outletVal}|${cabangVal}`;
-                        const apps = outletCabangAppMap[key] || [];
-                        apps.forEach(a => availableApps.add(a));
-                    }
-                });
+                const apps = outletAppMap[outletVal] || [];
+                apps.forEach(a => availableApps.add(a));
             });
 
             if (availableApps.size === 0) {
@@ -223,30 +215,26 @@ module.exports = {
                 { label: 'ShopeeFood', value: 'shopeefood', emoji: '🟠' }
             ];
 
-            const aplikatorOptions = [];
-            const hasMultipleAvailable = Array.from(availableApps).length > 1;
-            
-            if (hasMultipleAvailable) {
-                aplikatorOptions.push({ 
-                    label: '🌟 Pilih Semua yang Tersedia', 
+            // Tampilkan semua aplikator yang tersedia + opsi 'Pilih Semua'
+            const aplikatorOptions = [
+                {
+                    label: '🌟 Pilih Semua yang Tersedia',
                     value: 'all',
                     description: `Pilih semua aplikator aktif (${Array.from(availableApps).join(', ')})`
-                });
-            }
-
+                }
+            ];
             allApps.forEach(app => {
-                const isAvailable = availableApps.has(app.value);
-                if (isAvailable) {
+                if (availableApps.has(app.value)) {
                     aplikatorOptions.push({
                         label: app.label,
                         value: app.value,
-                        description: `Tersedia untuk outlet/brand terpilih`,
+                        description: `Tersedia untuk outlet terpilih`,
                         emoji: app.emoji
                     });
                 }
             });
 
-            const aplikatorResult = await this.askSelection(cabangResult.lastInteraction, {
+            const aplikatorResult = await this.askSelection(outletResult.lastInteraction, {
                 title: 'Pilih Aplikator',
                 step: 2,
                 placeholder: 'Pilih satu atau lebih aplikator...',
@@ -255,8 +243,8 @@ module.exports = {
                 maxValues: aplikatorOptions.length,
                 fields: [
                     { name: 'Jenis Laporan', value: formData.tagihan.toUpperCase(), inline: true },
-                    { name: 'Outlet Terpilih', value: formData.outlet.length > 512 ? formData.outlet.substring(0, 508) + '...' : formData.outlet, inline: false },
-                    { name: 'Brand Terpilih', value: formData.cabang.length > 512 ? formData.cabang.substring(0, 508) + '...' : formData.cabang, inline: false }
+                    { name: 'BD Terpilih', value: bdDisplay.length > 512 ? bdDisplay.substring(0, 508) + '...' : bdDisplay, inline: true },
+                    { name: 'Outlet Terpilih', value: formData.outlet.length > 512 ? formData.outlet.substring(0, 508) + '...' : formData.outlet, inline: false }
                 ]
             });
 
@@ -277,12 +265,12 @@ module.exports = {
                 }).join(', ');
             }
 
-            // 5. Pilih Rentang Tanggal
+            // 4. Pilih Rentang Tanggal
             const dateFields = [
                 { name: 'Jenis Laporan', value: formData.tagihan.toUpperCase(), inline: true },
                 { name: 'Aplikator', value: formData.aplikator, inline: true },
-                { name: 'Outlet Terpilih', value: formData.outlet.length > 512 ? formData.outlet.substring(0, 508) + '...' : formData.outlet, inline: false },
-                { name: 'Brand Terpilih', value: formData.cabang.length > 512 ? formData.cabang.substring(0, 508) + '...' : formData.cabang, inline: false }
+                { name: 'BD Terpilih', value: bdDisplay.length > 512 ? bdDisplay.substring(0, 508) + '...' : bdDisplay, inline: true },
+                { name: 'Outlet Terpilih', value: formData.outlet.length > 512 ? formData.outlet.substring(0, 508) + '...' : formData.outlet, inline: false }
             ];
 
             const dateResult = await this.askDateModal(aplikatorResult.lastInteraction, 3, dateFields);
@@ -297,9 +285,9 @@ module.exports = {
                 .addFields(
                     { name: 'Jenis Tagihan', value: formData.tagihan.toUpperCase(), inline: true },
                     { name: 'Aplikator', value: formData.aplikator, inline: true },
+                    { name: 'BD', value: bdDisplay || 'Semua BD', inline: true },
                     { name: 'Rentang Tanggal', value: `📅 ${formData.tanggalMulai} s/d ${formData.tanggalSelesai}`, inline: false },
-                    { name: 'Outlet', value: formData.outlet.length > 512 ? formData.outlet.substring(0, 508) + '...' : formData.outlet },
-                    { name: 'Brand', value: formData.cabang.length > 512 ? formData.cabang.substring(0, 508) + '...' : formData.cabang }
+                    { name: 'Outlet', value: formData.outlet.length > 512 ? formData.outlet.substring(0, 508) + '...' : formData.outlet }
                 )
                 .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
                 .setTimestamp();
@@ -360,9 +348,9 @@ module.exports = {
                 .addFields(
                     { name: 'Jenis Tagihan', value: formData.tagihan.toUpperCase(), inline: true },
                     { name: 'Aplikator', value: formData.aplikator, inline: true },
+                    { name: 'BD', value: bdDisplay || 'Semua BD', inline: true },
                     { name: 'Rentang Tanggal', value: `📅 ${formData.tanggalMulai} s/d ${formData.tanggalSelesai}`, inline: false },
-                    { name: 'Outlet', value: formData.outlet.length > 1024 ? formData.outlet.substring(0, 1020) + '...' : formData.outlet },
-                    { name: 'Brand', value: formData.cabang.length > 1024 ? formData.cabang.substring(0, 1020) + '...' : formData.cabang }
+                    { name: 'Outlet', value: formData.outlet.length > 1024 ? formData.outlet.substring(0, 1020) + '...' : formData.outlet }
                 )
                 .setFooter({ text: 'Sistem Rekap Laporan Otomatis • Antigravity' })
                 .setTimestamp();
@@ -417,6 +405,7 @@ module.exports = {
                             `Pipeline **${formData.tagihan.toUpperCase()}** sedang diproses.\n\n` +
                             `${makeProgressBar(0, totalPhases)}\n` +
                             `> 📍 **Outlet:** ${formData.outlet.substring(0, 100)}\n` +
+                            `> 👤 **BD:** ${bdDisplay || 'Semua BD'}\n` +
                             `> 📱 **Platform:** ${formData.aplikator}\n` +
                             `> 📅 **Rentang:** ${formData.tanggalMulai} s/d ${formData.tanggalSelesai}\n\n` +
                             `🔄 *Memulai pipeline...*\n` +
@@ -442,6 +431,7 @@ module.exports = {
                                     `Pipeline **${formData.tagihan.toUpperCase()}** sedang diproses.\n\n` +
                                     `${makeProgressBar(phaseNumber, totalPhases)}\n` +
                                     `> 📍 **Outlet:** ${formData.outlet.substring(0, 100)}\n` +
+                                    `> 👤 **BD:** ${bdDisplay || 'Semua BD'}\n` +
                                     `> 📱 **Platform:** ${formData.aplikator}\n` +
                                     `> 📅 **Rentang:** ${formData.tanggalMulai} s/d ${formData.tanggalSelesai}\n\n` +
                                     `${currentPhase}\n` +
@@ -893,128 +883,135 @@ module.exports = {
             return Promise.resolve(cachedSheetData);
         }
 
-        return new Promise((resolve, reject) => {
-            const fetchUrl = (url) => {
-                https.get(url, (res) => {
-                    if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                        return fetchUrl(res.headers.location);
+        const baselineUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=880434015&single=true&output=csv';
+        const credsUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRYSUnKOqk29LCktTxdb0wPLbWMbRaWRP3eC_UA4AwYod1FW6zDMhtLMC5ghIvot2B8upCDfBsn-TCP/pub?gid=565510790&single=true&output=csv';
+
+        return Promise.all([fetchCSV(baselineUrl), fetchCSV(credsUrl)])
+            .then(([baselineData, credsData]) => {
+                // Parse Credentials to map username -> BD Name
+                const credsLines = credsData.split(/\r?\n/);
+                const credsHeaders = credsLines[0].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(h => h.trim().replace(/^"|"$/g, ''));
+                const userIdx = credsHeaders.indexOf('Username');
+                const bdIdx = credsHeaders.indexOf('BD');
+                
+                const userToBdMap = {};
+                const bdToUserMap = {};
+                
+                for (let i = 1; i < credsLines.length; i++) {
+                    const line = credsLines[i].trim();
+                    if (!line) continue;
+                    const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
+                    if (userIdx !== -1 && bdIdx !== -1 && cols.length > Math.max(userIdx, bdIdx)) {
+                        const username = cols[userIdx];
+                        const bdName = cols[bdIdx];
+                        if (username && bdName && bdName !== '-') {
+                            userToBdMap[username.toLowerCase()] = bdName;
+                            bdToUserMap[bdName.toLowerCase()] = username.toLowerCase();
+                        }
                     }
-                    if (res.statusCode !== 200) {
-                        return reject(new Error(`HTTP Status ${res.statusCode}`));
-                    }
-                    let data = '';
-                    res.on('data', (chunk) => data += chunk);
-                    res.on('end', () => {
-                        try {
-                            const lines = data.split(/\r?\n/);
-                            if (lines.length < 2) {
-                                return resolve({ outlets: [], outletBranchMap: {}, outletAppMap: {}, outletCabangAppMap: {} });
-                            }
-                            const headers = lines[0].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
-                            const nameIdx = headers.findIndex(h => h.trim().replace(/^"|"$/g, '') === 'Nama Outlet');
-                            const statusIdx = headers.findIndex(h => h.trim().replace(/^"|"$/g, '') === 'Status');
-                            const cabangIdx = headers.findIndex(h => h.trim().replace(/^"|"$/g, '') === 'Brand');
-                            const aplikasiIdx = headers.findIndex(h => h.trim().replace(/^"|"$/g, '').toLowerCase() === 'aplikasi');
+                }
 
-                            const outletSet = new Set();
-                            const outletBranchMap = {};
-                            const outletAppMap = {};
-                            const outletCabangAppMap = {};
+                // Parse Master Baseline
+                const baseLines = baselineData.split(/\r?\n/);
+                const baseHeaders = baseLines[0].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(h => h.trim().replace(/^"|"$/g, ''));
+                const nameIdx = baseHeaders.indexOf('Nama Outlet');
+                const appIdx = baseHeaders.indexOf('Aplikasi');
+                const usernameIdx = baseHeaders.indexOf('Nama Pengguna');
+                
+                const outlets = [];
+                const outletAppMap = {};
+                const outletBdMap = {}; // outlet name (lowercase) -> username/bd
+                const bds = new Set();
+                
+                // Populate unique BD names strictly from credentials mapping
+                for (const u in userToBdMap) {
+                    bds.add(userToBdMap[u]);
+                }
+                
+                const bdOutletsMap = {}; // bd name (lowercase) -> list of outlet names
 
-                            for (let i = 1; i < lines.length; i++) {
-                                const line = lines[i].trim();
-                                if (!line) continue;
-                                const columns = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+                const outletSet = new Set();
 
-                                if (nameIdx !== -1 && statusIdx !== -1 && columns.length > Math.max(nameIdx, statusIdx)) {
-                                    let outletName = columns[nameIdx].replace(/^"|"$/g, '').trim();
-                                    let status = columns[statusIdx].replace(/^"|"$/g, '').trim();
-
-                                    if (outletName && outletName !== '-' && outletName !== '' && status === 'Live') {
-                                        outletSet.add(outletName);
-
-                                        const normalizedOutlet = outletName.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100);
-                                        if (!outletBranchMap[normalizedOutlet]) {
-                                            outletBranchMap[normalizedOutlet] = new Set();
-                                        }
-
-                                        let branchName = '';
-                                        if (cabangIdx !== -1 && columns.length > cabangIdx) {
-                                            let cbName = columns[cabangIdx].replace(/^"|"$/g, '').trim();
-                                            if (cbName && cbName !== '-' && cbName !== '') {
-                                                branchName = cbName;
-                                                outletBranchMap[normalizedOutlet].add(branchName);
-                                            }
-                                        }
-
-                                        // Parse Aplikasi
-                                        let appName = '';
-                                        if (aplikasiIdx !== -1 && columns.length > aplikasiIdx) {
-                                            appName = columns[aplikasiIdx].replace(/^"|"$/g, '').trim();
-                                        }
-                                        
-                                        // Helper to normalize app name
-                                        const normalizeApp = (str) => {
-                                            const s = str.toLowerCase();
-                                            if (s.includes('go')) return 'gofood';
-                                            if (s.includes('grab')) return 'grabfood';
-                                            if (s.includes('shopee')) return 'shopeefood';
-                                            return null;
-                                        };
-                                        
-                                        const normApp = normalizeApp(appName);
-                                        if (normApp) {
-                                            if (!outletAppMap[normalizedOutlet]) {
-                                                outletAppMap[normalizedOutlet] = new Set();
-                                            }
-                                            outletAppMap[normalizedOutlet].add(normApp);
-
-                                            if (branchName) {
-                                                const normalizedCabang = branchName.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100);
-                                                const key = `${normalizedOutlet}|${normalizedCabang}`;
-                                                if (!outletCabangAppMap[key]) {
-                                                    outletCabangAppMap[key] = new Set();
-                                                }
-                                                outletCabangAppMap[key].add(normApp);
-                                            }
-                                        }
+                for (let i = 1; i < baseLines.length; i++) {
+                    const line = baseLines[i].trim();
+                    if (!line) continue;
+                    const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
+                    
+                    if (nameIdx !== -1 && cols.length > nameIdx) {
+                        const outletName = cols[nameIdx];
+                        if (outletName && outletName !== '-') {
+                            outletSet.add(outletName);
+                            const normalizedOutlet = outletName.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100);
+                            
+                            // App normalization
+                            if (appIdx !== -1 && cols.length > appIdx) {
+                                const appName = cols[appIdx].toLowerCase();
+                                let normApp = null;
+                                if (appName.includes('go')) normApp = 'gofood';
+                                if (appName.includes('grab')) normApp = 'grabfood';
+                                if (appName.includes('shopee')) normApp = 'shopeefood';
+                                
+                                if (normApp) {
+                                    if (!outletAppMap[normalizedOutlet]) {
+                                        outletAppMap[normalizedOutlet] = new Set();
                                     }
+                                    outletAppMap[normalizedOutlet].add(normApp);
                                 }
                             }
-
-                            const outlets = Array.from(outletSet);
-                            const finalMap = {};
-                            for (const key in outletBranchMap) {
-                                finalMap[key] = Array.from(outletBranchMap[key]);
+                            
+                            // BD matching
+                            if (usernameIdx !== -1 && cols.length > usernameIdx) {
+                                const username = cols[usernameIdx].toLowerCase();
+                                const bdName = userToBdMap[username]; // ONLY map if username is found in credentials mapping
+                                if (bdName) {
+                                    const bdKey = bdName.toLowerCase();
+                                    if (!bdOutletsMap[bdKey]) {
+                                        bdOutletsMap[bdKey] = new Set();
+                                    }
+                                    bdOutletsMap[bdKey].add(outletName);
+                                    
+                                    if (!outletBdMap[normalizedOutlet]) {
+                                        outletBdMap[normalizedOutlet] = new Set();
+                                    }
+                                    outletBdMap[normalizedOutlet].add(bdName);
+                                }
                             }
-
-                            const finalOutletAppMap = {};
-                            for (const key in outletAppMap) {
-                                finalOutletAppMap[key] = Array.from(outletAppMap[key]);
-                            }
-
-                            const finalOutletCabangAppMap = {};
-                            for (const key in outletCabangAppMap) {
-                                finalOutletCabangAppMap[key] = Array.from(outletCabangAppMap[key]);
-                            }
-
-                            console.log(`[SHEET] Berhasil mengambil ${outlets.length} outlet unik dari Google Sheets:`, outlets);
-                            const result = { 
-                                outlets, 
-                                outletBranchMap: finalMap, 
-                                outletAppMap: finalOutletAppMap, 
-                                outletCabangAppMap: finalOutletCabangAppMap 
-                            };
-                            cachedSheetData = result;
-                            lastCacheTime = now;
-                            resolve(result);
-                        } catch (e) {
-                            reject(e);
                         }
-                    });
-                }).on('error', (err) => reject(err));
-            };
-            fetchUrl(SHEET_CSV_URL + '&t=' + Date.now());
-        });
+                    }
+                }
+
+                // Convert sets to arrays
+                const finalOutlets = Array.from(outletSet);
+                const finalBds = Array.from(bds);
+                
+                const finalOutletAppMap = {};
+                for (const k in outletAppMap) {
+                    finalOutletAppMap[k] = Array.from(outletAppMap[k]);
+                }
+                
+                const finalBdOutletsMap = {};
+                for (const k in bdOutletsMap) {
+                    finalBdOutletsMap[k] = Array.from(bdOutletsMap[k]);
+                }
+                
+                const finalOutletBdMap = {};
+                for (const k in outletBdMap) {
+                    finalOutletBdMap[k] = Array.from(outletBdMap[k]);
+                }
+
+                const result = {
+                    outlets: finalOutlets,
+                    bds: finalBds,
+                    userToBdMap,
+                    bdToUserMap,
+                    outletAppMap: finalOutletAppMap,
+                    bdOutletsMap: finalBdOutletsMap,
+                    outletBdMap: finalOutletBdMap
+                };
+                
+                cachedSheetData = result;
+                lastCacheTime = now;
+                return result;
+            });
     }
 }

@@ -76,6 +76,7 @@ function firstValue(str) {
  * @param {string}   formData.aplikator       - "GoFood, GrabFood, ShopeeFood"
  * @param {string}   formData.tanggalMulai    - "DD-MM-YYYY"
  * @param {string}   formData.tanggalSelesai  - "DD-MM-YYYY"
+ * @param {string}   formData.bd              - nama BD
  * @param {Function} [onLog]                  - Callback(line:string) untuk live log
  * @returns {Promise<{success:boolean, exitCode:number, output:string}>}
  */
@@ -86,6 +87,7 @@ function runPipeline(formData, onLog = () => {}) {
         const platform   = detectPlatform(formData.aplikator);
         const taskChoice = formData.tagihan === 'baseline' ? '1' : '2';
         const outlet     = firstValue(formData.outlet);
+        const bd         = formData.bd || '';
 
         // Multi-cabang: jika hanya 1 cabang dipilih → filter spesifik
         // Jika banyak cabang atau "all" → kirim kosong agar cli.py proses semua
@@ -100,6 +102,7 @@ function runPipeline(formData, onLog = () => {}) {
             OFD_PLATFORM     : platform,
             OFD_OUTLET       : outlet,
             OFD_CABANG       : cabang,
+            OFD_BD           : bd,
             OFD_APLIKATOR    : formData.aplikator || '',
             OFD_WEBHOOK_URL  : process.env.WEBHOOK_URL || '',
         };
@@ -115,7 +118,7 @@ function runPipeline(formData, onLog = () => {}) {
 
         onLog(`🚀 Menjalankan: \`${PYTHON_EXE} cli.py ${args.slice(1).join(' ')}\``);
         onLog(`📦 Mode: **${formData.tagihan.toUpperCase()}** | Platform: **${platform.toUpperCase()}**`);
-        onLog(`📍 Outlet: **${outlet}** | Brand: **${cabang || '(semua)'}**`);
+        onLog(`📍 Outlet: **${outlet}** | Brand: **${cabang || '(semua)'}**${bd ? ` | BD: **${bd}**` : ''}`);
 
         let output = '';
 

@@ -33,7 +33,7 @@ def get_vb_portals() -> list:
     cred_file = Path(__file__).parent / "credentials_vb.json"
     portals = []
     
-    log.info("🌐 Fetching portal credentials dynamically from Google Sheets...")
+    log.info("🌐 Fetching portal credentials dynamically from oogle Sheets...")
     try:
         df = pd.read_csv(CRED_URL)
         owner_df = df[df['Role'].str.strip().str.lower() == 'owner'].copy()

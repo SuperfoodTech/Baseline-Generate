@@ -24,7 +24,7 @@ def check_headless_mode():
     Mengecek mode headless dari berkas config.json atau variabel lingkungan .env
     """
     # 1. Cek dari .env terlebih dahulu
-    env_headless = os.getenv("HEADLESS_GOFOOD")
+    env_headless = os.getenv("HEADLESS") or os.getenv("HEADLESS_GOFOOD")
     if env_headless is not None:
         return env_headless.lower() in ("true", "1", "yes")
 
@@ -303,7 +303,11 @@ def login_dan_ambil_sesi(nomor_hp, nama_resto_final="", mode_otp="manual", otp_e
                         label_email = os.getenv("GMAIL_OTP_LABEL", "OTP-GO")
                         action_type = "getOtpEmail" if is_email_login else "getOtp"
                         otp_code = tunggu_otp_terbaru(otp_endpoint_url, action=action_type, label_email=label_email, timeout_detik=90, interval_detik=3)
-                        print(f"OTP berhasil diambil otomatis dari endpoint: {otp_code}")
+                        if otp_code and not (otp_code.isdigit() and len(otp_code) in (4, 6)):
+                            print(f"⚠️ OTP dari endpoint bukan format angka valid: {otp_code[:50]}...")
+                            otp_code = None
+                        else:
+                            print(f"OTP berhasil diambil otomatis dari endpoint: {otp_code}")
                     except (URLError, HTTPError, ValueError, TimeoutError, Exception) as e:
                         print(f"⚠️ Gagal mengambil OTP otomatis: {e}")
                         print("👉 Beralih ke input OTP manual.")

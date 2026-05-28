@@ -384,14 +384,18 @@ def ambil_otp_dari_endpoint(url_dasar, action="getOtp", label_email=None):
         return response.read().decode("utf-8").strip()
 
 
-def tunggu_otp_terbaru(url_dasar, action="getOtp", label_email=None, timeout_detik=90, interval_detik=3):
+def tunggu_otp_terbaru(url_dasar, action="getOtp", label_email=None, timeout_detik=90, interval_detik=3, otp_awal_override=None):
     """
     Menunggu OTP terbaru yang berbeda dari nilai awal agar tidak memakai OTP sebelumnya.
+    otp_awal_override: Jika diisi, gunakan nilai ini sebagai baseline (snapshot sebelum OTP dikirim).
     """
-    try:
-        otp_awal = ambil_otp_dari_endpoint(url_dasar, action=action, label_email=label_email)
-    except Exception:
-        otp_awal = ""
+    if otp_awal_override is not None:
+        otp_awal = otp_awal_override
+    else:
+        try:
+            otp_awal = ambil_otp_dari_endpoint(url_dasar, action=action, label_email=label_email)
+        except Exception:
+            otp_awal = ""
     
     batas_waktu = time.time() + timeout_detik
     console.print("   [info]🤖 Menunggu OTP baru masuk ke inbox...[/info]")
@@ -492,30 +496,46 @@ def login_outlet_gofood_flow(outlet_info):
                         email_input.press("Enter")
                     time.sleep(3)
 
+                    # --- Pre-snapshot OTP sebelum tombol OTP diklik ---
+                    # Ini penting: snapshot diambil SEBELUM OTP dikirim agar nilai baru terdeteksi
+                    otp_endpoint = os.getenv("OTP_ENDPOINT_URL")
+                    label_email_cfg = os.getenv("GMAIL_OTP_LABEL", "OTP-GO")
+                    action_type = "getOtpEmail" if email else "getOtp"
+                    otp_snapshot_awal = ""
+                    if otp_endpoint:
+                        try:
+                            otp_snapshot_awal = ambil_otp_dari_endpoint(otp_endpoint, action=action_type, label_email=label_email_cfg)
+                            console.print(f"   [info]📸 Snapshot OTP awal: '{otp_snapshot_awal or '(kosong)'}' (sebelum OTP dikirim)[/info]")
+                        except Exception:
+                            otp_snapshot_awal = ""
+
                     # Jika ada halaman pilihan login (password/OTP)
                     try:
                         btn_otp = page.locator('button:has-text("Masuk dengan OTP"), a:has-text("Masuk dengan OTP")').first
                         if btn_otp.count() > 0 and btn_otp.is_visible():
                             btn_otp.click()
+                            console.print("   [info]✅ Tombol 'Masuk dengan OTP' diklik. OTP sedang dikirim...[/info]")
                             time.sleep(2)
                     except Exception:
                         pass
 
                     # --- STEP 5: Automated OTP Polling & Fill ---
-                    otp_endpoint = os.getenv("OTP_ENDPOINT_URL")
                     if otp_endpoint:
                         try:
                             console.print("   [info]🤖 Menunggu field OTP muncul...[/info]")
                             otp_input_selector = 'input[autocomplete="one-time-code"], input[aria-label*="digit" i], div[class*="otp" i] input, input[name*="otp" i], input[maxlength="1"]'
                             page.locator(otp_input_selector).first.wait_for(state="visible", timeout=15000)
-                            time.sleep(2)
+                            time.sleep(1)
                             
-                            console.print("   [info]🤖 Mengambil OTP terbaru dari endpoint...[/info]")
-                            label_email = os.getenv("GMAIL_OTP_LABEL", "OTP-GO")
-                            action_type = "getOtpEmail" if email else "getOtp"
+                            console.print("   [info]🤖 Polling OTP dari Gmail (snapshot awal sudah diambil sebelumnya)...[/info]")
+                            label_email = label_email_cfg
                             
-                            otp_code = tunggu_otp_terbaru(otp_endpoint, action=action_type, label_email=label_email, timeout_detik=90, interval_detik=3)
+                            otp_code = tunggu_otp_terbaru(otp_endpoint, action=action_type, label_email=label_email, timeout_detik=90, interval_detik=3, otp_awal_override=otp_snapshot_awal)
                             
+                            if otp_code and not (otp_code.isdigit() and len(otp_code) in (4, 6)):
+                                console.print(f"   [warning]⚠️ OTP dari endpoint bukan format angka valid: {otp_code[:50]}...[/warning]")
+                                otp_code = None
+                                
                             if otp_code:
                                 console.print(f"   [info]🤖 OTP didapat: {otp_code}. Memasukkan OTP...[/info]")
                                 otp_fields = page.locator(otp_input_selector).all()
@@ -1147,7 +1167,7 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
     avg_omzet_bersih = int(total_omzet_bersih / num_periods) if num_periods > 0 else 0
     avg_komisi = int(total_komisi / num_periods) if num_periods > 0 else 0
     avg_pendapatan_ojol = int(total_ojol / num_periods) if num_periods > 0 else 0
-    avg_order = round(total_order / num_periods, 2) if num_periods > 0 else 0
+    avg_order = round(total_order / num_periods) if num_periods > 0 else 0
     avg_order_batal = round(total_order_batal / num_periods, 2) if num_periods > 0 else 0
 
     # Return structured data for baseline aggregation if requested
@@ -1391,7 +1411,7 @@ def tulis_baseline_excel(all_results, start_date, end_date):
         totals = result['totals']
         
         # Agregasi data harian/bulanan ke bulan kalender masing-masing
-        monthly_totals = {label: {'net_revenue': 0.0, 'orders': 0} for _, label in months_iter}
+        monthly_totals = {label: {'revenue': 0.0, 'orders': 0} for _, label in months_iter}
         for label, val in totals.items():
             # Jika key bertipe harian "01 Feb 2026"
             try:
@@ -1402,23 +1422,23 @@ def tulis_baseline_excel(all_results, start_date, end_date):
                 m_label = label
             
             if m_label in monthly_totals:
-                monthly_totals[m_label]['net_revenue'] += val.get('net_revenue', 0.0)
+                monthly_totals[m_label]['revenue'] += val.get('revenue', 0.0)
                 monthly_totals[m_label]['orders'] += val.get('orders', 0)
 
         # Hitung rata-rata bulanan
-        total_omzet_bersih = sum(monthly_totals[lbl]['net_revenue'] for _, lbl in months_iter)
+        total_omzet_kotor = sum(monthly_totals[lbl]['revenue'] for _, lbl in months_iter)
         total_order = sum(monthly_totals[lbl]['orders'] for _, lbl in months_iter)
         
-        avg_omzet_bersih = int(total_omzet_bersih / num_periods) if num_periods > 0 else 0
-        avg_order = round(total_order / num_periods, 2) if num_periods > 0 else 0
+        avg_omzet_kotor = int(total_omzet_kotor / num_periods) if num_periods > 0 else 0
+        avg_order = round(total_order / num_periods) if num_periods > 0 else 0
 
         row = [nama, 'GoFood']
         for _, label in months_iter:
-            omzet_bersih_bulan = int(monthly_totals[label]['net_revenue'])
+            omzet_kotor_bulan = int(monthly_totals[label]['revenue'])
             order_bulan = int(monthly_totals[label]['orders'])
-            row.append(omzet_bersih_bulan)
+            row.append(omzet_kotor_bulan)
             row.append(order_bulan)
-        row.append(avg_omzet_bersih)
+        row.append(avg_omzet_kotor)
         row.append(avg_order)
         ws.append(row)
 

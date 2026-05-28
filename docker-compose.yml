@@ -25,7 +25,6 @@ services:
       - DB_USER=superfood_admin
       - DB_PASS=superfood_password
       - DB_NAME=srs_db
-      # Paksa Playwright dijalankan dalam mode headless di Docker
       - HEADLESS=true
 
   db:
