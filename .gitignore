@@ -107,3 +107,7 @@ cli.py
 !src/shopee-omzet-automation/data/session*.json
 !src/VB/shopee/sessions/
 !src/VB/shopee/sessions/*.json
+!src/shopee-omzet-automation/data/chrome_profile_auto73*/
+!src/shopee-omzet-automation/data/chrome_profile_auto73*/**
+
+
