@@ -16,7 +16,9 @@ services:
       - ./src/logs:/app/src/logs
       - ./src/laporan:/app/src/laporan
       # Volume untuk menyimpan kredensial / session Playwright jika ada
-      - ./src/shopee-omzet-automation/data/chrome_profile:/app/src/shopee-omzet-automation/data/chrome_profile
+      - ./src/shopee-omzet-automation/data:/app/src/shopee-omzet-automation/data
+      - ./src/baseline/shopee/data:/app/src/baseline/shopee/data
+      - ./src/VB/shopee/sessions:/app/src/VB/shopee/sessions
     depends_on:
       - db
     environment:
