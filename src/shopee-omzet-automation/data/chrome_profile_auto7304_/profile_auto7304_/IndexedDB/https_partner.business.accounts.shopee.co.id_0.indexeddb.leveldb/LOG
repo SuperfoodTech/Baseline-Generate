@@ -1,0 +1,7 @@
+2026/05/28-10:51:46.534 3219d Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7304_/profile_auto7304_/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/MANIFEST-000001
+2026/05/28-10:51:46.534 3219d Recovering log #4
+2026/05/28-10:51:46.535 3219d Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7304_/profile_auto7304_/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/000004.log 
+2026/05/28-10:51:46.551 321ad Level-0 table #8: started
+2026/05/28-10:51:46.556 321ad Level-0 table #8: 8342 bytes OK
+2026/05/28-10:51:46.558 321ad Delete type=0 #4
+2026/05/28-10:51:46.558 321ad Manual compaction at level-0 from '\x00\x04\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x05\x00\x00\x00' @ 0 : 0; will stop at (end)

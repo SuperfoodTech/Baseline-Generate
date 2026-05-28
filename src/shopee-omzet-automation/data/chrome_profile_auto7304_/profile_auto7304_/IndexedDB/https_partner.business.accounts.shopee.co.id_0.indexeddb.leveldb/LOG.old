@@ -1,0 +1,6 @@
+2026/05/28-10:51:10.137 31fdb Creating DB /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7304_/profile_auto7304_/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb since it was missing.
+2026/05/28-10:51:10.144 31fdb Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7304_/profile_auto7304_/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/MANIFEST-000001
+2026/05/28-10:51:10.255 31fdb Level-0 table #5: started
+2026/05/28-10:51:10.258 31fdb Level-0 table #5: 1331 bytes OK
+2026/05/28-10:51:10.260 31fdb Delete type=0 #3
+2026/05/28-10:51:10.263 31fdb Manual compaction at level-0 from '\x00\x01\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x02\x00\x00\x00' @ 0 : 0; will stop at (end)
