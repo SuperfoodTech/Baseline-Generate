@@ -443,7 +443,23 @@ def login_outlet_gofood_flow(outlet_info):
         else:
             proxy_config = {"server": proxy_server}
 
-    headless_mode = os.getenv("HEADLESS", "false").lower() == "true" or os.getenv("HEADLESS_GOFOOD", "false").lower() == "true"
+    # Cek mode headless dari .env atau config.json
+    env_headless = os.getenv("HEADLESS") or os.getenv("HEADLESS_GOFOOD")
+    if env_headless is not None:
+        headless_mode = env_headless.lower() in ("true", "1", "yes")
+    else:
+        headless_mode = False
+        try:
+            import json
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            config_path = os.path.join(base_dir, "config.json")
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    config_data = json.load(f)
+                    headless_mode = bool(config_data.get("headless_gofood", False))
+        except Exception:
+            pass
+
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=headless_mode,
