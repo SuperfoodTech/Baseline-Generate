@@ -22,6 +22,7 @@ services:
     depends_on:
       - db
     environment:
+      - PYTHONUNBUFFERED=1
       - DB_HOST=db
       - DB_PORT=5432
       - DB_USER=superfood_admin

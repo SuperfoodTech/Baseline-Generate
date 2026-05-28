@@ -110,6 +110,7 @@ function runPipeline(formData, onLog = () => {}) {
         // ── Argumen CLI ─────────────────────────────────────────────
         // cli.py non-interaktif: python cli.py <platform> --start ... --end ...
         const args = [
+            '-u',
             CLI_PATH,
             platform,
             '--start', startDate,
