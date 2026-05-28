@@ -198,6 +198,15 @@ def _init_driver(headless: bool):
         options.add_argument(f"--user-data-dir={profile_dir.resolve()}")
         options.add_argument(f"--profile-directory=profile_{account_name}")
 
+    # Delete SingletonLock if it exists to avoid SessionNotCreatedException on Linux
+    singleton_lock = profile_dir / "SingletonLock"
+    if singleton_lock.exists() or singleton_lock.is_symlink():
+        try:
+            singleton_lock.unlink(missing_ok=True)
+            log.info(f"🧹 Removed Chrome SingletonLock at {singleton_lock}")
+        except Exception as e:
+            log.warning(f"⚠️ Failed to remove SingletonLock: {e}")
+
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     driver.set_page_load_timeout(60)
     return driver
