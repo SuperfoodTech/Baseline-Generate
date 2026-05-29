@@ -1,2 +1,3 @@
-2026/05/28-10:55:48.488 327b1 Creating DB /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7307/profile_auto7307/IndexedDB/https_partner.shopee.co.id_0.indexeddb.leveldb since it was missing.
-2026/05/28-10:55:48.495 327b1 Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7307/profile_auto7307/IndexedDB/https_partner.shopee.co.id_0.indexeddb.leveldb/MANIFEST-000001
+2026/05/30-00:05:53.395 41d6 Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7307/profile_auto7307/IndexedDB/https_partner.shopee.co.id_0.indexeddb.leveldb/MANIFEST-000001
+2026/05/30-00:05:53.395 41d6 Recovering log #3
+2026/05/30-00:05:53.400 41d6 Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7307/profile_auto7307/IndexedDB/https_partner.shopee.co.id_0.indexeddb.leveldb/000003.log 
