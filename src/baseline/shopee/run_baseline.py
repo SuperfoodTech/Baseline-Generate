@@ -306,6 +306,169 @@ def get_shopee_baseline_credentials(merchant_name, max_age_hours=24):
     except Exception as e:
         log.error(f"❌ [CREDENTIALS] Error resolving credentials for '{merchant_name}': {e}. Using default.")
         return default_creds
+def process_bd_group(username, group_info, global_ranges, report_dir, headless):
+    creds = group_info["creds"]
+    group_merchants = group_info["merchants"]
+    
+    log.info(f"🚀 [GROUP - {username}] Starting processing with {len(group_merchants)} merchants...")
+    
+    # Set dynamic session file Path inside core.browser
+    import core.browser
+    from pathlib import Path
+    shopee_omzet_dir = Path(core.browser.__file__).resolve().parent.parent
+    core.browser.set_session_file(shopee_omzet_dir / "data" / f"session_{username}.json")
+    
+    driver = None
+    try:
+        # ── Phase 1: Rapid Trigger ────
+        log.info(f"🚀 [GROUP - {username}] PHASE 1: Triggering Exports ({len(group_merchants)} merchants)...")
+        
+        session_data = get_session(
+            username=creds["username"], 
+            password=creds["password"], 
+            phone=creds["phone"], 
+            headless=headless, 
+            close_browser=False, 
+            target_name=group_merchants[0]
+        )
+        if not session_data:
+            log.error(f"❌ [GROUP - {username}] Failed to get session. Skipping group.")
+            return False
+        driver = session_data.get("driver")
+        
+        merchants_context = {} # Store tokens/ids for each merchant
+        
+        for i, merchant_name in enumerate(group_merchants):
+            log.info(f"  [{username}] [{i+1}/{len(group_merchants)}] Triggering: {merchant_name}")
+            
+            # Switch if not already there
+            if i > 0:
+                switch_success = False
+                for retry in range(2):
+                    if auto_switch_merchant(driver, merchant_name):
+                        switch_success = True
+                        break
+                    else:
+                        log.warning(f"  [{username}] Retrying switch for {merchant_name} (Attempt {retry+2}/2)...")
+                        time.sleep(3)
+                
+                if not switch_success:
+                    log.warning(f"  [{username}] Skipping {merchant_name} after 2 failed switch attempts.")
+                    continue
+                time.sleep(3) # Wait for cookies to sync
+            
+            # Get tokens and VERIFY ID
+            session = refresh_tokens(driver)
+            active_id = str(session.get("shopee_tob_entity_id") or "")
+            
+            # Double check if the ID actually changed from previous
+            if i > 0 and active_id == merchants_context.get(group_merchants[i-1], {}).get("entity_id"):
+                 log.warning(f"  [{username}] ID hasn't changed yet. Retrying token refresh...")
+                 time.sleep(3)
+                 session = refresh_tokens(driver)
+                 active_id = str(session.get("shopee_tob_entity_id") or "")
+                 
+            log.debug(f"  [{username}] Confirmed ID for {merchant_name}: {active_id}")
+            
+            # Store context for polling
+            merchants_context[merchant_name] = {
+                "entity_id": active_id,
+                "tob_token": session["shopee_tob_token"],
+                "cookies": session.get("extra_cookies", {}),
+                "start_trigger_time": int(time.time())
+            }
+            
+            # Initialize client and trigger
+            client = ShopeeClient(tob_token=session["shopee_tob_token"], entity_id=active_id, extra_cookies=session.get("extra_cookies", {}))
+            
+            # Assign ranges
+            ranges = global_ranges
+            merchants_context[merchant_name]["ranges"] = ranges
+            merchants_context[merchant_name]["downloaded"] = []
+            
+            # Trigger with retry
+            for r in ranges:
+                success = False
+                for trigger_retry in range(3):
+                    res = client.export_transaction_report(merchant_ids=[active_id], start_time=r["start"], end_time=r["end"])
+                    if res is True:
+                        success = True
+                        break
+                    elif res is None: # Network Error
+                        log.warning(f"  [{username}] Network error during trigger for {merchant_name}. Retrying in 10s... ({trigger_retry+1}/3)")
+                        time.sleep(10)
+                    else: # API Error
+                        break
+                if not success:
+                    log.error(f"  [{username}] Failed to trigger export for {merchant_name} range {r.get('label')}")
+                time.sleep(1)
+        
+        # ── Phase 2: Global Polling & Download ────
+        log.info(f"⏳ [GROUP - {username}] PHASE 2: Global Polling...")
+        os.makedirs(report_dir, exist_ok=True)
+        
+        total_expected = len(merchants_context) * len(global_ranges)
+        download_count = 0
+        start_poll = time.time()
+        
+        consecutive_network_errors = 0
+        poll_iteration = 0
+        while download_count < total_expected and (time.time() - start_poll) < 1800:
+            found_new = False
+            poll_iteration += 1
+            has_network_issue = False
+            
+            for m_name, ctx in merchants_context.items():
+                if len(ctx["downloaded"]) >= len(global_ranges): continue
+                
+                client = ShopeeClient(tob_token=ctx["tob_token"], entity_id=ctx["entity_id"], extra_cookies=ctx["cookies"])
+                reports = client.get_report_list()
+                
+                if reports is None: # Network Error
+                    has_network_issue = True
+                    continue
+                    
+                consecutive_network_errors = 0
+                for rep in reports:
+                    if rep.get("status") in [2, 3] and rep.get("download_url"):
+                        if rep.get("create_time", 0) and rep["create_time"] >= ctx["start_trigger_time"]:
+                            report_name = rep.get("name", f"report_{rep.get('id')}.xlsx")
+                            target_path = os.path.join(report_dir, f"{m_name.replace(' ', '_')}_{report_name}")
+                            
+                            if target_path not in [d[0] for d in ctx["downloaded"]]:
+                                if download_file(rep.get("download_url"), target_path):
+                                    log.info(f"  [{username}] [DOWNLOAD] SUCCESS: {m_name} -> {report_name}")
+                                    ctx["downloaded"].append((target_path, report_name))
+                                    download_count += 1
+                                    found_new = True
+                
+                if not found_new and poll_iteration % 3 == 0:
+                     log.info(f"  [{username}] Waiting for {m_name}... ({len(ctx['downloaded'])}/{len(global_ranges)} ready)")
+                     
+            if has_network_issue:
+                consecutive_network_errors += 1
+                wait_time = min(10 * (2 ** (consecutive_network_errors - 1)), 60)
+                log.warning(f"  [{username}] [NETWORK] API connection issues detected. Waiting {wait_time}s before next poll...")
+                time.sleep(wait_time)
+            elif download_count < total_expected:
+                time.sleep(10)
+        
+        log.info(f"📋 [GROUP - {username}] Download Phase Complete. Summary:")
+        for m_name, ctx in merchants_context.items():
+            log.info(f"  🏪 {m_name}: {len(ctx['downloaded'])}/{len(global_ranges)} files")
+            for fpath, label in ctx["downloaded"]:
+                log.info(f"     📄 {fpath}")
+        return download_count >= total_expected
+        
+    except Exception as e:
+        log.error(f"❌ [GROUP - {username}] Error during processing: {e}")
+        return False
+    finally:
+        if driver is not None:
+            try:
+                driver.quit()
+            except Exception as e:
+                log.debug(f"Failed to quit driver: {e}")
 
 
 def run_pipeline():
@@ -399,167 +562,25 @@ def run_pipeline():
                 }
             merchants_by_user[u]["merchants"].append(m_name)
             
-        log.info(f"📋 [GROUPS] Grouped {len(target_merchants)} merchants into {len(merchants_by_user)} credentials groups.")
-
-        for username, group_info in merchants_by_user.items():
-            creds = group_info["creds"]
-            group_merchants = group_info["merchants"]
+        log.info(f"🚀 [PARALLEL] Processing {len(merchants_by_user)} credentials groups concurrently (max 4 workers)...")
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        with ThreadPoolExecutor(max_workers=min(4, len(merchants_by_user))) as executor:
+            futures = {
+                executor.submit(process_bd_group, username, group_info, global_ranges, report_dir, headless): username
+                for username, group_info in merchants_by_user.items()
+            }
             
-            log.info(f"🚀 [GROUP] Starting processing for group '{username}' with {len(group_merchants)} merchants...")
-            
-            # Set dynamic session file Path inside core.browser
-            import core.browser
-            from pathlib import Path
-            shopee_omzet_dir = Path(core.browser.__file__).resolve().parent.parent
-            core.browser.SESSION_FILE = shopee_omzet_dir / "data" / f"session_{username}.json"
-            
-            driver = None
-            try:
-                # ── 2. Phase 1: Rapid Trigger ────
-                log.info(f"🚀 [PROGRESS] PHASE 1: Triggering Exports for group '{username}' ({len(group_merchants)} merchants)...")
-                
-                session_data = get_session(
-                    username=creds["username"], 
-                    password=creds["password"], 
-                    phone=creds["phone"], 
-                    headless=headless, 
-                    close_browser=False, 
-                    target_name=group_merchants[0]
-                )
-                if not session_data:
-                    log.error(f"❌ Failed to get session for group '{username}'. Skipping this group.")
-                    continue
-                driver = session_data.get("driver")
-                
-                merchants_context = {} # Store tokens/ids for each merchant
-                
-                for i, merchant_name in enumerate(group_merchants):
-                    log.info(f"  [{i+1}/{len(group_merchants)}] Triggering: {merchant_name}")
-                    
-                    # Switch if not already there
-                    if i > 0:
-                        switch_success = False
-                        for retry in range(2):
-                            if auto_switch_merchant(driver, merchant_name):
-                                switch_success = True
-                                break
-                            else:
-                                log.warning(f"  ⚠️ Retrying switch for {merchant_name} (Attempt {retry+2}/2)...")
-                                time.sleep(3)
-                        
-                        if not switch_success:
-                            log.warning(f"  ❌ Skipping {merchant_name} after 2 failed switch attempts.")
-                            continue
-                        time.sleep(3) # Wait for cookies to sync
-                    
-                    # Get tokens and VERIFY ID
-                    session = refresh_tokens(driver)
-                    active_id = str(session.get("shopee_tob_entity_id") or "")
-                    
-                    # Double check if the ID actually changed from previous
-                    if i > 0 and active_id == merchants_context.get(group_merchants[i-1], {}).get("entity_id"):
-                         log.warning("  ⚠️ ID hasn't changed yet. Retrying token refresh...")
-                         time.sleep(3)
-                         session = refresh_tokens(driver)
-                         active_id = str(session.get("shopee_tob_entity_id") or "")
-                         
-                    log.debug(f"  📍 Confirmed ID for {merchant_name}: {active_id}")
-                    
-                    # Store context for polling
-                    merchants_context[merchant_name] = {
-                        "entity_id": active_id,
-                        "tob_token": session["shopee_tob_token"],
-                        "cookies": session.get("extra_cookies", {}),
-                        "start_trigger_time": int(time.time())
-                    }
-                    
-                    # Initialize client and trigger
-                    client = ShopeeClient(tob_token=session["shopee_tob_token"], entity_id=active_id, extra_cookies=session.get("extra_cookies", {}))
-                    
-                    # Assign ranges
-                    ranges = global_ranges
-                    merchants_context[merchant_name]["ranges"] = ranges
-                    merchants_context[merchant_name]["downloaded"] = []
-                    
-                    # Trigger with retry
-                    for r in ranges:
-                        success = False
-                        for trigger_retry in range(3):
-                            res = client.export_transaction_report(merchant_ids=[active_id], start_time=r["start"], end_time=r["end"])
-                            if res is True:
-                                success = True
-                                break
-                            elif res is None: # Network Error
-                                log.warning(f"  ⚠️ Network error during trigger for {merchant_name}. Retrying in 10s... ({trigger_retry+1}/3)")
-                                time.sleep(10)
-                            else: # API Error
-                                break
-                        if not success:
-                            log.error(f"  ❌ Failed to trigger export for {merchant_name} range {r.get('label')}")
-                        time.sleep(1)
-                
-                # ── 3. Phase 2: Global Polling & Download ────
-                log.info(f"⏳ [PROGRESS] PHASE 2: Global Polling for group '{username}'...")
-                os.makedirs(report_dir, exist_ok=True)
-                
-                total_expected = len(merchants_context) * len(global_ranges)
-                download_count = 0
-                start_poll = time.time()
-                
-                consecutive_network_errors = 0
-                poll_iteration = 0
-                while download_count < total_expected and (time.time() - start_poll) < 1800:
-                    found_new = False
-                    poll_iteration += 1
-                    has_network_issue = False
-                    
-                    for m_name, ctx in merchants_context.items():
-                        if len(ctx["downloaded"]) >= len(global_ranges): continue
-                        
-                        client = ShopeeClient(tob_token=ctx["tob_token"], entity_id=ctx["entity_id"], extra_cookies=ctx["cookies"])
-                        reports = client.get_report_list()
-                        
-                        if reports is None: # Network Error
-                            has_network_issue = True
-                            continue
-                            
-                        consecutive_network_errors = 0
-                        for rep in reports:
-                            if rep.get("status") in [2, 3] and rep.get("download_url"):
-                                if rep.get("create_time", 0) and rep["create_time"] >= ctx["start_trigger_time"]:
-                                    report_name = rep.get("name", f"report_{rep.get('id')}.xlsx")
-                                    target_path = os.path.join(report_dir, f"{m_name.replace(' ', '_')}_{report_name}")
-                                    
-                                    if target_path not in [d[0] for d in ctx["downloaded"]]:
-                                        if download_file(rep.get("download_url"), target_path):
-                                            log.info(f"  ✅ [DOWNLOAD] SUCCESS: {m_name} -> {report_name}")
-                                            ctx["downloaded"].append((target_path, report_name))
-                                            download_count += 1
-                                            found_new = True
-                        
-                        if not found_new and poll_iteration % 3 == 0:
-                             log.info(f"  ⏳ [PROGRESS] Waiting for {m_name}... ({len(ctx['downloaded'])}/{len(global_ranges)} ready)")
-                             
-                    if has_network_issue:
-                        consecutive_network_errors += 1
-                        wait_time = min(10 * (2 ** (consecutive_network_errors - 1)), 60)
-                        log.warning(f"🌐 [NETWORK] API connection issues detected. Waiting {wait_time}s before next poll...")
-                        time.sleep(wait_time)
-                    elif download_count < total_expected:
-                        time.sleep(10)
-                
-                log.info(f"📋 [PROGRESS] Download Phase Complete for group '{username}'. Summary:")
-                for m_name, ctx in merchants_context.items():
-                    log.info(f"  🏪 {m_name}: {len(ctx['downloaded'])}/{len(global_ranges)} files")
-                    for fpath, label in ctx["downloaded"]:
-                        log.info(f"     📄 {fpath}")
-                        
-            finally:
-                if driver is not None:
-                    try:
-                        driver.quit()
-                    except Exception as e:
-                        log.debug(f"Failed to quit driver: {e}")
+            for future in as_completed(futures):
+                u = futures[future]
+                try:
+                    success = future.result()
+                    if success:
+                        log.info(f"✅ [GROUP - {u}] Completed successfully.")
+                    else:
+                        log.error(f"❌ [GROUP - {u}] Processing failed.")
+                except Exception as e:
+                    log.error(f"❌ [GROUP - {u}] Processing raised exception: {e}")
     # ── 4. Phase 3: Scanning and Validating ALL Raw Files in report folder ──
     log.info("📊 [PROGRESS] PHASE 3: Scanning and Validating ALL Raw Files in report folder...")
     all_analyzed_data = []

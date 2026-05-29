@@ -38,6 +38,45 @@ log = get_logger("browser")
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 SESSION_FILE    = Path(__file__).resolve().parent.parent / "data" / "session.json"
+import sys
+import threading
+
+_thread_local = threading.local()
+
+def get_session_file() -> Path:
+    if not hasattr(_thread_local, "session_file"):
+        _thread_local.session_file = Path(__file__).resolve().parent.parent / "data" / "session.json"
+    return _thread_local.session_file
+
+def set_session_file(val):
+    _thread_local.session_file = Path(val)
+
+class ThreadLocalSessionFileProxy:
+    def __getattr__(self, name):
+        return getattr(get_session_file(), name)
+        
+    def __str__(self):
+        return str(get_session_file())
+        
+    def __fspath__(self):
+        return str(get_session_file())
+
+    def __eq__(self, other):
+        return get_session_file() == other
+
+SESSION_FILE = ThreadLocalSessionFileProxy()
+
+# Wrap the module class to intercept external writes to SESSION_FILE
+class ModuleWrapper(sys.modules[__name__].__class__):
+    @property
+    def SESSION_FILE(self):
+        return get_session_file()
+        
+    @SESSION_FILE.setter
+    def SESSION_FILE(self, value):
+        set_session_file(value)
+
+sys.modules[__name__].__class__ = ModuleWrapper
 PARTNER_DASHBOARD = "https://partner.shopee.co.id/food/dashboard"
 TOKEN_TRIGGER_PAGE = "https://partner.shopee.co.id/settings/shopee-food/business-hours-settings"
 VALIDATE_URL    = "https://api.partner.shopee.co.id/nb/mss/web-api/PartnerAccountServer/GetUserInfo"
@@ -207,7 +246,12 @@ def _init_driver(headless: bool):
         except Exception as e:
             log.warning(f"⚠️ Failed to remove SingletonLock: {e}")
 
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    try:
+        # Use native Selenium Manager (faster, more stable, avoids ChromeDriverManager network hangs)
+        driver = webdriver.Chrome(options=options)
+    except Exception as e:
+        log.warning(f"⚠️ Native Chrome init failed: {e}. Trying ChromeDriverManager fallback...")
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     driver.set_page_load_timeout(60)
     return driver
 
@@ -909,3 +953,4 @@ def refresh_tokens(driver) -> dict:
     all_c = get_all_cookies_dict(driver)
     save_session(t, eid or "", extra_cookies=all_c)
     return {"shopee_tob_token": t, "shopee_tob_entity_id": eid or "", "extra_cookies": all_c}
+
