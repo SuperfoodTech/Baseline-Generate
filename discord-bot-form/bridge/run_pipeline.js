@@ -144,10 +144,21 @@ function runPipeline(formData, onLog = () => {}) {
         });
 
         proc.on('close', (exitCode) => {
+            let notifData = null;
+            const notifMatch = output.match(/DISCORD_NOTIF_JSON:\s*(\{.*\})/);
+            if (notifMatch) {
+                try {
+                    notifData = JSON.parse(notifMatch[1]);
+                } catch (e) {
+                    console.error('Failed to parse DISCORD_NOTIF_JSON:', e);
+                }
+            }
+
             resolve({
                 success  : exitCode === 0,
                 exitCode : exitCode ?? -1,
                 output   : output.trim(),
+                notifData: notifData
             });
         });
 

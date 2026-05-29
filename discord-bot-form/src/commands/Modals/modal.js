@@ -79,11 +79,18 @@ module.exports = {
         .setDescription('Kirim formulir rekap laporan'),
 
     async execute(interaction) {
+        await interaction.deferReply();
+
+        try {
+            await this.fetchSheetData();
+        } catch (err) {
+            console.error('Gagal mengambil data sheet di awal:', err);
+        }
+
         const embed = new EmbedBuilder()
             .setColor(0x5865F2)
-            .setTitle('📊 Sinkronisasi Laporan Mingguan')
+            .setTitle('📊 Generate Baseline Report')
             .setDescription(
-                'Halo! Saya siap membantu merekap data laporan mingguan Anda. Mari kita mulai proses sinkronisasi datanya.\n\n' +
                 'Klik tombol di bawah untuk mengisi formulir...'
             )
             .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
@@ -95,29 +102,66 @@ module.exports = {
             .setEmoji('📝')
             .setStyle(ButtonStyle.Primary);
 
-        const row = new ActionRowBuilder().addComponents(button);
+        const refreshButton = new ButtonBuilder()
+            .setCustomId('refresh_sheets_cache')
+            .setLabel('Refresh ')
+            .setStyle(ButtonStyle.Secondary);
 
-        await interaction.reply({
+        const row = new ActionRowBuilder().addComponents(button, refreshButton);
+
+        await interaction.editReply({
             embeds: [embed],
             components: [row]
         });
     },
 
+    clearCache() {
+        cachedSheetData = null;
+        lastCacheTime = 0;
+        console.log('[CACHE] Google Sheets cache cleared manually.');
+    },
+
+    async refreshCache(interaction) {
+        await interaction.deferReply({ flags: 64 });
+        try {
+            cachedSheetData = null;
+            lastCacheTime = 0;
+            await this.fetchSheetData();
+            await interaction.editReply({
+                content: '✅ **Data Google Sheets berhasil diperbarui!** Silakan klik tombol **Klik untuk mengisi formulir!** untuk menggunakan data terbaru.',
+                components: []
+            });
+        } catch (err) {
+            console.error('Gagal melakukan refresh cache:', err);
+            await interaction.editReply({
+                content: '❌ **Gagal memperbarui data dari Google Sheets.** Silakan coba beberapa saat lagi.',
+                components: []
+            });
+        }
+    },
+
     async startFormFlow(interaction) {
         await interaction.deferReply({ flags: 64 });
 
-        // Tampilkan loading screen yang estetik
-        const loadingEmbed = new EmbedBuilder()
-            .setColor(0x5865F2)
-            .setTitle('🔄 Menghubungkan ke Google Sheets...')
-            .setDescription('Mohon tunggu sejenak, kami sedang menyinkronkan daftar outlet dan BD terbaru secara langsung...')
-            .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
-            .setTimestamp();
-
-        let message = await interaction.editReply({ embeds: [loadingEmbed], components: [] });
+        const isCached = cachedSheetData && (Date.now() - lastCacheTime < CACHE_DURATION);
+        let sheetData;
 
         try {
-            const { outlets, bds, userToBdMap, bdToUserMap, outletAppMap, bdOutletsMap, outletBdMap } = await this.fetchSheetData();
+            if (isCached) {
+                sheetData = cachedSheetData;
+            } else {
+                const loadingEmbed = new EmbedBuilder()
+                    .setColor(0x5865F2)
+                    .setTitle('🔄 Menghubungkan ke Google Sheets...')
+                    .setDescription('Mohon tunggu sejenak, kami sedang menyinkronkan daftar outlet dan BD terbaru secara langsung...')
+                    .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
+                    .setTimestamp();
+
+                await interaction.editReply({ embeds: [loadingEmbed], components: [] });
+                sheetData = await this.fetchSheetData();
+            }
+
+            const { outlets, bds, userToBdMap, bdToUserMap, outletAppMap, bdOutletsMap, outletBdMap } = sheetData;
             const formData = {};
 
             formData.tagihan = 'baseline';
@@ -127,7 +171,7 @@ module.exports = {
             const bdOptions = bds.map(name => ({
                 label: name,
                 value: name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100),
-                description: `Proses outlet di bawah BD ${name}`
+                description: `Proses outlet di bawah ${name}`
             }));
 
             const bdResult = await this.askSelection(interaction, {
@@ -197,7 +241,7 @@ module.exports = {
             if (selectedOutletValues.includes('all')) {
                 selectedOutletVals = filteredOutlets.map(name => name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100));
             }
-            
+
             selectedOutletVals.forEach(outletVal => {
                 const apps = outletAppMap[outletVal] || [];
                 apps.forEach(a => availableApps.add(a));
@@ -210,7 +254,7 @@ module.exports = {
             }
 
             const allApps = [
-                { label: 'GoFood', value: 'gofood', emoji: '🟢' },
+                { label: 'GoFood', value: 'gofood', emoji: '🔴' },
                 { label: 'GrabFood', value: 'grabfood', emoji: '🟢' },
                 { label: 'ShopeeFood', value: 'shopeefood', emoji: '🟠' }
             ];
@@ -363,16 +407,16 @@ module.exports = {
             // Status awal — LIVE PROGRESS
             let currentPhase = '🔄 Memulai pipeline...';
             let phaseNumber = 0;
-            
-            const selectedApps = selectedAplikatorValues.includes('all') 
-                ? Array.from(availableApps) 
+
+            const selectedApps = selectedAplikatorValues.includes('all')
+                ? Array.from(availableApps)
                 : selectedAplikatorValues;
-            
+
             const platforms = [];
             if (selectedApps.includes('gofood')) platforms.push('gofood');
             if (selectedApps.includes('grabfood')) platforms.push('grab');
             if (selectedApps.includes('shopeefood')) platforms.push('shopee');
-            
+
             const steps = [];
             if (platforms.includes('grab')) {
                 steps.push({ id: 'grab', name: '📗 Scraping data Grab...' });
@@ -387,7 +431,7 @@ module.exports = {
                 steps.push({ id: 'merge', name: '📊 Menggabungkan laporan...' });
             }
             steps.push({ id: 'pdf', name: '📄 Membuat PDF Laporan...' });
-            
+
             const totalPhases = steps.length;
 
             const makeProgressBar = (phase, total) => {
@@ -484,37 +528,80 @@ module.exports = {
                 if (result.success) {
                     // Cek apakah output mengandung tanda partial failure
                     const hasWarning = result.output.includes('FAILED') ||
-                                       result.output.includes('No merchants to process') ||
-                                       result.output.includes('Tidak ditemukan file baseline');
-                    
-                    if (hasWarning) {
-                        // Pipeline exit 0 tapi ada warning — partial success
-                        const cleanOutput = result.output.replace(/\x1B\[[0-9;]*m/g, '');
-                        const pdfUrlMatch = cleanOutput.match(/URL:\s*(https:\/\/drive\.google\.com\/file\/d\/[^\s\r\n]+)/);
-                        const pdfUrl = pdfUrlMatch ? pdfUrlMatch[1].trim() : null;
+                        result.output.includes('No merchants to process') ||
+                        result.output.includes('Tidak ditemukan file baseline');
 
+                    const makeNotifEmbed = (title, color, defaultDesc) => {
                         const embed = new EmbedBuilder()
-                            .setColor(0xFFAA00)
-                            .setTitle('⚠️ Pipeline Selesai dengan Peringatan')
-                            .setDescription(
-                                `Pipeline **${formData.tagihan.toUpperCase()}** selesai, tetapi ada beberapa peringatan:\n\n` +
-                                `> Sebagian data mungkin tidak lengkap. Periksa laporan yang dihasilkan.\n` +
-                                (pdfUrl 
-                                    ? `🔗 **[Klik di sini untuk membuka PDF](${pdfUrl})**`
-                                    : `> Jika PDF terkirim, cek pesan di atas. ☝️`) + `\n\n` +
-                                `📄 Cek juga log server untuk detail.`
-                            )
-                            .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
-                            .setTimestamp();
+                            .setColor(color)
+                            .setTitle(title)
+                            .setTimestamp()
+                            .setFooter({ text: 'Sistem Rekap Laporan Otomatis' });
+
+                        const pdfUrl = result.notifData ? result.notifData.pdf_url : null;
+                        const finalPdfUrl = pdfUrl || (result.output.replace(/\x1B\[[0-9;]*m/g, '').match(/URL:\s*(https:\/\/drive\.google\.com\/file\/d\/[^\s\r\n]+)/) || [])[1];
+
+                        if (result.notifData) {
+                            const { outlet, start_date, end_date, aplikator, pdf_name, omzet_gr, omzet_sf, order_gr, order_sf, omzet_go, order_go } = result.notifData;
+                            
+                            const omzetLines = [];
+                            const orderLines = [];
+                            const lowerApp = aplikator.toLowerCase();
+                            
+                            if (lowerApp.includes('gofood') || lowerApp.includes('all')) {
+                                omzetLines.push(`GoFood: **${omzet_go || 'Rp 0'}**`);
+                                orderLines.push(`GoFood: **${order_go || '0'}**`);
+                            }
+                            if (lowerApp.includes('grab') || lowerApp.includes('all')) {
+                                omzetLines.push(`GrabFood: **${omzet_gr || 'Rp 0'}**`);
+                                orderLines.push(`GrabFood: **${order_gr || '0'}**`);
+                            }
+                            if (lowerApp.includes('shopee') || lowerApp.includes('all')) {
+                                omzetLines.push(`ShopeeFood: **${omzet_sf || 'Rp 0'}**`);
+                                orderLines.push(`ShopeeFood: **${order_sf || '0'}**`);
+                            }
+                            
+                            const omzetStr = omzetLines.join('\n') || '-';
+                            const orderStr = orderLines.join('\n') || '-';
+
+                            embed.setDescription(
+                                `Laporan untuk **${outlet}** telah berhasil dibuat dan siap diunduh.\n\n` +
+                                (finalPdfUrl ? `🔗 **[Klik di sini untuk membuka PDF](${finalPdfUrl})**` : '')
+                            );
+                            
+                            embed.addFields(
+                                { name: '📍 Outlet', value: outlet, inline: true },
+                                { name: '📱 Aplikator', value: aplikator, inline: true },
+                                { name: '📅 Rentang Tanggal', value: `\`${start_date}\` → \`${end_date}\``, inline: false },
+                                { name: '📊 Rata-rata Omzet', value: omzetStr, inline: true },
+                                { name: '🛒 Rata-rata Order', value: orderStr, inline: true },
+                                { name: '📁 Nama File', value: `\`${pdf_name}\``, inline: false }
+                            );
+                        } else {
+                            embed.setDescription(
+                                defaultDesc + `\n\n` +
+                                (finalPdfUrl ? `🔗 **[Klik di sini untuk membuka PDF](${finalPdfUrl})**` : '')
+                            );
+                        }
+                        return { embed, finalPdfUrl };
+                    };
+
+                    if (hasWarning) {
+                        const { embed, finalPdfUrl } = makeNotifEmbed(
+                            '⚠️ Pipeline Selesai dengan Peringatan',
+                            0xFFAA00,
+                            `Pipeline **${formData.tagihan.toUpperCase()}** selesai, tetapi ada beberapa peringatan:\n\n` +
+                            `> Sebagian data mungkin tidak lengkap. Periksa laporan yang dihasilkan.`
+                        );
 
                         const components = [];
-                        if (pdfUrl) {
+                        if (finalPdfUrl) {
                             components.push(
                                 new ActionRowBuilder().addComponents(
                                     new ButtonBuilder()
                                         .setLabel('📄 Buka PDF Laporan')
                                         .setStyle(ButtonStyle.Link)
-                                        .setURL(pdfUrl)
+                                        .setURL(finalPdfUrl)
                                 )
                             );
                         }
@@ -524,32 +611,21 @@ module.exports = {
                             components: components
                         });
                     } else {
-                        // Full success
-                        const cleanOutput = result.output.replace(/\x1B\[[0-9;]*m/g, '');
-                        const pdfUrlMatch = cleanOutput.match(/URL:\s*(https:\/\/drive\.google\.com\/file\/d\/[^\s\r\n]+)/);
-                        const pdfUrl = pdfUrlMatch ? pdfUrlMatch[1].trim() : null;
-
-                        const embed = new EmbedBuilder()
-                            .setColor(0x00C853)
-                            .setTitle('✅ Pipeline Selesai!')
-                            .setDescription(
-                                `Pipeline **${formData.tagihan.toUpperCase()}** berhasil dijalankan.\n` +
-                                `${makeProgressBar(totalPhases, totalPhases)}\n\n` +
-                                (pdfUrl 
-                                    ? `🔗 **[Klik di sini untuk membuka PDF](${pdfUrl})**`
-                                    : `📄 **PDF laporan telah dikirim ke channel ini.** Cek pesan di atas! ☝️`)
-                            )
-                            .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
-                            .setTimestamp();
+                        const { embed, finalPdfUrl } = makeNotifEmbed(
+                            '✅ Pipeline Selesai!',
+                            0x00C853,
+                            `Pipeline **${formData.tagihan.toUpperCase()}** berhasil dijalankan.\n` +
+                            `${makeProgressBar(totalPhases, totalPhases)}`
+                        );
 
                         const components = [];
-                        if (pdfUrl) {
+                        if (finalPdfUrl) {
                             components.push(
                                 new ActionRowBuilder().addComponents(
                                     new ButtonBuilder()
                                         .setLabel('📄 Buka PDF Laporan')
                                         .setStyle(ButtonStyle.Link)
-                                        .setURL(pdfUrl)
+                                        .setURL(finalPdfUrl)
                                 )
                             );
                         }
@@ -589,7 +665,7 @@ module.exports = {
                             .setDescription(`\`${err.message}\``)
                             .setTimestamp()
                     ]
-                }).catch(() => {});
+                }).catch(() => { });
             });
             // ── End Pipeline ─────────────────────────────────────────────────────
 
@@ -616,8 +692,33 @@ module.exports = {
     async askDateModal(interaction, step, fields) {
         let errorMsg = null;
 
+        const calculateThreeFullMonths = () => {
+            const today = new Date();
+            const currentYear = today.getFullYear();
+            const currentMonth = today.getMonth(); // 0-indexed (0 = Jan, 4 = May)
+
+            // Start date: 1st day of month - 3 (e.g. Feb 1st if May)
+            const startDate = new Date(currentYear, currentMonth - 3, 1);
+            // End date: last day of month - 1 (day 0 of current month)
+            const endDate = new Date(currentYear, currentMonth, 0);
+
+            const format = (d) => {
+                const day = String(d.getDate()).padStart(2, '0');
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const year = d.getFullYear();
+                return `${day}-${month}-${year}`;
+            };
+
+            return {
+                startStr: format(startDate),
+                endStr: format(endDate)
+            };
+        };
+
+        const { startStr, endStr } = calculateThreeFullMonths();
+
         const getEmbed = () => {
-            let description = 'Silakan klik tombol **📅 Atur Rentang Tanggal** di bawah untuk memasukkan tanggal mulai dan tanggal selesai melalui popup formulir.';
+            let description = 'Silakan pilih **📅 3 Bulan Penuh** untuk langsung menggunakan data 3 bulan penuh terakhir, atau klik **⚙️ Custom Date Range** untuk memasukkan tanggal manual.';
             if (errorMsg) {
                 description = `⚠️ **Format tidak valid:** ${errorMsg}\n\n${description}`;
             }
@@ -632,9 +733,13 @@ module.exports = {
         const getComponents = () => {
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
+                    .setCustomId('shortcut_3_months_btn')
+                    .setLabel(`📅 3 Bulan Penuh (${startStr} s/d ${endStr})`)
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
                     .setCustomId('open_date_modal_btn')
-                    .setLabel('📅 Atur Rentang Tanggal')
-                    .setStyle(ButtonStyle.Primary)
+                    .setLabel('⚙️ Custom Date Range')
+                    .setStyle(ButtonStyle.Secondary)
             );
             return [row];
         };
@@ -649,13 +754,26 @@ module.exports = {
 
         return new Promise((resolve, reject) => {
             const collector = msg.createMessageComponentCollector({
-                filter: i => i.user.id === interaction.user.id && i.customId === 'open_date_modal_btn',
+                filter: i => i.user.id === interaction.user.id && ['open_date_modal_btn', 'shortcut_3_months_btn'].includes(i.customId),
                 time: 300000
             });
 
             let latestInteraction = null;
 
             collector.on('collect', async i => {
+                latestInteraction = i;
+
+                if (i.customId === 'shortcut_3_months_btn') {
+                    errorMsg = null;
+                    collector.stop('confirmed');
+                    resolve({
+                        tanggalMulai: startStr,
+                        tanggalSelesai: endStr,
+                        lastInteraction: i
+                    });
+                    return;
+                }
+
                 const modalId = `date_modal_${Date.now()}`;
                 const modal = new ModalBuilder()
                     .setCustomId(modalId)
@@ -770,7 +888,7 @@ module.exports = {
 
         const getComponents = () => {
             const rows = [];
-            
+
             const chunks = [];
             for (let i = 0; i < options.length; i += 25) {
                 chunks.push(options.slice(i, i + 25));
@@ -780,7 +898,7 @@ module.exports = {
 
             safeChunks.forEach((chunk, index) => {
                 const currentMax = Math.min(maxValues, chunk.length);
-                
+
                 const selectMenu = new StringSelectMenuBuilder()
                     .setCustomId(`selection_menu_${index}`)
                     .setPlaceholder(placeholder + (safeChunks.length > 1 ? ` (Bagian ${index + 1})` : ''))
@@ -817,7 +935,7 @@ module.exports = {
                     const found = options.find(opt => opt.value === val);
                     return found ? found.label : val;
                 }).join(', ');
-                
+
                 const displayList = labelList.length > 300 ? labelList.substring(0, 297) + '...' : labelList;
                 description += `🔹 **Pilihan saat ini:** ${displayList}`;
             } else {
@@ -854,7 +972,7 @@ module.exports = {
                 if (i.customId.startsWith('selection_menu')) {
                     const menuIndex = parseInt(i.customId.split('_').pop());
                     const currentChunk = options.slice(menuIndex * 25, (menuIndex + 1) * 25);
-                    
+
                     currentChunk.forEach(opt => selectedValues.delete(opt.value));
                     i.values.forEach(val => selectedValues.add(val));
 
@@ -893,10 +1011,10 @@ module.exports = {
                 const credsHeaders = credsLines[0].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(h => h.trim().replace(/^"|"$/g, ''));
                 const userIdx = credsHeaders.indexOf('Username');
                 const bdIdx = credsHeaders.indexOf('BD');
-                
+
                 const userToBdMap = {};
                 const bdToUserMap = {};
-                
+
                 for (let i = 1; i < credsLines.length; i++) {
                     const line = credsLines[i].trim();
                     if (!line) continue;
@@ -917,17 +1035,17 @@ module.exports = {
                 const nameIdx = baseHeaders.indexOf('Nama Outlet');
                 const appIdx = baseHeaders.indexOf('Aplikasi');
                 const usernameIdx = baseHeaders.indexOf('Nama Pengguna');
-                
+
                 const outlets = [];
                 const outletAppMap = {};
                 const outletBdMap = {}; // outlet name (lowercase) -> username/bd
                 const bds = new Set();
-                
+
                 // Populate unique BD names strictly from credentials mapping
                 for (const u in userToBdMap) {
                     bds.add(userToBdMap[u]);
                 }
-                
+
                 const bdOutletsMap = {}; // bd name (lowercase) -> list of outlet names
 
                 const outletSet = new Set();
@@ -936,13 +1054,13 @@ module.exports = {
                     const line = baseLines[i].trim();
                     if (!line) continue;
                     const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
-                    
+
                     if (nameIdx !== -1 && cols.length > nameIdx) {
                         const outletName = cols[nameIdx];
                         if (outletName && outletName !== '-') {
                             outletSet.add(outletName);
                             const normalizedOutlet = outletName.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100);
-                            
+
                             // App normalization
                             if (appIdx !== -1 && cols.length > appIdx) {
                                 const appName = cols[appIdx].toLowerCase();
@@ -950,7 +1068,7 @@ module.exports = {
                                 if (appName.includes('go')) normApp = 'gofood';
                                 if (appName.includes('grab')) normApp = 'grabfood';
                                 if (appName.includes('shopee')) normApp = 'shopeefood';
-                                
+
                                 if (normApp) {
                                     if (!outletAppMap[normalizedOutlet]) {
                                         outletAppMap[normalizedOutlet] = new Set();
@@ -958,7 +1076,7 @@ module.exports = {
                                     outletAppMap[normalizedOutlet].add(normApp);
                                 }
                             }
-                            
+
                             // BD matching
                             if (usernameIdx !== -1 && cols.length > usernameIdx) {
                                 const username = cols[usernameIdx].toLowerCase();
@@ -969,7 +1087,7 @@ module.exports = {
                                         bdOutletsMap[bdKey] = new Set();
                                     }
                                     bdOutletsMap[bdKey].add(outletName);
-                                    
+
                                     if (!outletBdMap[normalizedOutlet]) {
                                         outletBdMap[normalizedOutlet] = new Set();
                                     }
@@ -983,17 +1101,17 @@ module.exports = {
                 // Convert sets to arrays
                 const finalOutlets = Array.from(outletSet);
                 const finalBds = Array.from(bds);
-                
+
                 const finalOutletAppMap = {};
                 for (const k in outletAppMap) {
                     finalOutletAppMap[k] = Array.from(outletAppMap[k]);
                 }
-                
+
                 const finalBdOutletsMap = {};
                 for (const k in bdOutletsMap) {
                     finalBdOutletsMap[k] = Array.from(bdOutletsMap[k]);
                 }
-                
+
                 const finalOutletBdMap = {};
                 for (const k in outletBdMap) {
                     finalOutletBdMap[k] = Array.from(outletBdMap[k]);
@@ -1008,7 +1126,7 @@ module.exports = {
                     bdOutletsMap: finalBdOutletsMap,
                     outletBdMap: finalOutletBdMap
                 };
-                
+
                 cachedSheetData = result;
                 lastCacheTime = now;
                 return result;

@@ -65,6 +65,15 @@ client.on('interactionCreate', async interaction => {
             if (command && command.startFormFlow) {
                 await command.startFormFlow(interaction);
             }
+        } else if (interaction.customId === 'refresh_sheets_cache') {
+            const command = client.commands.get('start');
+            if (command && command.clearCache) {
+                command.clearCache();
+                await interaction.reply({
+                    content: '🔄 **Cache berhasil dihapus!** Mengambil data terbaru dari Google Sheets pada pengisian formulir berikutnya.',
+                    flags: 64 // ephemeral (only the clicker sees it)
+                });
+            }
         }
     }
 });
