@@ -568,7 +568,8 @@ def run_gofood(start_date: str, end_date: str, outlet_filter: str = None, branch
         python_exe, "gofood.py",
         "--start-date", start_date,
         "--end-date", end_date,
-        "--output-dir", output_dir
+        "--output-dir", output_dir,
+        "--task", task_choice
     ]
     if outlet_filter:
         cmd.extend(["--outlet", outlet_filter])
@@ -963,9 +964,7 @@ def _notify_discord_pdf(outlet, start_date, end_date, aplikator,
     Hanya aktif ketika OFD_DISCORD_MODE=1 dan OFD_WEBHOOK_URL tersedia.
     Saat dijalankan manual, fungsi ini tidak melakukan apa-apa.
     """
-    webhook_url = os.environ.get("OFD_WEBHOOK_URL", "")
-    if not webhook_url:
-        return  # mode manual — skip
+    return  # Disabled by user request
 
     try:
         import requests as _req
@@ -1315,6 +1314,25 @@ Examples:
                                 pdf_url = data.get('pdf_url', '')
                                 print(f"  {GREEN}✓ PDF berhasil dibuat!{RESET}")
                                 print(f"  {GREEN}  URL: {pdf_url}{RESET}")
+                                
+                                # Print DISCORD_NOTIF_JSON for Node.js bridge/bot
+                                import json
+                                notif_data = {
+                                    "outlet": str(outlet_val),
+                                    "start_date": start_date,
+                                    "end_date": end_date,
+                                    "aplikator": os.environ.get("OFD_APLIKATOR", "Grab + Shopee"),
+                                    "pdf_url": pdf_url,
+                                    "pdf_name": data.get('pdf_name', 'Baseline Report'),
+                                    "omzet_gr": format_rp(omzet_gr),
+                                    "omzet_sf": format_rp(omzet_sf),
+                                    "order_gr": str(round(order_gr)),
+                                    "order_sf": str(round(order_sf)),
+                                    "omzet_go": format_rp(omzet_go),
+                                    "order_go": str(round(order_go))
+                                }
+                                print(f"DISCORD_NOTIF_JSON: {json.dumps(notif_data)}")
+
                                 # ── Kirim notifikasi PDF ke Discord channel ──
                                 _notify_discord_pdf(
                                     outlet=str(outlet_val),

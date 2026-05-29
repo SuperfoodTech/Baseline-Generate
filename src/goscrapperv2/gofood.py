@@ -66,7 +66,7 @@ def fetch_csv_rows(url):
     return list(csv.reader(text.splitlines()))
 
 
-def fetch_gofood_accounts_from_sheet():
+def fetch_gofood_accounts_from_sheet(task="2"):
     """
     Mengambil daftar akun GoFood dari master Google Sheet yang sama
     dengan yang digunakan Grab & Shopee di cli.py.
@@ -79,14 +79,18 @@ def fetch_gofood_accounts_from_sheet():
         'store_id'  : str,   # kolom "Store ID" / "Merchant ID"
       }
     """
+    url = SHEET_PUBLISHED_URL
+    if task == "1":
+        url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=880434015&single=true&output=csv"
+
     try:
         import io
         import requests as _req
-        resp = _req.get(SHEET_PUBLISHED_URL, timeout=30)
+        resp = _req.get(url, timeout=30)
         resp.raise_for_status()
         reader_rows = list(csv.reader(resp.text.splitlines()))
     except Exception as e:
-        console.print(f"[error]❌ Gagal mengambil Google Sheet master: {e}[/error]")
+        console.print(f"[error]❌ Gagal mengambil Google Sheet: {e}[/error]")
         return []
 
     if not reader_rows:
@@ -102,42 +106,80 @@ def fetch_gofood_accounts_from_sheet():
                     return i
         return None
 
-    idx_aplikasi  = col_idx(['aplikasi'])
-    idx_status    = col_idx(['status'])
-    idx_outlet    = col_idx(['nama outlet'])
-    idx_cabang    = col_idx(['cabang'])
-    idx_store     = col_idx(['store id', 'store_id', 'merchant id'])
-    idx_phone     = 26  # Kolom AA (0-indexed)
-
     accounts = []
-    for row in reader_rows[1:]:
-        if len(row) <= idx_phone:
-            continue
+    if task == "1":
+        # Parsing format sheet Baseline
+        idx_aplikasi   = col_idx(['aplikasi'])
+        idx_outlet     = col_idx(['nama outlet'])
+        idx_email_duck = col_idx(['email duck'])
+        idx_email_fm   = col_idx(['email foodmaster'])
 
-        aplikasi = str(row[idx_aplikasi]).strip().lower() if idx_aplikasi is not None and len(row) > idx_aplikasi else ''
-        status   = str(row[idx_status]).strip().lower()   if idx_status is not None and len(row) > idx_status else ''
+        for row in reader_rows[1:]:
+            if idx_aplikasi is None or len(row) <= idx_aplikasi:
+                continue
+            aplikasi = str(row[idx_aplikasi]).strip().lower()
+            if 'gofood' not in aplikasi:
+                continue
 
-        if 'gofood' not in aplikasi:
-            continue
-        if 'live' not in status:
-            continue
+            nama = str(row[idx_outlet]).strip() if idx_outlet is not None and len(row) > idx_outlet else ''
+            
+            # Ambil Email Duck sebagai prioritas utama
+            email = ""
+            if idx_email_duck is not None and len(row) > idx_email_duck:
+                email = str(row[idx_email_duck]).strip()
+            
+            # Jika Email Duck kosong, fallback ke Email FoodMaster
+            if (not email or email == "-") and idx_email_fm is not None and len(row) > idx_email_fm:
+                email = str(row[idx_email_fm]).strip()
 
-        email     = str(row[24]).strip() if len(row) > 24 else ''
-        phone     = str(row[idx_phone]).strip()
-        nama      = str(row[idx_outlet]).strip()   if idx_outlet is not None and len(row) > idx_outlet else ''
-        cabang    = str(row[idx_cabang]).strip()   if idx_cabang is not None and len(row) > idx_cabang else ''
-        store_id  = str(row[idx_store]).strip()    if idx_store is not None  and len(row) > idx_store  else ''
+            phone  = "-"
+            cabang = ""
+            store_id = ""
 
-        if not phone:
-            continue
+            accounts.append({
+                'phone'      : phone,
+                'email'      : email,
+                'nama_outlet': nama,
+                'cabang'     : cabang,
+                'store_id'   : store_id,
+            })
+    else:
+        # Parsing format sheet Live/Weekly (Default)
+        idx_aplikasi  = col_idx(['aplikasi'])
+        idx_status    = col_idx(['status'])
+        idx_outlet    = col_idx(['nama outlet'])
+        idx_cabang    = col_idx(['cabang'])
+        idx_store     = col_idx(['store id', 'store_id', 'merchant id'])
+        idx_phone     = 26  # Kolom AA (0-indexed)
 
-        accounts.append({
-            'phone'      : phone,
-            'email'      : email,
-            'nama_outlet': nama,
-            'cabang'     : cabang,
-            'store_id'   : store_id,
-        })
+        for row in reader_rows[1:]:
+            if len(row) <= idx_phone:
+                continue
+
+            aplikasi = str(row[idx_aplikasi]).strip().lower() if idx_aplikasi is not None and len(row) > idx_aplikasi else ''
+            status   = str(row[idx_status]).strip().lower()   if idx_status is not None and len(row) > idx_status else ''
+
+            if 'gofood' not in aplikasi:
+                continue
+            if 'live' not in status:
+                continue
+
+            email     = str(row[24]).strip() if len(row) > 24 else ''
+            phone     = str(row[idx_phone]).strip()
+            nama      = str(row[idx_outlet]).strip()   if idx_outlet is not None and len(row) > idx_outlet else ''
+            cabang    = str(row[idx_cabang]).strip()   if idx_cabang is not None and len(row) > idx_cabang else ''
+            store_id  = str(row[idx_store]).strip()    if idx_store is not None  and len(row) > idx_store  else ''
+
+            if not phone and not email:
+                continue
+
+            accounts.append({
+                'phone'      : phone,
+                'email'      : email,
+                'nama_outlet': nama,
+                'cabang'     : cabang,
+                'store_id'   : store_id,
+            })
 
     return accounts
 
@@ -1494,6 +1536,7 @@ if __name__ == "__main__":
     parser.add_argument("--branch", type=str, default=None, help="Filter specific branch name")
     parser.add_argument("--output-dir", type=str, default=None, help="Directory to save output files")
     parser.add_argument("--no-proxy", action="store_true", help="Nonaktifkan proxy/WARP untuk sesi ini")
+    parser.add_argument("--task", type=str, default="2", help="Task choice: 1 for baseline, 2 for weekly, 3 for VB")
     args_cli = parser.parse_args()
 
     if args_cli.output_dir:
@@ -1515,7 +1558,7 @@ if __name__ == "__main__":
     # --- Ambil semua akun GoFood Live dari Google Sheet ---
     sheet_accounts = []
     with console.status("[bold blue]Menghubungi Google Sheet...", spinner="earth"):
-        sheet_accounts = fetch_gofood_accounts_from_sheet()
+        sheet_accounts = fetch_gofood_accounts_from_sheet(task=args_cli.task)
 
     if sheet_accounts:
         console.print(f"[success]✅ Ditemukan {len(sheet_accounts)} akun GoFood Live dari Google Sheet.[/success]\n")
@@ -1544,6 +1587,10 @@ if __name__ == "__main__":
         for acc in sheet_accounts:
             phone_raw = acc['phone']
             phone_norm = normalize_phone(phone_raw)
+            # Jika phone_norm kosong/tidak valid (seperti "-" atau ""), coba gunakan email jika ada
+            if (not phone_norm or phone_norm == "-") and acc.get('email'):
+                phone_norm = normalize_phone(acc['email'])
+                
             # Cari token yang cocok
             token = token_map.get(phone_norm, '')
             if not token:
@@ -1552,6 +1599,18 @@ if __name__ == "__main__":
                     if k.endswith(phone_norm) or phone_norm.endswith(k):
                         token = v
                         break
+            
+            # Fallback 1: Coba cari langsung di env menggunakan expected suffix baru
+            if not token:
+                sanitized_resto_name = re.sub(r'[^a-zA-Z0-9]', '', (acc['cabang'] or 'Tanpa Cabang') or acc['nama_outlet'])
+                expected_suffix = f"_{phone_norm}_{sanitized_resto_name}"
+                token = os.getenv(f"BEARER_TOKEN{expected_suffix}", "")
+                
+            # Fallback 2: Coba format lama jika phone_norm didapat dari email (artinya phone asli kosong/invalid)
+            if not token and '@' in phone_norm:
+                legacy_suffix = f"__{sanitized_resto_name}"
+                token = os.getenv(f"BEARER_TOKEN{legacy_suffix}", "")
+                
             # JANGAN gunakan global_token fallback untuk data dari Google Sheet agar status login presisi per outlet.
             resolved_accounts.append({
                 'phone'      : phone_norm,
@@ -1639,11 +1698,20 @@ if __name__ == "__main__":
         store_id      = acc['store_id']
         token         = acc['token']
 
-        # Check token validity
+        # Resolve store_id from environment if missing (e.g. when parsing Baseline sheet)
+        if not store_id:
+            sanitized_resto_name = re.sub(r'[^a-zA-Z0-9]', '', cabang or nama_outlet)
+            suffix_email = f"_{phone}_{sanitized_resto_name}"
+            store_id = os.getenv(f"STORE_ID{suffix_email}", "")
+            if not store_id:
+                suffix_legacy = f"__{sanitized_resto_name}"
+                store_id = os.getenv(f"STORE_ID{suffix_legacy}", "")
+
+        # Check token validity (TEMPORARILY DISABLED TO FORCE LOGIN FLOW)
         token_valid = False
-        if token:
-            os.environ['BEARER_TOKEN'] = token
-            token_valid = ambil_data_dashboard()
+        # if token:
+        #     os.environ['BEARER_TOKEN'] = token
+        #     token_valid = ambil_data_dashboard()
 
         if not token_valid:
             console.print(f"[warning]⚠️ Sesi tidak valid/kosong untuk {nama_outlet} ({phone}). Melakukan login otomatis...[/warning]")
