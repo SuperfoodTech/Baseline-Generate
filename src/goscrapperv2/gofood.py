@@ -539,7 +539,7 @@ def login_outlet_gofood_flow(outlet_info):
                     if otp_endpoint:
                         try:
                             console.print("   [info]🤖 Menunggu field OTP muncul...[/info]")
-                            otp_input_selector = 'input[autocomplete="one-time-code"], input[aria-label*="digit" i], div[class*="otp" i] input, input[name*="otp" i], input[maxlength="1"]'
+                            otp_input_selector = 'input[autocomplete="one-time-code"], input[aria-label*="digit" i], div[class*="otp" i] input:not([type="checkbox"]):not([type="radio"]), input[name*="otp" i]:not([type="checkbox"]):not([type="radio"]), input[maxlength="1"]:not([type="checkbox"]):not([type="radio"])'
                             page.locator(otp_input_selector).first.wait_for(state="visible", timeout=15000)
                             time.sleep(1)
                             

@@ -29,6 +29,7 @@ services:
       - DB_PASS=superfood_password
       - DB_NAME=srs_db
       - HEADLESS=true
+      - TZ=Asia/Jakarta
 
   db:
     image: postgres:15
