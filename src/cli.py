@@ -1315,8 +1315,23 @@ Examples:
                             resp = requests.get(CSV_URL, timeout=10)
                             if resp.status_code == 200:
                                 df_cred = pd.read_csv(io.StringIO(resp.text))
-                                owner_row = df_cred[df_cred["Nama Outlet"].str.lower() == str(outlet_val).lower()].iloc[0]
-                                owner_name = str(owner_row.get("Owner", "-"))
+                                outlet_lower = str(outlet_val).strip().lower()
+                                # 1. Exact match (case-insensitive)
+                                matched = df_cred[
+                                    df_cred["Nama Outlet"].astype(str).str.strip().str.lower() == outlet_lower
+                                ]
+                                # 2. Fallback: partial/contains match jika exact tidak ditemukan
+                                if matched.empty:
+                                    matched = df_cred[
+                                        df_cred["Nama Outlet"].astype(str).str.strip().str.lower().str.contains(
+                                            outlet_lower, na=False, regex=False
+                                        )
+                                    ]
+                                if not matched.empty:
+                                    owner_row = matched.iloc[0]
+                                    owner_name = str(owner_row.get("Owner", "-"))
+                                else:
+                                    print(f"  {DIM}Nama Owner tidak ditemukan untuk outlet: '{outlet_val}'{RESET}")
                         except Exception as e:
                             print(f"  {DIM}Gagal mengambil nama Owner: {e}{RESET}")
 
