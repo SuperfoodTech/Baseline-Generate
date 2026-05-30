@@ -539,8 +539,27 @@ def auto_switch_merchant(driver, target_name):
             log.warning(f"  ⚠️ Could not find {target_name} in the list. Will retry...")
             return False
 
+        # Wait to see if we redirect to onboarding
+        time.sleep(3)
+        current_url = driver.current_url.lower()
+        if "onboarding" in current_url:
+            log.info("📍 [MERCHANT] Onboarding page detected. Accepting invitation...")
+            try:
+                # Wait for "Gabung dengan Merchant" button
+                btn_xpath = "//button[contains(., 'Gabung dengan Merchant')]"
+                onboard_btn = WebDriverWait(driver, 15).until(
+                    EC.element_to_be_clickable((By.XPATH, btn_xpath))
+                )
+                onboard_btn.click()
+                log.info("  👉 Clicked 'Gabung dengan Merchant' button.")
+                time.sleep(5)
+            except Exception as e:
+                log.error(f"❌ Failed to accept onboarding invitation: {e}")
+                return False
+
         # Wait for the merchant name in the header to actually update
         try:
+            wait.until(lambda d: "/food/dashboard" in d.current_url)
             wait.until(lambda d: target_name.lower() in d.find_element(By.CSS_SELECTOR, ".merchantName").text.lower())
             log.info(f"✅ [MERCHANT] Switched to: {target_name}")
             return True
@@ -820,6 +839,19 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
                         if driver.execute_script(bypass_js):
                             log.debug("  ✅ Selection triggered via JS.")
                             try:
+                                # Wait to see if it redirects to onboarding/invitation acceptance page
+                                time.sleep(3)
+                                if "onboarding" in driver.current_url:
+                                    try:
+                                        btn_xpath = "//button[contains(., 'Gabung dengan Merchant')]"
+                                        onboard_btn = WebDriverWait(driver, 10).until(
+                                            EC.element_to_be_clickable((By.XPATH, btn_xpath))
+                                        )
+                                        onboard_btn.click()
+                                        log.info("  👉 Clicked 'Gabung dengan Merchant' during session init onboarding")
+                                        time.sleep(5)
+                                    except:
+                                        pass
                                 wait.until(lambda d: "/food/dashboard" in d.current_url)
                                 log.debug("  ✅ Landed on dashboard.")
                                 bypass_success = True
