@@ -50,7 +50,7 @@ const activeJobs = new Map();
  * @returns {string}
  */
 function buildJobKey(outlet, aplikator, tanggalMulai, tanggalSelesai) {
-    const normalizedOutlet   = (outlet    || 'all').toLowerCase().trim();
+    const normalizedOutlet = (outlet || 'all').toLowerCase().trim();
     const normalizedPlatform = (aplikator || 'all').toLowerCase().trim();
     return `${normalizedOutlet}|${normalizedPlatform}|${tanggalMulai}|${tanggalSelesai}`;
 }
@@ -156,6 +156,28 @@ module.exports = {
         cachedSheetData = null;
         lastCacheTime = 0;
         console.log('[CACHE] Google Sheets cache cleared manually.');
+        this.deleteBaselineCaches();
+    },
+
+    deleteBaselineCaches() {
+        const fs = require('fs');
+        const path = require('path');
+        const pathsToDelete = [
+            path.resolve(__dirname, '..', '..', '..', '..', 'src', 'baseline', 'shopee', 'data', 'master_merchants_cache.csv'),
+            path.resolve(__dirname, '..', '..', '..', '..', 'src', 'baseline', 'shopee', 'data', 'shopee_credentials_cache.csv'),
+            path.resolve(__dirname, '..', '..', '..', '..', 'data', 'master_merchants_cache.csv'),
+            path.resolve(__dirname, '..', '..', '..', '..', 'data', 'shopee_credentials_cache.csv')
+        ];
+        for (const p of pathsToDelete) {
+            if (fs.existsSync(p)) {
+                try {
+                    fs.unlinkSync(p);
+                    console.log(`[CACHE] Baseline Python cache file deleted: ${p}`);
+                } catch (err) {
+                    console.error(`[CACHE] Failed to delete baseline python cache file ${p}:`, err);
+                }
+            }
+        }
     },
 
     async refreshCache(interaction) {
@@ -163,6 +185,7 @@ module.exports = {
         try {
             cachedSheetData = null;
             lastCacheTime = 0;
+            this.deleteBaselineCaches();
             await this.fetchSheetData();
             await interaction.editReply({
                 content: '✅ **Data Google Sheets berhasil diperbarui!** Silakan klik tombol **Klik untuk mengisi formulir!** untuk menggunakan data terbaru.',

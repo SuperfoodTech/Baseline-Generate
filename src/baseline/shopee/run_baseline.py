@@ -110,23 +110,13 @@ def resolve_bd_to_usernames(bd_filter, max_age_hours=24):
     creds_cache = "data/shopee_credentials_cache.csv"
     creds_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYSUnKOqk29LCktTxdb0wPLbWMbRaWRP3eC_UA4AwYod1FW6zDMhtLMC5ghIvot2B8upCDfBsn-TCP/pub?gid=565510790&single=true&output=csv"
     
-    # Download credentials if not exists or too old
-    os.makedirs("data", exist_ok=True)
-    download = True
-    if os.path.exists(creds_cache):
-        mtime = os.path.getmtime(creds_cache)
-        age_hours = (time.time() - mtime) / 3600
-        if age_hours < max_age_hours:
-            download = False
-            
-    if download:
-        try:
-            resp = requests.get(creds_url, timeout=15)
-            resp.raise_for_status()
-            with open(creds_cache, "w", encoding="utf-8") as f:
-                f.write(resp.text)
-        except Exception as e:
-            log.warning(f"⚠️ Failed to download credentials in resolve_bd_to_usernames: {e}")
+    try:
+        resp = requests.get(creds_url, timeout=10)
+        resp.raise_for_status()
+        with open(creds_cache, "w", encoding="utf-8") as f:
+            f.write(resp.text)
+    except Exception as e:
+        log.warning(f"⚠️ Failed to download credentials in resolve_bd_to_usernames: {e}. Will use cache if available.")
             
     if not os.path.exists(creds_cache):
         return [b.strip().lower() for b in bd_filter.split("|")]
@@ -170,13 +160,21 @@ def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=
     cache_path = "data/master_merchants_cache.csv"
     os.makedirs("data", exist_ok=True)
     
-    # Cek cache
-    if os.path.exists(cache_path):
-        mtime = os.path.getmtime(cache_path)
-        age_hours = (time.time() - mtime) / 3600
-        if age_hours < max_age_hours:
-            log.info(f"🔄 [DATA] Using cached merchant list (Age: {age_hours:.1f}h)")
+    df = None
+    try:
+        log.info("🌐 [DATA] Downloading fresh merchant list from Google Sheets...")
+        df = robust_read_csv(url, expected_cols=9)
+        df.to_csv(cache_path, index=False)
+    except Exception as download_err:
+        log.warning(f"⚠️ [DATA] Failed to download fresh merchant list: {download_err}. Trying cache...")
+        if os.path.exists(cache_path):
             df = robust_read_csv(cache_path, expected_cols=9)
+        else:
+            log.error(f"❌ [DATA] No cache available and download failed.")
+            return []
+
+    if df is not None:
+        try:
             sf_df = df[df['aplikasi'] == app_name]
             
             if bd_filter:
@@ -193,38 +191,11 @@ def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=
                 
             sf_df = sf_df[(sf_df['merchant name'] != '-') & (sf_df['merchant name'].notna())]
             sf_df = sf_df.drop_duplicates(subset=['merchant name'])
-            results = sf_df['merchant name'].tolist()
-            if results:
-                return results
-            log.info("⚠️ [DATA] Cache returned 0 matching merchants. Dropping cache to fetch fresh data...")
-            
-    # Jika tidak ada cache atau sudah usang, download ulang
-    log.info("🌐 [DATA] Downloading fresh merchant list from Google Sheets...")
-    try:
-        df = robust_read_csv(url, expected_cols=9)
-        df.to_csv(cache_path, index=False)
-        
-        sf_df = df[df['aplikasi'] == app_name]
-        
-        if bd_filter:
-            resolved_bds = resolve_bd_to_usernames(bd_filter, max_age_hours)
-            sf_df = sf_df[sf_df['nama pengguna'].astype(str).str.strip().str.lower().isin(resolved_bds)]
-        
-        if merchant_filter:
-            if "|" in merchant_filter:
-                filter_vals = [m.strip().lower().rstrip('_') for m in merchant_filter.split("|")]
-                sf_df = sf_df[sf_df['merchant name'].str.strip().str.lower().str.rstrip('_').isin(filter_vals)]
-            else:
-                filter_val = merchant_filter.strip().lower().rstrip('_')
-                sf_df = sf_df[sf_df['merchant name'].str.strip().str.lower().str.rstrip('_') == filter_val]
-            
-        sf_df = sf_df[(sf_df['merchant name'] != '-') & (sf_df['merchant name'].notna())]
-        sf_df = sf_df.drop_duplicates(subset=['merchant name'])
-        
-        return sf_df['merchant name'].tolist()
-    except Exception as e:
-        log.error(f"⚠️ Failed to fetch/parse merchants: {e}")
-        return []
+            return sf_df['merchant name'].tolist()
+        except Exception as e:
+            log.error(f"⚠️ Failed to parse merchants: {e}")
+            return []
+    return []
 
 def download_file(url, filename, cookies=None, max_retries=3):
     """Downloads a file from a URL with optional cookies and retries."""
@@ -299,23 +270,16 @@ def get_shopee_baseline_credentials(merchant_name, max_age_hours=24):
     url_creds = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYSUnKOqk29LCktTxdb0wPLbWMbRaWRP3eC_UA4AwYod1FW6zDMhtLMC5ghIvot2B8upCDfBsn-TCP/pub?gid=565510790&single=true&output=csv"
     
     def check_and_download(url, cache_path):
-        download = True
-        if os.path.exists(cache_path):
-            mtime = os.path.getmtime(cache_path)
-            age_hours = (time.time() - mtime) / 3600
-            if age_hours < max_age_hours:
-                download = False
-        if download:
-            log.info(f"🌐 [CREDENTIALS] Downloading fresh data from: {url}")
-            try:
-                resp = requests.get(url, timeout=15)
-                resp.raise_for_status()
-                with open(cache_path, "w", encoding="utf-8") as f:
-                    f.write(resp.text)
-            except Exception as e:
-                log.warning(f"⚠️ [CREDENTIALS] Failed to download {url}: {e}. Will use cache if available.")
-                if not os.path.exists(cache_path):
-                    raise e
+        log.info(f"🌐 [CREDENTIALS] Downloading fresh data from: {url}")
+        try:
+            resp = requests.get(url, timeout=10)
+            resp.raise_for_status()
+            with open(cache_path, "w", encoding="utf-8") as f:
+                f.write(resp.text)
+        except Exception as e:
+            log.warning(f"⚠️ [CREDENTIALS] Failed to download {url}: {e}. Will use cache if available.")
+            if not os.path.exists(cache_path):
+                raise e
                     
     try:
         check_and_download(url_merchants, cache_merchants)

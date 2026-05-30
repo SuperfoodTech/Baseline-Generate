@@ -206,17 +206,32 @@ def _resolve_shopee_merchant(outlet_name: str, branch_name: str = None, task_cho
 
         df = None
         loaded_from_cache = False
-        if os.path.exists(cache_path):
-            age_hours = (time.time() - os.path.getmtime(cache_path)) / 3600
-            if age_hours < 24:
-                df = pd.read_csv(cache_path)
-                loaded_from_cache = True
+        if task_choice == "1":
+            # Baseline: selalu coba unduh data segar terlebih dahulu
+            try:
+                resp = requests.get(GSHEETS_URL, timeout=10)
+                resp.raise_for_status()
+                df = pd.read_csv(io.StringIO(resp.text))
+                os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+                df.to_csv(cache_path, index=False)
+            except Exception as download_err:
+                print(f"  {YELLOW}[SHOPEE LOOKUP] Gagal mengunduh GSheets: {download_err}. Menggunakan cache jika ada...{RESET}")
+                if os.path.exists(cache_path):
+                    df = pd.read_csv(cache_path)
+                    loaded_from_cache = True
+        else:
+            # Weekly: tetap gunakan cache 24 jam jika ada
+            if os.path.exists(cache_path):
+                age_hours = (time.time() - os.path.getmtime(cache_path)) / 3600
+                if age_hours < 24:
+                    df = pd.read_csv(cache_path)
+                    loaded_from_cache = True
 
-        if df is None:
-            resp = requests.get(GSHEETS_URL, timeout=15)
-            df = pd.read_csv(io.StringIO(resp.text))
-            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-            df.to_csv(cache_path, index=False)
+            if df is None:
+                resp = requests.get(GSHEETS_URL, timeout=15)
+                df = pd.read_csv(io.StringIO(resp.text))
+                os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+                df.to_csv(cache_path, index=False)
 
         def do_lookup(dataframe):
             # Base filter: ShopeeFood + Nama Outlet cocok
