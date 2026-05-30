@@ -25,6 +25,73 @@ log = get_logger("omzet_pipeline")
 ENABLE_GSHEETS_PUSH = False   # Set ke True untuk mengizinkan unggah ke Google Sheets
 ENABLE_POSTGRES_PUSH = False  # Set ke True untuk mengizinkan unggah ke PostgreSQL (Tabel Gajah)
 
+def robust_read_csv(path_or_url, expected_cols=None, **kwargs):
+    """
+    Reads a CSV file or URL robustly.
+    1. Normalizes all column headers to lowercase and strips whitespace.
+    2. Gracefully handles unquoted commas by parsing line-by-line and merging extra columns.
+    """
+    import csv
+    import io
+    import pandas as pd
+    import requests
+
+    content = ""
+    try:
+        if isinstance(path_or_url, str) and (path_or_url.startswith("http://") or path_or_url.startswith("https://")):
+            resp = requests.get(path_or_url, timeout=30)
+            resp.raise_for_status()
+            content = resp.text
+        else:
+            with open(path_or_url, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+    except Exception as e:
+        log.error(f"Failed to read source {path_or_url}: {e}")
+        raise e
+
+    try:
+        df = pd.read_csv(io.StringIO(content), **kwargs)
+        df.columns = [c.strip().lower() for c in df.columns]
+        return df
+    except Exception as parse_err:
+        log.warning(f"Standard pandas read_csv failed: {parse_err}. Retrying with robust line parsing...")
+        try:
+            lines = content.splitlines()
+            if not lines:
+                return pd.DataFrame()
+            header_reader = csv.reader([lines[0]], skipinitialspace=True)
+            headers = [c.strip().lower() for c in next(header_reader)]
+            num_cols = len(headers) if expected_cols is None else expected_cols
+            
+            rows = []
+            for line in lines[1:]:
+                if not line.strip():
+                    continue
+                row_reader = csv.reader([line], skipinitialspace=True)
+                try:
+                    row = next(row_reader)
+                except Exception:
+                    row = [val.strip() for val in line.split(",")]
+                
+                if len(row) > num_cols:
+                    extra_count = len(row) - num_cols
+                    if num_cols == 9:  # Master sheet: merge 'merchant name' (index 5)
+                        merchant_name_val = ", ".join(row[5:6 + extra_count])
+                        row = row[:5] + [merchant_name_val] + row[6 + extra_count:]
+                    elif num_cols == 4:  # Credentials sheet: merge 'bd' (index 3)
+                        bd_val = ", ".join(row[3:])
+                        row = row[:3] + [bd_val]
+                elif len(row) < num_cols:
+                    row += [""] * (num_cols - len(row))
+                    
+                rows.append(row[:num_cols])
+            
+            df = pd.DataFrame(rows, columns=headers[:num_cols])
+            return df
+        except Exception as fallback_err:
+            log.error(f"Fallback robust parsing failed: {fallback_err}")
+            raise parse_err
+
 def subtract_months(dt, months):
     """Helper to subtract calendar months."""
     for _ in range(months):
@@ -65,7 +132,7 @@ def resolve_bd_to_usernames(bd_filter, max_age_hours=24):
         return [b.strip().lower() for b in bd_filter.split("|")]
         
     try:
-        df_creds = pd.read_csv(creds_cache)
+        df_creds = robust_read_csv(creds_cache, expected_cols=4)
         inputs = [b.strip().lower() for b in bd_filter.split("|")]
         resolved = []
         for inp in inputs:
@@ -75,8 +142,8 @@ def resolve_bd_to_usernames(bd_filter, max_age_hours=24):
                 
             matched = False
             for _, row in df_creds.iterrows():
-                username_val = str(row.get('Username', '')).strip().lower()
-                bd_val = str(row.get('BD', '')).strip().lower()
+                username_val = str(row.get('username', '')).strip().lower()
+                bd_val = str(row.get('bd', '')).strip().lower()
                 clean_bd = bd_val
                 if clean_bd.startswith("bd "):
                     clean_bd = clean_bd[3:].strip()
@@ -109,24 +176,24 @@ def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=
         age_hours = (time.time() - mtime) / 3600
         if age_hours < max_age_hours:
             log.info(f"🔄 [DATA] Using cached merchant list (Age: {age_hours:.1f}h)")
-            df = pd.read_csv(cache_path)
-            sf_df = df[df['Aplikasi'] == app_name]
+            df = robust_read_csv(cache_path, expected_cols=9)
+            sf_df = df[df['aplikasi'] == app_name]
             
             if bd_filter:
                 resolved_bds = resolve_bd_to_usernames(bd_filter, max_age_hours)
-                sf_df = sf_df[sf_df['Nama Pengguna'].astype(str).str.strip().str.lower().isin(resolved_bds)]
+                sf_df = sf_df[sf_df['nama pengguna'].astype(str).str.strip().str.lower().isin(resolved_bds)]
             
             if merchant_filter:
                 if "|" in merchant_filter:
                     filter_vals = [m.strip().lower().rstrip('_') for m in merchant_filter.split("|")]
-                    sf_df = sf_df[sf_df['Merchant Name'].str.strip().str.lower().str.rstrip('_').isin(filter_vals)]
+                    sf_df = sf_df[sf_df['merchant name'].str.strip().str.lower().str.rstrip('_').isin(filter_vals)]
                 else:
                     filter_val = merchant_filter.strip().lower().rstrip('_')
-                    sf_df = sf_df[sf_df['Merchant Name'].str.strip().str.lower().str.rstrip('_') == filter_val]
+                    sf_df = sf_df[sf_df['merchant name'].str.strip().str.lower().str.rstrip('_') == filter_val]
                 
-            sf_df = sf_df[(sf_df['Merchant Name'] != '-') & (sf_df['Merchant Name'].notna())]
-            sf_df = sf_df.drop_duplicates(subset=['Merchant Name'])
-            results = sf_df['Merchant Name'].tolist()
+            sf_df = sf_df[(sf_df['merchant name'] != '-') & (sf_df['merchant name'].notna())]
+            sf_df = sf_df.drop_duplicates(subset=['merchant name'])
+            results = sf_df['merchant name'].tolist()
             if results:
                 return results
             log.info("⚠️ [DATA] Cache returned 0 matching merchants. Dropping cache to fetch fresh data...")
@@ -134,27 +201,27 @@ def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=
     # Jika tidak ada cache atau sudah usang, download ulang
     log.info("🌐 [DATA] Downloading fresh merchant list from Google Sheets...")
     try:
-        df = pd.read_csv(url)
+        df = robust_read_csv(url, expected_cols=9)
         df.to_csv(cache_path, index=False)
         
-        sf_df = df[df['Aplikasi'] == app_name]
+        sf_df = df[df['aplikasi'] == app_name]
         
         if bd_filter:
             resolved_bds = resolve_bd_to_usernames(bd_filter, max_age_hours)
-            sf_df = sf_df[sf_df['Nama Pengguna'].astype(str).str.strip().str.lower().isin(resolved_bds)]
+            sf_df = sf_df[sf_df['nama pengguna'].astype(str).str.strip().str.lower().isin(resolved_bds)]
         
         if merchant_filter:
             if "|" in merchant_filter:
                 filter_vals = [m.strip().lower().rstrip('_') for m in merchant_filter.split("|")]
-                sf_df = sf_df[sf_df['Merchant Name'].str.strip().str.lower().str.rstrip('_').isin(filter_vals)]
+                sf_df = sf_df[sf_df['merchant name'].str.strip().str.lower().str.rstrip('_').isin(filter_vals)]
             else:
                 filter_val = merchant_filter.strip().lower().rstrip('_')
-                sf_df = sf_df[sf_df['Merchant Name'].str.strip().str.lower().str.rstrip('_') == filter_val]
+                sf_df = sf_df[sf_df['merchant name'].str.strip().str.lower().str.rstrip('_') == filter_val]
             
-        sf_df = sf_df[(sf_df['Merchant Name'] != '-') & (sf_df['Merchant Name'].notna())]
-        sf_df = sf_df.drop_duplicates(subset=['Merchant Name'])
+        sf_df = sf_df[(sf_df['merchant name'] != '-') & (sf_df['merchant name'].notna())]
+        sf_df = sf_df.drop_duplicates(subset=['merchant name'])
         
-        return sf_df['Merchant Name'].tolist()
+        return sf_df['merchant name'].tolist()
     except Exception as e:
         log.error(f"⚠️ Failed to fetch/parse merchants: {e}")
         return []
@@ -254,8 +321,8 @@ def get_shopee_baseline_credentials(merchant_name, max_age_hours=24):
         check_and_download(url_merchants, cache_merchants)
         check_and_download(url_creds, cache_creds)
         
-        df_merchants = pd.read_csv(cache_merchants)
-        df_creds = pd.read_csv(cache_creds)
+        df_merchants = robust_read_csv(cache_merchants, expected_cols=9)
+        df_creds = robust_read_csv(cache_creds, expected_cols=4)
         
         def _normalize(name):
             if pd.isna(name):
@@ -263,20 +330,20 @@ def get_shopee_baseline_credentials(merchant_name, max_age_hours=24):
             return str(name).strip().lower().rstrip('_').strip()
             
         # Match norm_merchant in sf_merchants
-        df_merchants['norm_name'] = df_merchants['Merchant Name'].apply(_normalize)
+        df_merchants['norm_name'] = df_merchants['merchant name'].apply(_normalize)
         norm_merchant = _normalize(merchant_name)
         
         matched_rows = df_merchants[
             (df_merchants['norm_name'] == norm_merchant) &
-            (df_merchants['Aplikasi'].str.contains("Shopee", na=False, case=False))
+            (df_merchants['aplikasi'].str.contains("Shopee", na=False, case=False))
         ]
         
         if matched_rows.empty:
             log.warning(f"⚠️ [CREDENTIALS] Merchant '{merchant_name}' not found in Master list. Using default credentials.")
             return default_creds
             
-        username = str(matched_rows.iloc[0].get('Nama Pengguna', '')).strip()
-        password = str(matched_rows.iloc[0].get('Kata Sandi', '')).strip()
+        username = str(matched_rows.iloc[0].get('nama pengguna', '')).strip()
+        password = str(matched_rows.iloc[0].get('kata sandi', '')).strip()
         
         if not username or pd.isna(username) or username == "" or username == "-":
             log.info(f"ℹ️ [CREDENTIALS] No username assigned to merchant '{merchant_name}'. Using default credentials.")
@@ -287,7 +354,7 @@ def get_shopee_baseline_credentials(merchant_name, max_age_hours=24):
             
         # Look up phone number from df_creds
         norm_username = _normalize(username)
-        df_creds['norm_username'] = df_creds['Username'].fillna("").apply(_normalize)
+        df_creds['norm_username'] = df_creds['username'].fillna("").apply(_normalize)
         
         matched_cred = df_creds[df_creds['norm_username'] == norm_username]
         if matched_cred.empty:
@@ -295,7 +362,7 @@ def get_shopee_baseline_credentials(merchant_name, max_age_hours=24):
             phone = default_creds.get("phone")
         else:
             row_cred = matched_cred.iloc[0]
-            phone = str(row_cred.get('Phone', '')).strip()
+            phone = str(row_cred.get('phone', '')).strip()
             
         if phone.startswith("+"):
             phone = phone[1:]
@@ -309,6 +376,7 @@ def get_shopee_baseline_credentials(merchant_name, max_age_hours=24):
     except Exception as e:
         log.error(f"❌ [CREDENTIALS] Error resolving credentials for '{merchant_name}': {e}. Using default.")
         return default_creds
+
 def process_bd_group(username, group_info, global_ranges, report_dir, headless):
     creds = group_info["creds"]
     group_merchants = group_info["merchants"]

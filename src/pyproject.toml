@@ -13,6 +13,7 @@ dependencies = [
     "webdriver-manager",
     "undetected-chromedriver",
     "rich",
+    "filelock>=3.29.0",
 ]
 
 [project.scripts]

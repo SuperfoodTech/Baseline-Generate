@@ -52,6 +52,8 @@ downloads/
 backups/
 scratch/
 
+src/config.json
+
 # ── Reports & Output (generated files) ─────────────────────────────────────
 laporan/
 data/reports/
@@ -74,14 +76,14 @@ Thumbs.db
 
 # ── Python version file (keep for reference) ───────────────────────────────
 # ── Shopee Specific ────────────────────────────────────────────────────────
-**/shopee-omzet-automation/data/
+**/shopee-omzet-automation/data/**
 **/shopee-omzet-automation/logs/
 **/shopee-omzet-automation/API/*.json
 
 # ── Node & Env ─────────────────────────────────────────────────────────────
 node_modules/
 **/.env
-**/baseline/*/data/
+**/baseline/*/data/**
 
 # ── GoFood / Temp Files ────────────────────────────────────────────────────
 src/gofood-automation/

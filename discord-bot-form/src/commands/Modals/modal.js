@@ -36,6 +36,43 @@ let cachedSheetData = null;
 let lastCacheTime = 0;
 const CACHE_DURATION = 5 * 60 * 1000; // 5 menit cache
 
+// ── Job Lock — mencegah 2 user menjalankan pipeline yang sama secara bersamaan ──
+// Key: "<outlet>|<platform>|<startDate>|<endDate>"
+// Value: { userId, username, startedAt }
+const activeJobs = new Map();
+
+/**
+ * Buat kunci unik untuk sebuah job berdasarkan outlet + platform + tanggal.
+ * @param {string} outlet
+ * @param {string} aplikator
+ * @param {string} tanggalMulai
+ * @param {string} tanggalSelesai
+ * @returns {string}
+ */
+function buildJobKey(outlet, aplikator, tanggalMulai, tanggalSelesai) {
+    const normalizedOutlet   = (outlet    || 'all').toLowerCase().trim();
+    const normalizedPlatform = (aplikator || 'all').toLowerCase().trim();
+    return `${normalizedOutlet}|${normalizedPlatform}|${tanggalMulai}|${tanggalSelesai}`;
+}
+
+/**
+ * Coba ambil lock untuk job ini.
+ * @returns {boolean} true jika berhasil (tidak ada job yang sedang berjalan), false jika sudah ada
+ */
+function acquireJob(key, userId, username) {
+    if (activeJobs.has(key)) return false;
+    activeJobs.set(key, { userId, username, startedAt: new Date() });
+    return true;
+}
+
+/**
+ * Lepas lock untuk job ini.
+ */
+function releaseJob(key) {
+    activeJobs.delete(key);
+    console.log(`[JOB LOCK] Released: ${key}`);
+}
+
 
 const makeProgressEmbed = (step, title, description, fields = []) => {
     const steps = [
@@ -396,7 +433,7 @@ module.exports = {
                     { name: 'Rentang Tanggal', value: `📅 ${formData.tanggalMulai} s/d ${formData.tanggalSelesai}`, inline: false },
                     { name: 'Outlet', value: formData.outlet.length > 1024 ? formData.outlet.substring(0, 1020) + '...' : formData.outlet }
                 )
-                .setFooter({ text: 'Sistem Rekap Laporan Otomatis • Antigravity' })
+                .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
                 .setTimestamp();
 
             await interaction.channel.send({ embeds: [summaryEmbed] });
@@ -488,6 +525,40 @@ module.exports = {
                 } catch (e) { /* ignore edit errors */ }
             };
 
+            // ── Job Lock Check — pastikan tidak ada pipeline yang sama berjalan ──
+            const jobKey = buildJobKey(formData.outlet, formData.aplikator, formData.tanggalMulai, formData.tanggalSelesai);
+            const acquired = acquireJob(jobKey, interaction.user.id, interaction.user.username);
+
+            if (!acquired) {
+                const existingJob = activeJobs.get(jobKey);
+                const runningDuration = existingJob
+                    ? Math.round((Date.now() - existingJob.startedAt.getTime()) / 1000 / 60)
+                    : '?';
+
+                await interaction.channel.send({
+                    embeds: [
+                        new EmbedBuilder()
+                            .setColor(0xFF6B00)
+                            .setTitle('⚠️ Pipeline Sedang Berjalan')
+                            .setDescription(
+                                `Pipeline untuk **${formData.outlet}** (${formData.aplikator}) sedang diproses oleh **${existingJob?.username || 'pengguna lain'}**.\n\n` +
+                                `⏳ Sudah berjalan selama **${runningDuration} menit**.\n\n` +
+                                `Mohon tunggu hingga proses selesai sebelum menjalankan pipeline yang sama.`
+                            )
+                            .addFields(
+                                { name: '📍 Outlet', value: formData.outlet, inline: true },
+                                { name: '📱 Platform', value: formData.aplikator, inline: true },
+                                { name: '📅 Tanggal', value: `${formData.tanggalMulai} s/d ${formData.tanggalSelesai}`, inline: false }
+                            )
+                            .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
+                            .setTimestamp()
+                    ]
+                });
+                return;
+            }
+
+            console.log(`[JOB LOCK] Acquired by ${interaction.user.username}: ${jobKey}`);
+
             // Jalankan pipeline dengan live log tracking
             runPipeline(formData, async (logLine) => {
                 console.log(`[PIPELINE] ${logLine}`);
@@ -524,6 +595,7 @@ module.exports = {
                     }
                 }
             }).then(async (result) => {
+                releaseJob(jobKey);
                 // ── FINAL STATUS — Akurat berdasarkan hasil pipeline ──
                 if (result.success) {
                     // Cek apakah output mengandung tanda partial failure
@@ -543,11 +615,11 @@ module.exports = {
 
                         if (result.notifData) {
                             const { outlet, start_date, end_date, aplikator, pdf_name, omzet_gr, omzet_sf, order_gr, order_sf, omzet_go, order_go } = result.notifData;
-                            
+
                             const omzetLines = [];
                             const orderLines = [];
                             const lowerApp = aplikator.toLowerCase();
-                            
+
                             if (lowerApp.includes('gofood') || lowerApp.includes('all')) {
                                 omzetLines.push(`GoFood: **${omzet_go || 'Rp 0'}**`);
                                 orderLines.push(`GoFood: **${order_go || '0'}**`);
@@ -560,7 +632,7 @@ module.exports = {
                                 omzetLines.push(`ShopeeFood: **${omzet_sf || 'Rp 0'}**`);
                                 orderLines.push(`ShopeeFood: **${order_sf || '0'}**`);
                             }
-                            
+
                             const omzetStr = omzetLines.join('\n') || '-';
                             const orderStr = orderLines.join('\n') || '-';
 
@@ -568,7 +640,7 @@ module.exports = {
                                 `Laporan untuk **${outlet}** telah berhasil dibuat dan siap diunduh.\n\n` +
                                 (finalPdfUrl ? `🔗 **[Klik di sini untuk membuka PDF](${finalPdfUrl})**` : '')
                             );
-                            
+
                             embed.addFields(
                                 { name: '📍 Outlet', value: outlet, inline: true },
                                 { name: '📱 Aplikator', value: aplikator, inline: true },
@@ -656,6 +728,7 @@ module.exports = {
                     });
                 }
             }).catch(async (err) => {
+                releaseJob(jobKey);
                 console.error('[PIPELINE] Unexpected error:', err);
                 await statusMsg.edit({
                     embeds: [
@@ -670,6 +743,10 @@ module.exports = {
             // ── End Pipeline ─────────────────────────────────────────────────────
 
         } catch (error) {
+            // Lepas job lock jika sudah di-acquire tapi flow gagal (timeout/error sebelum pipeline selesai)
+            if (typeof jobKey !== 'undefined' && activeJobs.has(jobKey)) {
+                releaseJob(jobKey);
+            }
             console.error('Error in form flow:', error);
             // Gunakan interaction original untuk merespon pembatalan sebagai fallback aman
             try {

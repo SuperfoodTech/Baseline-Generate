@@ -58,6 +58,73 @@ def setup_logger():
 
 log = setup_logger()
 
+def robust_read_csv(path_or_url, expected_cols=None, **kwargs):
+    """
+    Reads a CSV file or URL robustly.
+    1. Normalizes all column headers to lowercase and strips whitespace.
+    2. Gracefully handles unquoted commas by parsing line-by-line and merging extra columns.
+    """
+    import csv
+    import io
+    import pandas as pd
+    import requests
+
+    content = ""
+    try:
+        if isinstance(path_or_url, str) and (path_or_url.startswith("http://") or path_or_url.startswith("https://")):
+            resp = requests.get(path_or_url, timeout=30)
+            resp.raise_for_status()
+            content = resp.text
+        else:
+            with open(path_or_url, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+    except Exception as e:
+        log.error(f"Failed to read source {path_or_url}: {e}")
+        raise e
+
+    try:
+        df = pd.read_csv(io.StringIO(content), **kwargs)
+        df.columns = [c.strip().lower() for c in df.columns]
+        return df
+    except Exception as parse_err:
+        log.warning(f"Standard pandas read_csv failed: {parse_err}. Retrying with robust line parsing...")
+        try:
+            lines = content.splitlines()
+            if not lines:
+                return pd.DataFrame()
+            header_reader = csv.reader([lines[0]], skipinitialspace=True)
+            headers = [c.strip().lower() for c in next(header_reader)]
+            num_cols = len(headers) if expected_cols is None else expected_cols
+            
+            rows = []
+            for line in lines[1:]:
+                if not line.strip():
+                    continue
+                row_reader = csv.reader([line], skipinitialspace=True)
+                try:
+                    row = next(row_reader)
+                except Exception:
+                    row = [val.strip() for val in line.split(",")]
+                
+                if len(row) > num_cols:
+                    extra_count = len(row) - num_cols
+                    if num_cols == 9:  # Master sheet: merge 'merchant name' (index 5)
+                        merchant_name_val = ", ".join(row[5:6 + extra_count])
+                        row = row[:5] + [merchant_name_val] + row[6 + extra_count:]
+                    elif num_cols == 4:  # Credentials sheet: merge 'bd' (index 3)
+                        bd_val = ", ".join(row[3:])
+                        row = row[:3] + [bd_val]
+                elif len(row) < num_cols:
+                    row += [""] * (num_cols - len(row))
+                    
+                rows.append(row[:num_cols])
+            
+            df = pd.DataFrame(rows, columns=headers[:num_cols])
+            return df
+        except Exception as fallback_err:
+            log.error(f"Fallback robust parsing failed: {fallback_err}")
+            raise parse_err
+
 CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=880434015&single=true&output=csv"
 
 async def run_all(date_start: str = None, date_end: str = None, output_dir: str = None, user_filter: str = None, outlet_filter: str = None, branch_filter: str = None):
@@ -66,25 +133,23 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     
     log.info(f"Fetching merchant list from spreadsheet...")
     try:
-        resp = requests.get(CSV_URL, timeout=30)
-        resp.raise_for_status()
-        df = pd.read_csv(io.StringIO(resp.text))
+        df = robust_read_csv(CSV_URL, expected_cols=9)
         
         # Filter for GrabFood
-        grab_df = df[df["Aplikasi"].str.contains("Grab", na=False, case=False)]
+        grab_df = df[df["aplikasi"].str.contains("grab", na=False, case=False)]
         
         portals = []
         for idx, row in grab_df.iterrows():
-            user = row.get("Nama Pengguna")
-            pwd = row.get("Kata Sandi")
+            user = row.get("nama pengguna")
+            pwd = row.get("kata sandi")
             
             if pd.notna(user) and pd.notna(pwd) and str(user).strip() != "-" and str(pwd).strip() != "-":
                 u_str = str(user).strip()
                 p_str = str(pwd).strip()
-                outlet = str(row.get("Nama Outlet", "Unknown")).strip()
+                outlet = str(row.get("nama outlet", "Unknown")).strip()
                 
                 # Di Master DB, kolom Cabang tidak ada, gunakan Brand
-                branch_val = row.get("Cabang", row.get("Brand", ""))
+                branch_val = row.get("cabang", row.get("brand", ""))
                 branch = str(branch_val).strip() if pd.notna(branch_val) else ""
                 
                 # Apply custom outlet and branch filters internally

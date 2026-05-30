@@ -10,6 +10,14 @@ from datetime import datetime, timedelta
 from urllib.request import urlopen
 from urllib.parse import urlparse, urlencode, urlunparse, parse_qsl
 from dotenv import load_dotenv, set_key
+try:
+    from filelock import FileLock as _FileLock
+except ImportError:
+    import contextlib
+    class _FileLock:
+        def __init__(self, path, timeout=-1): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
 import time
 from playwright.sync_api import sync_playwright
 
@@ -745,7 +753,20 @@ def minta_range_tanggal_custom():
             print("⚠️ Format tanggal tidak valid. Gunakan DD-MM-YYYY atau YYYY-MM-DD.")
 
 
-def ambil_data_analytics(write_header=True, start_date=None, end_date=None, return_data=False):
+def ambil_data_analytics(write_header=True, start_date=None, end_date=None, return_data=False,
+                          token=None, store_id=None, nama_outlet=None, phone=None, cabang=None):
+    """
+    Mengambil data analytics GoFood.
+    Parameter token, store_id, nama_outlet, phone, cabang di-pass secara eksplisit
+    agar tidak bergantung pada os.environ global (aman untuk concurrent execution).
+    Jika tidak di-pass, fallback ke os.getenv() untuk kompatibilitas backward.
+    """
+    # Resolve context — gunakan parameter eksplisit jika ada, fallback ke env
+    _token     = token     or os.getenv('BEARER_TOKEN', '')
+    _store_id  = store_id  or os.getenv('ACTIVE_STORE_ID', '')
+    _phone     = phone     or os.getenv('ACTIVE_NOMOR_HP', '')
+    _outlet    = nama_outlet or os.getenv('ACTIVE_NAMA_OUTLET', '')
+    _cabang    = cabang    or os.getenv('ACTIVE_CABANG', '')
     session = requests.Session()
     use_proxy = os.getenv("USE_PROXY", "false").lower() in ("true", "1", "yes")
     proxy_server = os.getenv("PROXY_SERVER")
@@ -804,13 +825,13 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
 
     # --- 1. REQUEST DATA GROSS REVENUE ---
     # include merchant_ids param in Referer if available
-    active_store = os.getenv('ACTIVE_STORE_ID', '').strip()
+    active_store = _store_id.strip() if _store_id else ''
     merchant_q = f"&merchant_ids={active_store}" if active_store else ''
 
     headers = {
         'Accept': '*/*',
         'Authentication-Type': 'go-id',
-        'Authorization': f"Bearer {os.getenv('BEARER_TOKEN')}",
+        'Authorization': f"Bearer {_token}",
         'Content-Type': 'application/json, application/x-ndjson',
         'Origin': 'https://portal.gofoodmerchant.co.id',
         'Referer': f"https://portal.gofoodmerchant.co.id/analytics/sales-gofood?date_range=custom&end_date={end_date.strftime('%Y-%m-%dT%H%%3A%M%%3A%S.999Z')}&start_date={start_date.strftime('%Y-%m-%dT%H%%3A%M%%3A%S.000Z')}{merchant_q}",
@@ -1727,10 +1748,14 @@ if __name__ == "__main__":
                 # Simpan token baru ke .env
                 sanitized_resto_name = re.sub(r'[^a-zA-Z0-9]', '', cabang or nama_outlet)
                 suffix = f"_{phone}_{sanitized_resto_name}"
-                set_key(env_path, f"BEARER_TOKEN{suffix}", token)
-                set_key(env_path, f"NAMA_OUTLET{suffix}", str(nama_outlet))
-                set_key(env_path, f"CABANG{suffix}", str(cabang))
-                set_key(env_path, f"STORE_ID{suffix}", str(store_id))
+                os.environ['BEARER_TOKEN'] = token  # backward compat — proses ini sudah selesai auth
+                # Simpan ke .env dengan file lock agar tidak corrupt saat concurrent
+                env_lock = _FileLock(f"{env_path}.lock", timeout=30)
+                with env_lock:
+                    set_key(env_path, f"BEARER_TOKEN{suffix}", token)
+                    set_key(env_path, f"NAMA_OUTLET{suffix}", str(nama_outlet))
+                    set_key(env_path, f"CABANG{suffix}", str(cabang))
+                    set_key(env_path, f"STORE_ID{suffix}", str(store_id))
                 
                 console.print(f"[success]✅ Token berhasil ditangkap dan disimpan ke .env untuk {nama_outlet}.[/success]")
                 
@@ -1745,11 +1770,13 @@ if __name__ == "__main__":
                 continue
 
         # Set environment untuk iterasi ini
-        os.environ['BEARER_TOKEN']      = token
-        os.environ['ACTIVE_NOMOR_HP']   = phone
-        os.environ['ACTIVE_NAMA_OUTLET']= nama_outlet
-        os.environ['ACTIVE_CABANG']     = cabang
-        os.environ['ACTIVE_STORE_ID']   = store_id
+        # Set token ke env hanya untuk backward compat (proses lain tidak terpengaruh
+        # karena setiap akun sudah di-pass via parameter ke ambil_data_analytics)
+        os.environ['BEARER_TOKEN']       = token
+        os.environ['ACTIVE_NOMOR_HP']    = phone
+        os.environ['ACTIVE_NAMA_OUTLET'] = nama_outlet
+        os.environ['ACTIVE_CABANG']      = cabang
+        os.environ['ACTIVE_STORE_ID']    = store_id
 
         console.print(f"\n[bold]{'='*55}[/bold]")
         console.print(f"[bold cyan]Memproses:[/bold cyan] {nama_outlet} - {cabang} ({phone})")
@@ -1762,7 +1789,12 @@ if __name__ == "__main__":
             write_header=(index == 0),
             start_date=custom_start_date,
             end_date=custom_end_date,
-            return_data=True
+            return_data=True,
+            token=token,
+            store_id=store_id,
+            nama_outlet=nama_outlet,
+            phone=phone,
+            cabang=cabang,
         )
         if result:
             label = f"{nama_outlet} - {cabang}" if cabang and cabang != 'Tanpa Cabang' else nama_outlet

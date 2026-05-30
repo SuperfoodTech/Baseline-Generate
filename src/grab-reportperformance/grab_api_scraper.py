@@ -2,9 +2,21 @@ import os
 import json
 import asyncio
 import time
+import uuid
 from datetime import datetime, timedelta
 from playwright.async_api import async_playwright
 from dotenv import load_dotenv
+try:
+    from filelock import FileLock
+except ImportError:
+    # Fallback jika filelock tidak terinstall — gunakan no-op context manager
+    import contextlib
+    class FileLock:
+        def __init__(self, path, timeout=-1): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        @contextlib.contextmanager
+        def acquire(self, *a, **kw): yield
 
 # Load environment variables
 load_dotenv(override=True)
@@ -509,7 +521,9 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
                     if await perform_login(page, user, pwd):
                         mgid = await api.get_merchant_group_id()
                         if mgid:
-                            await context.storage_state(path=session_path)
+                            _lock = FileLock(f"{session_path}.lock", timeout=30)
+                            with _lock:
+                                await context.storage_state(path=session_path)
                             logger.info(f"  [Session] Login success, session saved.")
                         else:
                             logger.error(f"  ✗ [Session] Login success but failed to get MGID for {user}.")
@@ -520,7 +534,9 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
                         os.makedirs("logs", exist_ok=True)
                         await page.screenshot(path=f"logs/login_fail_{user}.png")
                 else:
-                    await context.storage_state(path=session_path)
+                    _lock = FileLock(f"{session_path}.lock", timeout=30)
+                    with _lock:
+                        await context.storage_state(path=session_path)
     
                 if mgid:
                     break  # Auth succeeded — exit auth retry loop
@@ -588,7 +604,8 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
                         continue
                     break # Break dl_attempt loop
 
-                filename = f"downloads/grab_transactions_{user}.csv"
+                job_id = uuid.uuid4().hex[:8]
+                filename = f"downloads/grab_transactions_{user}_{job_id}.csv"
                 success, err = await api.download_csv(download_url, filename)
 
                 if not success:

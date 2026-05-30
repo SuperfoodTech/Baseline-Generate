@@ -29,7 +29,7 @@ def get_bd_credentials():
             sys.exit(1)
             
     df = pd.read_csv(cache_creds)
-    target_bds = ["auto7303", "auto7304_", "auto7307", "auto7308"]
+    target_bds = ["auto7303", "auto7304_", "auto7307", "auto7308", "user7307"]
     accounts = []
     
     for _, row in df.iterrows():
@@ -135,9 +135,10 @@ def main():
         print("\nPilih Menu:")
         print("1. Cek & Login Akun Satu per Satu (Untuk input OTP jika belum login)")
         print("2. Test Jalankan 4 Jendela Bersamaan (Concurrent Dashboard Preview)")
-        print("3. Keluar")
+        print("3. Buka Salah Satu Akun (Preview Satu Akun)")
+        print("4. Keluar")
         
-        choice = input("\nMasukkan pilihan (1-3): ").strip()
+        choice = input("\nMasukkan pilihan (1-4): ").strip()
         if choice == "1":
             for acc in accounts:
                 check_and_login_account(acc)
@@ -154,6 +155,19 @@ def main():
                         print(f"❌ [{acc['username']}] Exception: {e}")
             print("\n🎉 Concurrent test completed.")
         elif choice == "3":
+            print("\nPilih akun untuk dibuka:")
+            for idx, acc in enumerate(accounts, 1):
+                print(f"{idx}. {acc['username']}")
+            acc_choice = input(f"Masukkan nomor (1-{len(accounts)}): ").strip()
+            try:
+                acc_idx = int(acc_choice) - 1
+                if 0 <= acc_idx < len(accounts):
+                    launch_preview_window(accounts[acc_idx])
+                else:
+                    print("Nomor akun tidak valid.")
+            except ValueError:
+                print("Masukkan angka yang valid.")
+        elif choice == "4":
             print("Keluar dari program.")
             break
         else:
