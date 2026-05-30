@@ -1321,21 +1321,36 @@ Examples:
                             print(f"  {DIM}Gagal mengambil nama Owner: {e}{RESET}")
 
                         # 2. Extract metrics from combined DataFrame
+                        # LOGIKA BENAR: akumulasi semua portal per bulan terlebih dahulu,
+                        # baru hasil akumulasi tersebut dirata-rata (bukan jumlah rata-rata per portal)
                         omzet_go, order_go = 0.0, 0.0
                         omzet_gr, order_gr = 0.0, 0.0
                         omzet_sf, order_sf = 0.0, 0.0
-                        
-                        for _, row in combined_df.iterrows():
-                            app = str(row.get("Aplikasi", "")).lower()
-                            if "grab" in app:
-                                omzet_gr += float(row.get("Rata-rata Omzet", 0))
-                                order_gr += float(row.get("Rata-rata Order", 0))
-                            elif "shopee" in app:
-                                omzet_sf += float(row.get("Rata-rata Omzet", 0))
-                                order_sf += float(row.get("Rata-rata Order", 0))
-                            elif "go" in app:
-                                omzet_go += float(row.get("Rata-rata Omzet", 0))
-                                order_go += float(row.get("Rata-rata Order", 0))
+
+                        order_month_cols = sorted([c for c in combined_df.columns if c.startswith("Order Bulan ke-")])
+                        omzet_month_cols = sorted([c for c in combined_df.columns if c.startswith("Omzet Bulan ke-")])
+                        num_months_bl = len(order_month_cols) if order_month_cols else 1
+
+                        def _platform_monthly_avg(df, cols, grab_m, shopee_m, go_m):
+                            """Sum all portals per month across platform, then average across months."""
+                            if not cols or num_months_bl == 0:
+                                return 0.0, 0.0, 0.0
+                            def _avg(mask):
+                                grp = df.loc[mask, cols].copy()
+                                grp = grp.apply(pd.to_numeric, errors="coerce").fillna(0)
+                                if grp.empty:
+                                    return 0.0
+                                # Sum all portals per month (axis=0), then average across months
+                                return float(grp.sum(axis=0).sum()) / num_months_bl
+                            return _avg(grab_m), _avg(shopee_m), _avg(go_m)
+
+                        app_lower = combined_df["Aplikasi"].astype(str).str.lower().str.strip()
+                        grab_mask   = app_lower.str.contains("grab",   na=False)
+                        shopee_mask = app_lower.str.contains("shopee", na=False)
+                        go_mask     = (~grab_mask) & (~shopee_mask) & app_lower.str.contains("go", na=False)
+
+                        omzet_gr, omzet_sf, omzet_go = _platform_monthly_avg(combined_df, omzet_month_cols, grab_mask, shopee_mask, go_mask)
+                        order_gr, order_sf, order_go = _platform_monthly_avg(combined_df, order_month_cols, grab_mask, shopee_mask, go_mask)
                                 
                         def format_rp(val):
                             return f"Rp {int(val):,}".replace(",", ".")
