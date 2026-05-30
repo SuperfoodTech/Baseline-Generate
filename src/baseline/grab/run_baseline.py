@@ -221,6 +221,9 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                         laporan_dir.mkdir(parents=True, exist_ok=True)
                         
                         portal_safe_name = f"{portal['outlet']}_{portal['branch']}" if portal['branch'] else f"{portal['outlet']}"
+                        has_multiple = sum(1 for p in portals if p['outlet'] == portal['outlet'] and p['branch'] == portal['branch']) > 1
+                        if has_multiple:
+                            portal_safe_name = f"{portal_safe_name}_{portal['user']}"
                         portal_safe_name = portal_safe_name.replace("/", "_").replace("\\", "_")
                         dest_xlsx = laporan_dir / f"{portal_safe_name}.xlsx"
                         
@@ -278,6 +281,9 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
         valid_stems = []
         for p_info in portals:
             portal_safe_name = f"{p_info['outlet']}_{p_info['branch']}" if p_info['branch'] else f"{p_info['outlet']}"
+            has_multiple = sum(1 for p in portals if p['outlet'] == p_info['outlet'] and p['branch'] == p_info['branch']) > 1
+            if has_multiple:
+                portal_safe_name = f"{portal_safe_name}_{p_info['user']}"
             portal_safe_name = portal_safe_name.replace("/", "_").replace("\\", "_")
             valid_stems.append(portal_safe_name)
         xlsx_files = [f for f in xlsx_files if f.stem in valid_stems]

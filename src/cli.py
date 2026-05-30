@@ -201,85 +201,99 @@ def _resolve_shopee_merchant(outlet_name: str, branch_name: str = None, task_cho
     try:
         import pandas as pd
         import io
+        import time
+        import requests
 
-        # Gunakan cache jika ada dan masih segar (24 jam)
+        df = None
+        loaded_from_cache = False
         if os.path.exists(cache_path):
-            import time
             age_hours = (time.time() - os.path.getmtime(cache_path)) / 3600
             if age_hours < 24:
                 df = pd.read_csv(cache_path)
-            else:
-                import requests
-                resp = requests.get(GSHEETS_URL, timeout=15)
-                df = pd.read_csv(io.StringIO(resp.text))
-                os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-                df.to_csv(cache_path, index=False)
-        else:
-            import requests
+                loaded_from_cache = True
+
+        if df is None:
             resp = requests.get(GSHEETS_URL, timeout=15)
             df = pd.read_csv(io.StringIO(resp.text))
             os.makedirs(os.path.dirname(cache_path), exist_ok=True)
             df.to_csv(cache_path, index=False)
 
-        outlet_lower = outlet_name.strip().lower()
-
-        # Base filter: ShopeeFood + Nama Outlet cocok
-        if task_choice == "1":
-            base_filter = (
-                (df['Aplikasi'].str.contains("Shopee", na=False, case=False)) &
-                (df['Nama Outlet'].str.strip().str.lower() == outlet_lower)
-            )
-        else:
-            base_filter = (
-                (df['Aplikasi'] == 'ShopeeFood') &
-                (df['Status'] == 'Live') &
-                (df['Nama Outlet'].str.strip().str.lower() == outlet_lower)
-            )
-
-        # ── Strategi 1: Lookup dengan Cabang (paling presisi) ──────────
-        if branch_name:
-            branch_lower = branch_name.strip().lower()
-            branch_col = 'Cabang' if 'Cabang' in df.columns else 'Brand'
-            if branch_col in df.columns:
-                sf_with_branch = df[
-                    base_filter &
-                    (df[branch_col].str.strip().str.lower() == branch_lower)
-                ]
+        def do_lookup(dataframe):
+            # Base filter: ShopeeFood + Nama Outlet cocok
+            outlet_lower = outlet_name.strip().lower()
+            if task_choice == "1":
+                b_filter = (
+                    (dataframe['Aplikasi'].str.contains("Shopee", na=False, case=False)) &
+                    (dataframe['Nama Outlet'].str.strip().str.lower() == outlet_lower)
+                )
             else:
-                sf_with_branch = pd.DataFrame()
-            if not sf_with_branch.empty:
-                merchant_name = _clean(sf_with_branch.iloc[0]['Merchant Name'])
-                if merchant_name and merchant_name not in ('-', 'nan'):
-                    print(f"  {CYAN}[SHOPEE LOOKUP] Outlet+Cabang '{outlet_name} / {branch_name}'"
-                          f" → Merchant: '{merchant_name}'{RESET}")
-                    return merchant_name
+                b_filter = (
+                    (dataframe['Aplikasi'] == 'ShopeeFood') &
+                    (dataframe['Status'] == 'Live') &
+                    (dataframe['Nama Outlet'].str.strip().str.lower() == outlet_lower)
+                )
 
-            print(f"  {YELLOW}[SHOPEE LOOKUP] Cabang '{branch_name}' tidak ditemukan di Shopee, "
-                  f"fallback ke lookup outlet saja.{RESET}")
-
-        # ── Strategi 2: Lookup hanya Nama Outlet ───────────────────────
-        sf_df = df[base_filter]
-        if not sf_df.empty:
-            # Hapus duplikat Merchant Name (satu outlet bisa banyak row per merchant)
-            unique_merchants = (
-                sf_df['Merchant Name']
-                .apply(_clean)
-                .loc[lambda s: (s != '-') & (s != 'nan') & (s != '')]
-                .drop_duplicates()
-                .tolist()
-            )
-            if unique_merchants:
-                if len(unique_merchants) == 1:
-                    print(f"  {CYAN}[SHOPEE LOOKUP] Outlet '{outlet_name}'"
-                          f" → Merchant: '{unique_merchants[0]}'{RESET}")
-                    return unique_merchants[0]
+            # ── Strategi 1: Lookup dengan Cabang (paling presisi) ──────────
+            if branch_name:
+                branch_lower = branch_name.strip().lower()
+                branch_col = 'Cabang' if 'Cabang' in dataframe.columns else 'Brand'
+                if branch_col in dataframe.columns:
+                    sf_with_branch = dataframe[
+                        b_filter &
+                        (dataframe[branch_col].str.strip().str.lower() == branch_lower)
+                    ]
                 else:
-                    # Beberapa merchant Shopee untuk outlet ini → ambil yang pertama
-                    # (biasanya semua di bawah satu akun Shopee yang sama)
-                    print(f"  {CYAN}[SHOPEE LOOKUP] Outlet '{outlet_name}' punya"
-                          f" {len(unique_merchants)} merchant Shopee: {unique_merchants}."
-                          f" Menggunakan: '{unique_merchants[0]}'{RESET}")
-                    return unique_merchants[0]
+                    sf_with_branch = pd.DataFrame()
+                if not sf_with_branch.empty:
+                    m_name = _clean(sf_with_branch.iloc[0]['Merchant Name'])
+                    if m_name and m_name not in ('-', 'nan'):
+                        print(f"  {CYAN}[SHOPEE LOOKUP] Outlet+Cabang '{outlet_name} / {branch_name}'"
+                              f" → Merchant: '{m_name}'{RESET}")
+                        return m_name
+
+            # ── Strategi 2: Lookup hanya Nama Outlet ───────────────────────
+            sf_df = dataframe[b_filter]
+            if not sf_df.empty:
+                # Hapus duplikat Merchant Name (satu outlet bisa banyak row per merchant)
+                unique_merchants = (
+                    sf_df['Merchant Name']
+                    .apply(_clean)
+                    .loc[lambda s: (s != '-') & (s != 'nan') & (s != '')]
+                    .drop_duplicates()
+                    .tolist()
+                )
+                if unique_merchants:
+                    if task_choice == "1":
+                        merchants_str = "|".join(unique_merchants)
+                        print(f"  {CYAN}[SHOPEE LOOKUP] Outlet '{outlet_name}' punya"
+                              f" {len(unique_merchants)} merchant Shopee: {unique_merchants}."
+                              f" Menggunakan semuanya: '{merchants_str}'{RESET}")
+                        return merchants_str
+                    else:
+                        if len(unique_merchants) == 1:
+                            print(f"  {CYAN}[SHOPEE LOOKUP] Outlet '{outlet_name}'"
+                                  f" → Merchant: '{unique_merchants[0]}'{RESET}")
+                            return unique_merchants[0]
+                        else:
+                            # Beberapa merchant Shopee untuk outlet ini → ambil yang pertama
+                            # (biasanya semua di bawah satu akun Shopee yang sama)
+                            print(f"  {CYAN}[SHOPEE LOOKUP] Outlet '{outlet_name}' punya"
+                                  f" {len(unique_merchants)} merchant Shopee: {unique_merchants}."
+                                  f" Menggunakan: '{unique_merchants[0]}'{RESET}")
+                            return unique_merchants[0]
+            return None
+
+        result = do_lookup(df)
+        if result is None and loaded_from_cache:
+            print(f"  {YELLOW}[SHOPEE LOOKUP] Cache returned no merchants. Downloading fresh data...{RESET}")
+            resp = requests.get(GSHEETS_URL, timeout=15)
+            df = pd.read_csv(io.StringIO(resp.text))
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            df.to_csv(cache_path, index=False)
+            result = do_lookup(df)
+
+        if result is not None:
+            return result
 
         print(f"  {YELLOW}[SHOPEE LOOKUP] Tidak ditemukan Merchant Name untuk '{outlet_name}',"
               f" fallback ke nama outlet.{RESET}")
@@ -657,12 +671,18 @@ def interactive_mode():
         shopee_merchant = unified_outlet
         try:
             # Mencari baris yang namanya cocok dan aplikasinya mengandung "Shopee"
-            shopee_row = df_live[(df_live["Nama Outlet"] == unified_outlet) & (df_live["Aplikasi"].str.contains("Shopee", na=False, case=False))]
-            if not shopee_row.empty:
-                merchant_val = shopee_row.iloc[0].get("Merchant Name", "")
-                # Jika tidak kosong dan bukan strip "-", gunakan nilai tersebut
-                if pd.notna(merchant_val) and str(merchant_val).strip() != "-":
-                    shopee_merchant = str(merchant_val).strip()
+            shopee_rows = df_live[(df_live["Nama Outlet"] == unified_outlet) & (df_live["Aplikasi"].str.contains("Shopee", na=False, case=False))]
+            if not shopee_rows.empty:
+                merchants_list = []
+                for _, r in shopee_rows.iterrows():
+                    val = r.get("Merchant Name", "")
+                    if pd.notna(val) and str(val).strip() != "-" and str(val).strip() != "":
+                        merchants_list.append(str(val).strip().rstrip('_').strip())
+                # Deduplicate preserving order
+                seen = set()
+                merchants_list = [x for x in merchants_list if not (x in seen or seen.add(x))]
+                if merchants_list:
+                    shopee_merchant = "|".join(merchants_list)
         except Exception:
             pass
 
@@ -1086,7 +1106,24 @@ Examples:
     # Convert singles to lists for uniform handling if passed via args
     if not isinstance(outlet, list): outlet = [outlet] if outlet else []
     if not isinstance(branch, list): branch = [branch] if branch else []
-    if not isinstance(shopee_merchant, list): shopee_merchant = [shopee_merchant] if shopee_merchant else []
+    if not isinstance(shopee_merchant, list):
+        shopee_merchant = [shopee_merchant] if shopee_merchant else []
+    else:
+        # If it is a list of lists or similar, flatten it
+        new_list = []
+        for item in shopee_merchant:
+            if isinstance(item, list):
+                new_list.extend(item)
+            else:
+                new_list.append(item)
+        shopee_merchant = new_list
+
+    # Split any pipe-separated strings in the list to individual merchants
+    temp_shopee = []
+    for m in shopee_merchant:
+        if m:
+            temp_shopee.extend([x.strip() for x in m.split("|") if x.strip()])
+    shopee_merchant = temp_shopee
 
     # ── Execute ──
     results = {}

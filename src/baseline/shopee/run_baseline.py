@@ -126,7 +126,10 @@ def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=
                 
             sf_df = sf_df[(sf_df['Merchant Name'] != '-') & (sf_df['Merchant Name'].notna())]
             sf_df = sf_df.drop_duplicates(subset=['Merchant Name'])
-            return sf_df['Merchant Name'].tolist()
+            results = sf_df['Merchant Name'].tolist()
+            if results:
+                return results
+            log.info("⚠️ [DATA] Cache returned 0 matching merchants. Dropping cache to fetch fresh data...")
             
     # Jika tidak ada cache atau sudah usang, download ulang
     log.info("🌐 [DATA] Downloading fresh merchant list from Google Sheets...")
