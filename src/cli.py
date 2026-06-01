@@ -1302,7 +1302,7 @@ Examples:
                     import io
                     
                     # Hardcode URL Web App Anda di sini setelah di-deploy
-                    webhook_url = "https://script.google.com/macros/s/AKfycbx8eXubEkNVX3gDDeC-1AOwjeYxL1dG7jjGm_UM2kj5-j92p9gttA87Mf4TJcwirIMR/exec"
+                    webhook_url = "https://script.google.com/macros/s/AKfycbzWqjKShQIhHX9gZgsLfO8OptfggMFrb5qxfWueWnsEYDGIxhKHjOP54ujXEE5XJ0uc/exec"
                     if not webhook_url or "GANTI_DENGAN_URL_ANDA" in webhook_url:
                         print(f"  {YELLOW}⚠️ URL Webhook belum di-hardcode di cli.py.{RESET}")
                         print(f"  {DIM}Silakan deploy apps_script_pdf.js dan masukkan URL-nya ke variabel webhook_url di cli.py{RESET}")
@@ -1370,6 +1370,9 @@ Examples:
                         def format_rp(val):
                             return f"Rp {int(val):,}".replace(",", ".")
                             
+                        total_omzet = omzet_go + omzet_gr + omzet_sf
+                        total_order = order_go + order_gr + order_sf
+                            
                         indo_months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
                         now = datetime.now()
                         
@@ -1385,7 +1388,9 @@ Examples:
                             "omzet_gr": format_rp(omzet_gr),
                             "order_gr": str(round(order_gr)),
                             "omzet_sf": format_rp(omzet_sf),
-                            "order_sf": str(round(order_sf))
+                            "order_sf": str(round(order_sf)),
+                            "total_omzet": format_rp(total_omzet),
+                            "total_order": str(round(total_order))
                         }
                         
                         print(f"  {CYAN}[INFO] Mengirim data agregasi ke Google Apps Script...{RESET}")
