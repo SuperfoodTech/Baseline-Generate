@@ -921,7 +921,7 @@ Examples:
                     import io
                     
                     # Hardcode URL Web App Anda di sini setelah di-deploy
-                    webhook_url = "https://script.google.com/macros/s/AKfycbzWqjKShQIhHX9gZgsLfO8OptfggMFrb5qxfWueWnsEYDGIxhKHjOP54ujXEE5XJ0uc/exec"
+                    webhook_url = "https://script.google.com/macros/s/AKfycbwOZkmUfTL1jsr1qPcJBNkdMYgGdJO2YaY4sB676G4svsZx06bJ0ZBo2GF7GKkVm1Il/exec"
                     if not webhook_url or "GANTI_DENGAN_URL_ANDA" in webhook_url:
                         print(f"  {YELLOW}⚠️ URL Webhook belum di-hardcode di cli.py.{RESET}")
                         print(f"  {DIM}Silakan deploy apps_script_pdf.js dan masukkan URL-nya ke variabel webhook_url di cli.py{RESET}")
