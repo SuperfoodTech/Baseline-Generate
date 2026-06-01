@@ -1,9 +1,9 @@
 const CONFIG = {
     // Template Document ID yang baru (Google Docs Asli)
-    TEMPLATE_ID: "1fw4qv_7lzvPe3uh9XTAsNYoe5VMjc_f5NUq3QHp5Myw",
-    
+    TEMPLATE_ID: "1RVyvMOpYD53jl_u96CjJMHDWX8UMZqE8Xp9hfVoBX9I",
+
     // ID Folder tujuan untuk menyimpan PDF
-    OUTPUT_FOLDER_ID: "1C5nuklD-v6gw8Ge2ZjUuUBnHwHPIkJum" 
+    OUTPUT_FOLDER_ID: "1C5nuklD-v6gw8Ge2ZjUuUBnHwHPIkJum"
 };
 
 function doPost(e) {
@@ -32,22 +32,48 @@ function doPost(e) {
 function generateBaselinePDF(data) {
     // 1. Dapatkan Template
     const templateFile = DriveApp.getFileById(CONFIG.TEMPLATE_ID);
-    
+
     // 2. Tentukan Folder Output
     let targetFolder = DriveApp.getRootFolder();
     if (CONFIG.OUTPUT_FOLDER_ID) {
-        try { 
-            targetFolder = DriveApp.getFolderById(CONFIG.OUTPUT_FOLDER_ID); 
+        try {
+            targetFolder = DriveApp.getFolderById(CONFIG.OUTPUT_FOLDER_ID);
         } catch (e) { }
     }
 
     // Nama file PDF yang dihasilkan
     const newFilename = `Baseline_Report_${data.nama_outlet}_${data.tanggal}_${data.bulan}_${data.tahun}`;
-    
+
     // 3. Buat Duplikat Sementara (Temp Doc)
     const tempFile = templateFile.makeCopy(newFilename + "_TEMP", targetFolder);
     const tempDoc = DocumentApp.openById(tempFile.getId());
     const body = tempDoc.getBody();
+
+    // Helper functions for parsing and formatting
+    const parseRupiah = (val) => {
+        if (!val) return 0;
+        const clean = val.replace(/Rp/g, "").replace(/\./g, "").replace(/\s/g, "").replace(/,/g, ".");
+        const num = parseFloat(clean);
+        return isNaN(num) ? 0 : num;
+    };
+
+    const parseOrder = (val) => {
+        if (!val) return 0;
+        const clean = val.replace(/\s/g, "").replace(/,/g, ".");
+        const num = parseFloat(clean);
+        return isNaN(num) ? 0 : num;
+    };
+
+    const formatRupiah = (val) => {
+        const formatted = Math.round(val).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        return "Rp " + formatted;
+    };
+
+    const totalOmzetVal = parseRupiah(data.omzet_go) + parseRupiah(data.omzet_gr) + parseRupiah(data.omzet_sf);
+    const totalOrderVal = parseOrder(data.order_go) + parseOrder(data.order_gr) + parseOrder(data.order_sf);
+
+    const totalOmzet = data.total_omzet || formatRupiah(totalOmzetVal);
+    const totalOrder = data.total_order || String(Number(totalOrderVal.toFixed(1)));
 
     // 4. Siapkan Data Replacement
     const replacements = {
@@ -61,7 +87,9 @@ function generateBaselinePDF(data) {
         '<<Omzet Gr>>': data.omzet_gr || "Rp 0",
         '<<Order Gr>>': data.order_gr || "0",
         '<<Omzet SF>>': data.omzet_sf || "Rp 0",
-        '<<Order SF>>': data.order_sf || "0"
+        '<<Order SF>>': data.order_sf || "0",
+        '<<Total Omzet>>': totalOmzet,
+        '<<Total Order>>': totalOrder
     };
 
     // 5. Eksekusi Replace Text di seluruh dokumen
