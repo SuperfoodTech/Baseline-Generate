@@ -48,6 +48,51 @@ def get_session_file() -> Path:
         _thread_local.session_file = Path(__file__).resolve().parent.parent / "data" / "session.json"
     return _thread_local.session_file
 
+def get_otp_code(username: str, phone: str) -> str:
+    discord_mode = os.getenv("OFD_DISCORD_MODE") == "1"
+    if not discord_mode:
+        return input(f"🔑 Masukkan 6-digit OTP (atau tekan Enter jika Anda mengisinya langsung di browser): ").strip()
+    
+    script_dir = Path(__file__).resolve().parent.parent
+    data_dir = script_dir / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    otp_file = data_dir / f"otp_request_{username}.json"
+    
+    request_data = {
+        "status": "WAITING_OTP",
+        "username": username,
+        "phone": phone,
+        "requested_at": datetime.now().isoformat()
+    }
+    
+    try:
+        otp_file.write_text(json.dumps(request_data, indent=2))
+        print(f"DISCORD_OTP_REQUEST: {json.dumps(request_data)}", flush=True)
+        log.info(f"DISCORD_OTP_REQUEST: {json.dumps(request_data)}")
+    except Exception as e:
+        log.error(f"Gagal menulis file request OTP: {e}")
+        return ""
+    
+    log.info(f"⏳ [DISCORD] Menunggu input OTP dari Discord untuk akun {username}...")
+    
+    start_wait = time.time()
+    while time.time() - start_wait < 300:
+        if otp_file.exists():
+            try:
+                data = json.loads(otp_file.read_text())
+                if data.get("status") == "RECEIVED" and data.get("code"):
+                    otp_code = str(data["code"]).strip()
+                    log.info(f"✅ [DISCORD] OTP diterima dari Discord: {otp_code}")
+                    otp_file.unlink(missing_ok=True)
+                    return otp_code
+            except Exception as e:
+                log.error(f"Error membaca file OTP: {e}")
+        time.sleep(2)
+        
+    log.warning(f"❌ [DISCORD] Timeout menunggu OTP untuk {username}")
+    otp_file.unlink(missing_ok=True)
+    return ""
+
 def set_session_file(val):
     _thread_local.session_file = Path(val)
 
@@ -338,6 +383,7 @@ def _perform_login(driver, wait, username: str = None, password: str = None, pho
     log.debug("  ⏳ Waiting for post-login redirect or OTP...")
     start_wait = time.time()
     otp_attempted = False
+    wa_otp_triggered = False
     last_resend_time = time.time()
     while time.time() - start_wait < 300:
         if "/authenticate/login" not in driver.current_url: break
@@ -350,8 +396,79 @@ def _perform_login(driver, wait, username: str = None, password: str = None, pho
                 if otp_input: break
 
             if otp_input:
+                if not wa_otp_triggered:
+                    log.warning(f"⚠️ [OTP REQUIRED] Akun '{username or phone}' memerlukan kode verifikasi OTP. Menunggu 1 menit sebelum beralih ke WhatsApp OTP...")
+                    time.sleep(60)
+                    log.info("🔍 Mencoba mengubah metode pengiriman OTP ke WhatsApp...")
+                    
+                    click_other_method_js = """
+                        var elements = Array.from(document.querySelectorAll('*'));
+                        var bestEl = null;
+                        var minLength = Infinity;
+                        for (var el of elements) {
+                            var text = (el.textContent || el.innerText || "").trim().toLowerCase();
+                            if (text.includes("metode verifikasi lain") || 
+                                text.includes("cara verifikasi lain") || 
+                                text.includes("other verification") || 
+                                text.includes("verification method") || 
+                                text.includes("metode lainnya") || 
+                                text.includes("cara lain")) {
+                                if (text.length < minLength) {
+                                    minLength = text.length;
+                                    bestEl = el;
+                                }
+                            }
+                        }
+                        if (bestEl) {
+                            bestEl.click();
+                            return true;
+                        }
+                        return false;
+                    """
+                    if driver.execute_script(click_other_method_js):
+                        log.info("👉 Berhasil mengklik 'Metode verifikasi lain'. Menunggu menu muncul...")
+                        
+                        click_whatsapp_js = """
+                            var elements = Array.from(document.querySelectorAll('*'));
+                            var bestEl = null;
+                            var minLength = Infinity;
+                            for (var el of elements) {
+                                var text = (el.textContent || el.innerText || "").trim().toLowerCase();
+                                if (text === 'whatsapp' || text === 'wa' || text.includes('whatsapp')) {
+                                    if (text.length < minLength) {
+                                        minLength = text.length;
+                                        bestEl = el;
+                                    }
+                                }
+                            }
+                            if (bestEl) {
+                                bestEl.click();
+                                return true;
+                            }
+                            return false;
+                        """
+                        
+                        wa_clicked = False
+                        for _ in range(20): # 20 * 0.5s = 10s max wait
+                            if driver.execute_script(click_whatsapp_js):
+                                wa_clicked = True
+                                break
+                            time.sleep(0.5)
+                            
+                        if wa_clicked:
+                            log.info("👉 Berhasil memilih metode WhatsApp. Menunggu pengiriman...")
+                            time.sleep(5)
+                        else:
+                            log.warning("⚠️ Opsi WhatsApp tidak ditemukan di menu.")
+                    else:
+                        log.warning("⚠️ Tombol 'Metode verifikasi lain' tidak ditemukan.")
+                    
+                    wa_otp_triggered = True
+                    start_wait = time.time()
+                    continue
+
                 log.warning(f"⚠️ [OTP REQUIRED] Akun '{username or phone}' memerlukan kode verifikasi OTP.")
-                otp_code = input(f"🔑 Masukkan 6-digit OTP (atau tekan Enter jika Anda mengisinya langsung di browser): ").strip()
+                otp_code = get_otp_code(username or phone, phone)
                 if otp_code:
                     log.info(f"⌨️  [AUTH] Menginput OTP: {otp_code}")
                     try:
@@ -767,18 +884,16 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
             driver.get(PARTNER_DASHBOARD)
             time.sleep(4)
             
-            if attempt > 0:
-                log.info(f"⚠️ [SESSION] Forcing fresh login (Attempt {attempt+1})...")
-                driver.delete_all_cookies()
-                driver.get("https://partner.shopee.co.id/login")
-                time.sleep(4)
-            
             is_logged_in = False
             current_url = driver.current_url.lower()
-            if ("dashboard" in current_url or "merchant-selector" in current_url) and attempt == 0:
+            
+            # Check if already logged in (on any attempt)
+            if "dashboard" in current_url or "merchant-selector" in current_url:
                 log.info("✅ [SESSION] Browser is already logged in.")
                 is_logged_in = True
-            elif attempt == 0:
+            
+            # Restore from file only on first attempt if not logged in
+            if not is_logged_in and attempt == 0:
                 saved = load_session()
                 if saved:
                     log.debug("🔍 Attempting to restore session from saved tokens...")
@@ -795,6 +910,13 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
                     if "dashboard" in current_url or "merchant-selector" in current_url:
                         log.info("✅ [SESSION] Restored from saved tokens.")
                         is_logged_in = True
+            
+            # Force fresh login only if genuinely NOT logged in on retry attempts
+            if not is_logged_in and attempt > 0:
+                log.info(f"⚠️ [SESSION] Forcing fresh login (Attempt {attempt+1})...")
+                driver.delete_all_cookies()
+                driver.get("https://partner.shopee.co.id/login")
+                time.sleep(4)
 
             # ── Step 3: Login if all above failed ──
             if not is_logged_in:
@@ -932,9 +1054,7 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
             else:
                 if active_id and active_id != "None":
                     log.info(f"📍 [MERCHANT] Current: {active_name} (ID: {active_id})")
-                    if interactive:
-                        choice = input(f"❓ Switch merchant? (y/N): ").strip().lower()
-                        if choice == 'y': do_switch = True
+                    do_switch = False
                 else:
                     log.info("📍 [MERCHANT] No active merchant detected. Redirecting...")
                     do_switch = True
