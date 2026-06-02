@@ -63,7 +63,7 @@ async function getNotificationChannel(interaction = null) {
 }
 
 // Fungsi untuk mengeksekusi skrip python checker
-function runSessionCheck(interaction = null, targetUsername = null, isSequential = false) {
+function runSessionCheck(interaction = null, targetUsername = null, isSequential = true) {
     return new Promise(async (resolve, reject) => {
         const channel = await getNotificationChannel(interaction);
         if (!channel) {
@@ -217,7 +217,7 @@ client.on('interactionCreate', async interaction => {
                 // Simpan channelId terakhir
                 lastChannelId = interaction.channelId;
                 
-                await interaction.editReply("🔍 Memulai pengecekan sesi & switch merchant untuk seluruh akun... (Proses sedang berjalan secara paralel)");
+                await interaction.editReply("🔍 Memulai pengecekan sesi & switch merchant untuk seluruh akun... (Proses sedang berjalan secara sekuensial)");
                 await runSessionCheck(interaction);
             } catch (error) {
                 console.error("Kesalahan saat memproses slash command check-shopee:", error);
