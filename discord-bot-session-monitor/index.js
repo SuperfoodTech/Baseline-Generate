@@ -185,7 +185,7 @@ function runSessionCheck(interaction = null, targetUsername = null, isSequential
     });
 }
 
-client.once('ready', () => {
+client.once('clientReady', () => {
     console.log(`🤖 Bot pemantau sesi Shopee aktif sebagai: ${client.user.tag}`);
     
     // Scheduler Harian (Setiap Hari pukul 08:00 WIB)
