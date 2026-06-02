@@ -61,7 +61,8 @@ function buildJobKey(outlet, aplikator, tanggalMulai, tanggalSelesai) {
  */
 function acquireJob(key, userId, username) {
     if (activeJobs.has(key)) return false;
-    activeJobs.set(key, { userId, username, startedAt: new Date() });
+    const shortId = Math.random().toString(36).substring(2, 10);
+    activeJobs.set(key, { userId, username, startedAt: new Date(), shortId });
     return true;
 }
 
@@ -157,6 +158,75 @@ module.exports = {
         lastCacheTime = 0;
         console.log('[CACHE] Google Sheets cache cleared manually.');
         this.deleteBaselineCaches();
+    },
+
+    async cancelPipeline(interaction) {
+        const shortId = interaction.customId.substring("cancel_pipeline_".length);
+        let foundJobKey = null;
+        let jobInfo = null;
+        for (const [key, info] of activeJobs.entries()) {
+            if (info.shortId === shortId) {
+                foundJobKey = key;
+                jobInfo = info;
+                break;
+            }
+        }
+
+        if (!jobInfo) {
+            return interaction.reply({
+                content: '⚠️ **Proses tidak ditemukan atau sudah selesai.**',
+                flags: 64
+            });
+        }
+
+        try {
+            // Set flag cancelled agar promise.then tidak menimpa pesan status
+            jobInfo.cancelled = true;
+
+            if (jobInfo.process) {
+                console.log(`[CANCEL] User ${interaction.user.username} is terminating process group for PID ${jobInfo.process.pid}`);
+                try {
+                    process.kill(-jobInfo.process.pid, 'SIGKILL');
+                } catch (e) {
+                    jobInfo.process.kill('SIGKILL');
+                }
+            }
+
+            // Hapus lock agar user bisa menjalankan job baru langsung
+            if (foundJobKey) {
+                releaseJob(foundJobKey);
+            }
+
+            // Update pesan status
+            if (jobInfo.statusMsg) {
+                try {
+                    await jobInfo.statusMsg.edit({
+                        embeds: [
+                            new EmbedBuilder()
+                                .setColor(0xFF0000)
+                                .setTitle('❌ Pipeline Dibatalkan Secara Paksa')
+                                .setDescription(`Proses rekap laporan telah dihentikan secara paksa oleh **${interaction.user.username}**.`)
+                                .setTimestamp()
+                        ],
+                        components: []
+                    });
+                } catch (e) {
+                    console.error('Failed to update status message on cancel:', e);
+                }
+            }
+
+            await interaction.reply({
+                content: '🛑 **Proses berhasil dihentikan secara paksa!**',
+                flags: 64
+            });
+
+        } catch (err) {
+            console.error('Error cancelling pipeline:', err);
+            await interaction.reply({
+                content: `❌ Gagal menghentikan proses: ${err.message}`,
+                flags: 64
+            });
+        }
     },
 
     deleteBaselineCaches() {
@@ -500,54 +570,6 @@ module.exports = {
                 return `[${filled}${empty}] ${phase}/${total}`;
             };
 
-            const statusMsg = await interaction.channel.send({
-                embeds: [
-                    new EmbedBuilder()
-                        .setColor(0xFFA500)
-                        .setTitle('⏳ Pipeline Sedang Berjalan...')
-                        .setDescription(
-                            `Pipeline **${formData.tagihan.toUpperCase()}** sedang diproses.\n\n` +
-                            `${makeProgressBar(0, totalPhases)}\n` +
-                            `> 📍 **Outlet:** ${formData.outlet.substring(0, 100)}\n` +
-                            `> 👤 **BD:** ${bdDisplay || 'Semua BD'}\n` +
-                            `> 📱 **Platform:** ${formData.aplikator}\n` +
-                            `> 📅 **Rentang:** ${formData.tanggalMulai} s/d ${formData.tanggalSelesai}\n\n` +
-                            `🔄 *Memulai pipeline...*\n` +
-                            `⏱️ Estimasi waktu: **3–10 menit**`
-                        )
-                        .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
-                        .setTimestamp()
-                ]
-            });
-
-            // Live progress updater — update setiap kali fase berubah
-            let lastUpdateTime = Date.now();
-            const MIN_UPDATE_INTERVAL = 5000; // minimal 5 detik antar update
-
-            const updateProgress = async () => {
-                try {
-                    await statusMsg.edit({
-                        embeds: [
-                            new EmbedBuilder()
-                                .setColor(0xFFA500)
-                                .setTitle('⏳ Pipeline Sedang Berjalan...')
-                                .setDescription(
-                                    `Pipeline **${formData.tagihan.toUpperCase()}** sedang diproses.\n\n` +
-                                    `${makeProgressBar(phaseNumber, totalPhases)}\n` +
-                                    `> 📍 **Outlet:** ${formData.outlet.substring(0, 100)}\n` +
-                                    `> 👤 **BD:** ${bdDisplay || 'Semua BD'}\n` +
-                                    `> 📱 **Platform:** ${formData.aplikator}\n` +
-                                    `> 📅 **Rentang:** ${formData.tanggalMulai} s/d ${formData.tanggalSelesai}\n\n` +
-                                    `${currentPhase}\n` +
-                                    `⏱️ Estimasi waktu: **3–10 menit**`
-                                )
-                                .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
-                                .setTimestamp()
-                        ]
-                    });
-                } catch (e) { /* ignore edit errors */ }
-            };
-
             // ── Job Lock Check — pastikan tidak ada pipeline yang sama berjalan ──
             const jobKey = buildJobKey(formData.outlet, formData.aplikator, formData.tanggalMulai, formData.tanggalSelesai);
             const acquired = acquireJob(jobKey, interaction.user.id, interaction.user.username);
@@ -582,8 +604,71 @@ module.exports = {
 
             console.log(`[JOB LOCK] Acquired by ${interaction.user.username}: ${jobKey}`);
 
+            const jobInfo = activeJobs.get(jobKey);
+            const shortId = jobInfo ? jobInfo.shortId : '';
+
+            const cancelRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`cancel_pipeline_${shortId}`)
+                    .setLabel('🛑 Hentikan Proses')
+                    .setStyle(ButtonStyle.Danger)
+            );
+
+            const statusMsg = await interaction.channel.send({
+                embeds: [
+                    new EmbedBuilder()
+                        .setColor(0xFFA500)
+                        .setTitle('⏳ Pipeline Sedang Berjalan...')
+                        .setDescription(
+                            `Pipeline **${formData.tagihan.toUpperCase()}** sedang diproses.\n\n` +
+                            `${makeProgressBar(0, totalPhases)}\n` +
+                            `> 📍 **Outlet:** ${formData.outlet.substring(0, 100)}\n` +
+                            `> 👤 **BD:** ${bdDisplay || 'Semua BD'}\n` +
+                            `> 📱 **Platform:** ${formData.aplikator}\n` +
+                            `> 📅 **Rentang:** ${formData.tanggalMulai} s/d ${formData.tanggalSelesai}\n\n` +
+                            `🔄 *Memulai pipeline...*\n` +
+                            `⏱️ Estimasi waktu: **3–10 menit**`
+                        )
+                        .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
+                        .setTimestamp()
+                ],
+                components: [cancelRow]
+            });
+
+            // Live progress updater — update setiap kali fase berubah
+            let lastUpdateTime = Date.now();
+            const MIN_UPDATE_INTERVAL = 5000; // minimal 5 detik antar update
+
+            const updateProgress = async () => {
+                try {
+                    const currentJobInfo = activeJobs.get(jobKey);
+                    if (!currentJobInfo || currentJobInfo.cancelled) return;
+
+                    await statusMsg.edit({
+                        embeds: [
+                            new EmbedBuilder()
+                                .setColor(0xFFA500)
+                                .setTitle('⏳ Pipeline Sedang Berjalan...')
+                                .setDescription(
+                                    `Pipeline **${formData.tagihan.toUpperCase()}** sedang diproses.\n\n` +
+                                    `${makeProgressBar(phaseNumber, totalPhases)}\n` +
+                                    `> 📍 **Outlet:** ${formData.outlet.substring(0, 100)}\n` +
+                                    `> 👤 **BD:** ${bdDisplay || 'Semua BD'}\n` +
+                                    `> 📱 **Platform:** ${formData.aplikator}\n` +
+                                    `> 📅 **Rentang:** ${formData.tanggalMulai} s/d ${formData.tanggalSelesai}\n\n` +
+                                    `${currentPhase}\n` +
+                                    `⏱️ Estimasi waktu: **3–10 menit**`
+                                )
+                                .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
+                                .setTimestamp()
+                        ],
+                        components: [cancelRow]
+                    });
+                } catch (e) { /* ignore edit errors */ }
+            };
+
             // Jalankan pipeline dengan live log tracking
-            runPipeline(formData, async (logLine) => {
+            const pipelineResult = runPipeline(formData, async (logLine) => {
                 console.log(`[PIPELINE] ${logLine}`);
 
                 // Deteksi fase dari output log
@@ -617,8 +702,23 @@ module.exports = {
                         await updateProgress();
                     }
                 }
-            }).then(async (result) => {
+            });
+
+            // Simpan referensi proses & pesan status untuk pembatalan
+            if (jobInfo) {
+                jobInfo.process = pipelineResult.proc;
+                jobInfo.statusMsg = statusMsg;
+            }
+
+            pipelineResult.promise.then(async (result) => {
+                const currentJobInfo = activeJobs.get(jobKey);
+                const wasCancelled = currentJobInfo && currentJobInfo.cancelled;
+
                 releaseJob(jobKey);
+
+                if (wasCancelled) {
+                    return; // cancelPipeline sudah mengupdate pesan status
+                }
                 // ── FINAL STATUS — Akurat berdasarkan hasil pipeline ──
                 if (result.success) {
                     // Cek apakah output mengandung tanda partial failure

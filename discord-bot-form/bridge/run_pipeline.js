@@ -81,7 +81,8 @@ function firstValue(str) {
  * @returns {Promise<{success:boolean, exitCode:number, output:string}>}
  */
 function runPipeline(formData, onLog = () => {}) {
-    return new Promise((resolve) => {
+    let proc;
+    const promise = new Promise((resolve) => {
         const startDate  = convertDate(formData.tanggalMulai);
         const endDate    = convertDate(formData.tanggalSelesai);
         const platform   = detectPlatform(formData.aplikator);
@@ -123,9 +124,10 @@ function runPipeline(formData, onLog = () => {}) {
 
         let output = '';
 
-        const proc = spawn(PYTHON_EXE, args, {
+        proc = spawn(PYTHON_EXE, args, {
             cwd : SRC_DIR,
             env,
+            detached: true,
         });
 
         proc.stdout.on('data', (data) => {
@@ -170,6 +172,7 @@ function runPipeline(formData, onLog = () => {}) {
             });
         });
     });
+    return { promise, proc };
 }
 
 module.exports = { runPipeline, convertDate, detectPlatform };

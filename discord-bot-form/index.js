@@ -74,6 +74,11 @@ client.on('interactionCreate', async interaction => {
                     flags: 64 // ephemeral (only the clicker sees it)
                 });
             }
+        } else if (interaction.customId.startsWith('cancel_pipeline_')) {
+            const command = client.commands.get('start');
+            if (command && command.cancelPipeline) {
+                await command.cancelPipeline(interaction);
+            }
         }
     }
 });
