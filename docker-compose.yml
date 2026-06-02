@@ -31,6 +31,35 @@ services:
       - HEADLESS=true
       - TZ=Asia/Jakarta
 
+  session-monitor-bot:
+    build: .
+    container_name: ofd_session_monitor_bot
+    init: true
+    restart: unless-stopped
+    working_dir: /app/discord-bot-session-monitor
+    command: npm start
+    env_file:
+      - ./discord-bot-session-monitor/.env
+    volumes:
+      - ./data:/app/data
+      - ./src/database:/app/src/database
+      - ./src/logs:/app/src/logs
+      - ./src/laporan:/app/src/laporan
+      - ./src/shopee-omzet-automation/data:/app/src/shopee-omzet-automation/data
+      - ./src/baseline/shopee/data:/app/src/baseline/shopee/data
+      - ./src/VB/shopee/sessions:/app/src/VB/shopee/sessions
+    depends_on:
+      - db
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=superfood_admin
+      - DB_PASS=superfood_password
+      - DB_NAME=srs_db
+      - HEADLESS=true
+      - TZ=Asia/Jakarta
+
   db:
     image: postgres:15
     container_name: srs_postgres

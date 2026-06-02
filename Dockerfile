@@ -48,5 +48,9 @@ RUN uv run playwright install --with-deps chromium
 WORKDIR /app/discord-bot-form
 RUN npm install
 
+# Setup Environment Node.js untuk Discord Bot (Session Monitor)
+WORKDIR /app/discord-bot-session-monitor
+RUN npm install
+
 # Command bawaan ketika container berjalan
 CMD ["npm", "start"]
