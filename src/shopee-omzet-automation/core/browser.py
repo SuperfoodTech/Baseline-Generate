@@ -68,7 +68,7 @@ def get_otp_code(username: str, phone: str) -> str:
     try:
         otp_file.write_text(json.dumps(request_data, indent=2))
         print(f"DISCORD_OTP_REQUEST: {json.dumps(request_data)}", flush=True)
-        log.info(f"DISCORD_OTP_REQUEST: {json.dumps(request_data)}")
+        log.info(f"Sent OTP request to Discord for: {username}")
     except Exception as e:
         log.error(f"Gagal menulis file request OTP: {e}")
         return ""
