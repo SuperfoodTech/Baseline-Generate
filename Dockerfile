@@ -52,5 +52,8 @@ RUN npm install
 WORKDIR /app/discord-bot-session-monitor
 RUN npm install
 
+# Reset default WORKDIR to discord-bot-form
+WORKDIR /app/discord-bot-form
+
 # Command bawaan ketika container berjalan
 CMD ["npm", "start"]

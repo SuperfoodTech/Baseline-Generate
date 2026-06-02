@@ -6,6 +6,8 @@ services:
     container_name: ofd_discord_bot
     init: true
     restart: unless-stopped
+    working_dir: /app/discord-bot-form
+    command: npm start
     # Variabel environment di-load dari file .env bot
     env_file:
       - ./discord-bot-form/.env
