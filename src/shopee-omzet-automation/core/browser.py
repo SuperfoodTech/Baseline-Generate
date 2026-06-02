@@ -947,7 +947,7 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
                                 var btns = document.querySelectorAll('button');
                                 for (var b of btns) {
                                     var bText = (b.innerText || "").toLowerCase();
-                                    if (bText.includes('masuk') || bText.includes('konfirmasi') || bText.includes('lanjutkan') || bText.includes('ok')) {
+                                    if (bText.includes('masuk') || bText.includes('konfirmasi') || bText.includes('lanjutkan') || bText.includes('ok') || bText.includes('gabung')) {
                                         b.click();
                                     }
                                 }
@@ -961,24 +961,51 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
                         if driver.execute_script(bypass_js):
                             log.debug("  ✅ Selection triggered via JS.")
                             try:
-                                # Wait to see if it redirects to onboarding/invitation acceptance page
-                                time.sleep(3)
-                                if "onboarding" in driver.current_url:
+                                # Wait for either dashboard to load, onboarding page to load, or the join button to appear
+                                log.debug("  ⏳ Waiting for redirect (either dashboard or onboarding)...")
+                                start_redirect_wait = time.time()
+                                redirected = False
+                                is_onboard_route = False
+                                
+                                while time.time() - start_redirect_wait < 15:
+                                    curr_url = driver.current_url.lower()
+                                    if "/food/dashboard" in curr_url:
+                                        redirected = True
+                                        break
+                                    if "onboarding" in curr_url:
+                                        is_onboard_route = True
+                                        redirected = True
+                                        break
+                                    # Check if the "Gabung" button is present on the page (even if URL hasn't changed yet)
                                     try:
-                                        btn_xpath = "//button[contains(., 'Gabung dengan Merchant')]"
+                                        btns = driver.find_elements(By.XPATH, "//button[contains(., 'Gabung dengan Merchant') or contains(., 'Gabung') or contains(text(), 'Gabung')]")
+                                        if any(b.is_displayed() for b in btns):
+                                            is_onboard_route = True
+                                            redirected = True
+                                            break
+                                    except: pass
+                                    time.sleep(0.5)
+                                
+                                if is_onboard_route:
+                                    log.info("📍 [SESSION] Onboarding page/modal detected. Accepting invitation...")
+                                    try:
+                                        btn_xpath = "//button[contains(., 'Gabung dengan Merchant') or contains(., 'Gabung') or contains(text(), 'Gabung')]"
                                         onboard_btn = WebDriverWait(driver, 10).until(
                                             EC.element_to_be_clickable((By.XPATH, btn_xpath))
                                         )
                                         onboard_btn.click()
-                                        log.info("  👉 Clicked 'Gabung dengan Merchant' during session init onboarding")
+                                        log.info("  👉 Clicked 'Gabung' button during session init onboarding")
                                         time.sleep(5)
-                                    except:
-                                        pass
+                                    except Exception as err:
+                                        log.warning(f"  ⚠️ Could not click Gabung button: {err}")
+                                
+                                # Finally, wait for the dashboard redirection to complete
                                 wait.until(lambda d: "/food/dashboard" in d.current_url)
                                 log.debug("  ✅ Landed on dashboard.")
                                 bypass_success = True
                                 break
-                            except: pass
+                            except Exception as e:
+                                log.warning(f"  ⚠️ Onboarding selector bypass attempt failed: {e}")
                         try:
                             container = driver.find_element(By.CSS_SELECTOR, ".ant-list-items, [role='list']")
                             driver.execute_script("arguments[0].scrollTop += 300;", container)
