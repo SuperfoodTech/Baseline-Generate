@@ -1133,6 +1133,20 @@ def _handle_merchant_selection(driver, active_id_forced=None, interactive=True):
                     if all_merchants_data and m_id == "Unknown":
                         continue
                         
+                    # Filter out obvious non-merchant generic texts
+                    generic_texts = [
+                        "akun", "pengaturan", "log out", "halaman utama", "baru", "menu", "outlet", 
+                        "shopeefood", "terapkan", "sembunyikan", "notifikasi", "pilih merchant lain", 
+                        "pusat bantuan", "transaksi berhasil", "baris per halaman", "ringkasan toko", 
+                        "nama toko", "jumlah total", "laporan saya", "penghasilan", "performa outlet", 
+                        "periode transaksi", "ubah bahasa", "daftar merchant", "daftar di sini", 
+                        "memulai bisnis baru?", "pilih merchant", "gabung dengan merchant", 
+                        "buat merchant baru", "hubungi kami", "faq", "syarat & ketentuan", 
+                        "pusat edukasi seller"
+                    ]
+                    if m_id == "Unknown" and (len(name) < 4 or any(g == name_key or g in name_key for g in generic_texts) or "diupdate pada" in name_key):
+                        continue
+                        
                     if m_id != active_id and name not in all_found:
                         all_found[name] = {"name": name, "element": all_els[r['index']], "id": m_id}
             
