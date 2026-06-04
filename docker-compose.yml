@@ -62,6 +62,25 @@ services:
       - PYTHONUNBUFFERED=1
       - HEADLESS=true
       - TZ=Asia/Jakarta
+      - OFD_DISCORD_MODE=1
+
+  session_monitor:
+    build: .
+    container_name: shopee_session_monitor
+    init: true
+    restart: unless-stopped
+    working_dir: /app/discord-bot-session-monitor
+    command: npm start
+    env_file:
+      - ./discord-bot-session-monitor/.env
+    volumes:
+      - ./src/shopee-omzet-automation/data:/app/src/shopee-omzet-automation/data
+      - ./src/baseline/shopee/data:/app/src/baseline/shopee/data
+      - ./src/VB/shopee/sessions:/app/src/VB/shopee/sessions
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HEADLESS=true
+      - TZ=Asia/Jakarta
 
 volumes:
   postgres_data:

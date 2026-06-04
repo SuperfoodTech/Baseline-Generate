@@ -333,6 +333,76 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
+// --- Monitoring background OTP requests (e.g. from shopee_session_warmer) ---
+const activeOtpNotifications = new Map(); // username -> { messageId, channelId }
+
+setInterval(async () => {
+    try {
+        const DATA_DIR = path.resolve(__dirname, '../src/shopee-omzet-automation/data');
+        if (!fs.existsSync(DATA_DIR)) return;
+
+        const files = fs.readdirSync(DATA_DIR);
+        const otpFiles = files.filter(f => f.startsWith('otp_request_') && f.endsWith('.json'));
+
+        // Clean up tracking for files that have been deleted/resolved by python
+        for (const [username, info] of activeOtpNotifications.entries()) {
+            if (!otpFiles.includes(`otp_request_${username}.json`)) {
+                activeOtpNotifications.delete(username);
+                console.log(`ℹ️ [MONITOR] OTP Request file for ${username} is resolved and deleted.`);
+            }
+        }
+
+        // Process active files
+        for (const file of otpFiles) {
+            const filePath = path.join(DATA_DIR, file);
+            let content;
+            try {
+                content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+            } catch (err) {
+                continue; // Skip if file is being written to
+            }
+
+            if (content.status === 'WAITING_OTP') {
+                const username = content.username;
+                const phone = content.phone;
+
+                if (!activeOtpNotifications.has(username)) {
+                    // Check if we are ready
+                    if (!client.isReady()) continue;
+                    
+                    const channel = await getNotificationChannel();
+                    if (channel) {
+                        console.log(`📡 [MONITOR] Background OTP request detected for ${username}. Sending Discord message...`);
+                        const otpEmbed = new EmbedBuilder()
+                            .setTitle('🔑 Shopee OTP Required (Background Warmer)')
+                            .setDescription(`Akun **${username}** (${phone}) memerlukan kode verifikasi OTP untuk melanjutkan login di background.`)
+                            .setColor('#ff4500')
+                            .setFooter({ text: 'Klik tombol di bawah untuk memasukkan kode OTP' })
+                            .setTimestamp();
+
+                        const btn = new ButtonBuilder()
+                            .setCustomId(`otp_btn_${username}`)
+                            .setLabel('Masukkan OTP')
+                            .setStyle(ButtonStyle.Primary);
+
+                        const row = new ActionRowBuilder().addComponents(btn);
+
+                        const sentMessage = await channel.send({ embeds: [otpEmbed], components: [row] });
+                        
+                        activeOtpNotifications.set(username, {
+                            messageId: sentMessage.id,
+                            channelId: sentMessage.channelId,
+                            requestedAt: content.requested_at
+                        });
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.error("⚠️ [MONITOR] Error in background OTP file monitoring:", error);
+    }
+}, 5000);
+
 if (!process.env.DISCORD_TOKEN) {
     console.error("❌ Error: DISCORD_TOKEN tidak ditemukan di file .env");
     process.exit(1);
