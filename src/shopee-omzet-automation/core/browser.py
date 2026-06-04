@@ -1056,7 +1056,7 @@ def auto_switch_merchant(driver, target_name):
 
 
 
-def _handle_merchant_selection(driver, active_id_forced=None, interactive=True, username=None):
+def _handle_merchant_selection(driver, active_id_forced=None, interactive=True):
     log.info("===========================================================================")
     """
     Handles merchant selection, either automatically if a target is known 
@@ -1073,12 +1073,7 @@ def _handle_merchant_selection(driver, active_id_forced=None, interactive=True, 
         
         # Try to find all merchants for interactive selection
         all_found = {}
-        all_merchants_data = {
-            "superfood": "11511947",
-            "wonderfood": "14367488",
-            "lokarasa": "14384953",
-            "gurame bakar, do eat": "15892383",
-        }
+        all_merchants_data = {}
         try:
             api_response_path = Path(__file__).resolve().parent.parent / "API" / "response.json"
             if api_response_path.exists():
@@ -1090,18 +1085,34 @@ def _handle_merchant_selection(driver, active_id_forced=None, interactive=True, 
 
         target_names = list(all_merchants_data.keys())
         
-        # Robust JS scan for merchant list
+        # Robust & 1vCPU friendly JS scan for merchant list
         for attempt in range(10):
             log.debug(f"  📥 Scanning for merchants (Attempt {attempt+1}/10)...")
             scan_result = driver.execute_script("""
                 var results = [];
-                var items = document.querySelectorAll('div, li, span, p');
+                // Target specific merchant-like containers to avoid querying thousands of nodes
+                var items = document.querySelectorAll('li, [class*="merchant"], [class*="shop"]');
                 for (var i = 0; i < items.length; i++) {
                     var el = items[i];
-                    if (el.children.length > 5) continue;
+                    // Skip wrappers with many children to target leaf nodes/cards
+                    if (el.children.length > 3) continue;
                     var text = (el.innerText || "").trim().split('\\n')[0];
-                    if (!text || text.length < 3) continue;
+                    if (!text || text.length < 3 || text.length > 50) continue;
                     
+                    // Exclude generic non-merchant phrases inside JS to save CPU
+                    var name_key = text.toLowerCase();
+                    var generic = [
+                        "akun", "pengaturan", "log out", "halaman utama", "baru", "menu", "outlet", 
+                        "shopeefood", "terapkan", "sembunyikan", "notifikasi", "pilih merchant lain", 
+                        "pusat bantuan", "transaksi berhasil", "baris per halaman", "ringkasan toko", 
+                        "nama toko", "jumlah total", "laporan saya", "penghasilan", "performa outlet", 
+                        "periode transaksi", "ubah bahasa", "daftar merchant", "daftar di sini", 
+                        "memulai bisnis baru?", "pilih merchant", "gabung dengan merchant", 
+                        "buat merchant baru", "hubungi kami", "faq", "syarat & ketentuan",
+                        "pusat edukasi seller"
+                    ];
+                    if (generic.some(g => name_key === g || name_key.includes(g))) continue;
+
                     let rect = el.getBoundingClientRect();
                     if (rect.width > 0 && rect.height > 0) {
                         results.push({ name: text, index: i });
@@ -1111,7 +1122,7 @@ def _handle_merchant_selection(driver, active_id_forced=None, interactive=True, 
             """)
 
             if scan_result:
-                all_els = driver.find_elements(By.CSS_SELECTOR, 'div, li, span, p')
+                all_els = driver.find_elements(By.CSS_SELECTOR, 'li, [class*="merchant"], [class*="shop"]')
                 for r in scan_result:
                     name = r['name']
                     name_key = name.lower()
@@ -1122,20 +1133,6 @@ def _handle_merchant_selection(driver, active_id_forced=None, interactive=True, 
                     if all_merchants_data and m_id == "Unknown":
                         continue
                         
-                    # Filter out obvious non-merchant generic texts jika terpaksa
-                    generic_texts = [
-                        "akun", "pengaturan", "log out", "halaman utama", "baru", "menu", "outlet", 
-                        "shopeefood", "terapkan", "sembunyikan", "notifikasi", "pilih merchant lain", 
-                        "pusat bantuan", "transaksi berhasil", "baris per halaman", "ringkasan toko", 
-                        "nama toko", "jumlah total", "laporan saya", "penghasilan", "performa outlet", 
-                        "periode transaksi", "ubah bahasa", "daftar merchant", "daftar di sini", 
-                        "memulai bisnis baru?", "pilih merchant", "gabung dengan merchant", 
-                        "buat merchant baru", "hubungi kami", "faq", "syarat & ketentuan", 
-                        "pusat edukasi seller"
-                    ]
-                    if m_id == "Unknown" and (len(name) < 4 or any(g == name_key for g in generic_texts) or "diupdate pada" in name_key):
-                        continue
-
                     if m_id != active_id and name not in all_found:
                         all_found[name] = {"name": name, "element": all_els[r['index']], "id": m_id}
             
@@ -1144,7 +1141,8 @@ def _handle_merchant_selection(driver, active_id_forced=None, interactive=True, 
             driver.execute_script("document.querySelectorAll('div[class*=\"menu\"], ul[class*=\"menu\"], .ant-popover-content').forEach(el => el.scrollTop += 300);")
             time.sleep(1.5)
 
-        merchants = sorted(all_found.values(), key=lambda x: x['name'])
+        # Do NOT sort alphabetically! Keep original DOM layout order (first merchant visible = index 1)
+        merchants = list(all_found.values())
         if not merchants:
             if "/food/dashboard" in driver.current_url: return True
             log.warning("⚠️ No merchants found in scan.")
@@ -1168,25 +1166,6 @@ def _handle_merchant_selection(driver, active_id_forced=None, interactive=True, 
                             matched_idx = i + 1
                             break
                             
-                # 2. Coba cocokkan dengan username
-                if not matched_idx and username:
-                    username_lower = str(username).lower()
-                    target_keyword = None
-                    if "7303" in username_lower or any(f"73{x}" in username_lower for x in range(9, 14)):
-                        target_keyword = "superfood"
-                    elif "7304" in username_lower:
-                        target_keyword = "wonderfood"
-                    elif "7307" in username_lower:
-                        target_keyword = "lokarasa"
-                    elif "7308" in username_lower:
-                        target_keyword = "do eat"
-                    
-                    if target_keyword:
-                        for i, m in enumerate(merchants):
-                            if target_keyword in m["name"].lower():
-                                matched_idx = i + 1
-                                break
-                                
                 if matched_idx:
                     log.info(f"👉 Ditemukan indeks merchant yang cocok: {matched_idx} ({merchants[matched_idx-1]['name']})")
                     choice = str(matched_idx)
@@ -1572,7 +1551,7 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
                     )
                     if recovered:
                         # After re-entry, run merchant selection normally
-                        success = _handle_merchant_selection(driver, active_id_forced=None, interactive=interactive, username=username)
+                        success = _handle_merchant_selection(driver, active_id_forced=None, interactive=interactive)
                     else:
                         log.error("❌ Logout/relogin recovery failed. Cannot proceed.")
                         success = False
