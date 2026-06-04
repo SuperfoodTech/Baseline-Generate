@@ -14,6 +14,7 @@ class Logger:
 
     def _setup_logger(self, name):
         self.logger = logging.getLogger(name)
+        self.logger.propagate = False
         
         # Get log level from env, default to INFO
         level_name = os.getenv("LOG_LEVEL", "INFO").upper()

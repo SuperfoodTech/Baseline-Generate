@@ -51,7 +51,17 @@ def get_session_file() -> Path:
 def get_otp_code(username: str, phone: str) -> str:
     discord_mode = os.getenv("OFD_DISCORD_MODE") == "1"
     if not discord_mode:
-        return input(f"🔑 Masukkan 6-digit OTP (atau tekan Enter jika Anda mengisinya langsung di browser): ").strip()
+        if not sys.stdin.isatty():
+            log.warning("⚠️ [OTP] Stdin is not a TTY (running in background/Docker). Cannot prompt for OTP via terminal. Waiting 10 seconds...")
+            time.sleep(10)
+            return ""
+        try:
+            return input(f"🔑 Masukkan 6-digit OTP (atau tekan Enter jika Anda mengisinya langsung di browser): ").strip()
+        except EOFError:
+            log.warning("⚠️ [OTP] Stdin reached EOF. Waiting 10 seconds...")
+            time.sleep(10)
+            return ""
+
     
     script_dir = Path(__file__).resolve().parent.parent
     data_dir = script_dir / "data"
