@@ -211,29 +211,122 @@ def _deliberate_logout_and_relogin(
             driver.get(PARTNER_DASHBOARD)
             time.sleep(3)
 
-        actions = ActionChains(driver)
-
-        # ── Step 2: Click the profile/merchantName to open the dropdown ───
-        profile_el = None
-        for sel in [".merchantName", ".user-info", "li.ant-menu-item:last-child"]:
-            try:
-                el = driver.find_element(By.CSS_SELECTOR, sel)
-                if el.is_displayed():
-                    profile_el = el
+        # ── Step 2: Open the profile/merchantName dropdown with retries ───
+        profile_clicked = False
+        for attempt in range(3):
+            # Dismiss any blocking overlays/notifications
+            driver.execute_script("""
+                document.querySelectorAll('.ant-notification, .ant-modal, .ant-notification-notice, .ant-message').forEach(el => el.remove());
+            """)
+            
+            # Find the WebElement via JS returning it
+            profile_el = driver.execute_script("""
+                var profileEl = null;
+                // 1. Try specific CSS selectors first
+                for (var sel of ['.merchantName', '.user-info', '.ant-dropdown-trigger', '.ant-dropdown-link']) {
+                    var el = document.querySelector(sel);
+                    if (el && el.offsetHeight > 0) {
+                        profileEl = el;
+                        break;
+                    }
+                }
+                // 2. Search for element containing "Admin:"
+                if (!profileEl) {
+                    var elements = Array.from(document.querySelectorAll('span, p, div, li, a'));
+                    for (var el of elements) {
+                        var text = (el.innerText || '').trim();
+                        if (text.includes('Admin:') && text.length < 30 && el.offsetHeight > 0) {
+                            profileEl = el;
+                            break;
+                        }
+                    }
+                }
+                // 3. Fallback to last .ant-dropdown-trigger
+                if (!profileEl) {
+                    var triggers = Array.from(document.querySelectorAll('.ant-dropdown-trigger, .ant-dropdown-link'));
+                    if (triggers.length > 0) {
+                        profileEl = triggers[triggers.length - 1];
+                    }
+                }
+                return profileEl;
+            """)
+            
+            if profile_el:
+                log.info(f"  📍 Found profile menu element (Attempt {attempt+1}). Dispatching JS click...")
+                # Dispatch JS events
+                driver.execute_script("""
+                    var el = arguments[0];
+                    var ev1 = new MouseEvent('mouseover', { bubbles: true, cancelable: true });
+                    var ev2 = new MouseEvent('mouseenter', { bubbles: true, cancelable: true });
+                    var ev3 = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+                    var ev4 = new MouseEvent('click', { bubbles: true, cancelable: true });
+                    var ev5 = new MouseEvent('mouseup', { bubbles: true, cancelable: true });
+                    el.dispatchEvent(ev1);
+                    el.dispatchEvent(ev2);
+                    el.dispatchEvent(ev3);
+                    el.dispatchEvent(ev4);
+                    el.dispatchEvent(ev5);
+                """, profile_el)
+                time.sleep(1.5)
+                
+                # Check if dropdown is visible (ignoring hidden parents)
+                has_dropdown = driver.execute_script("""
+                    var targets = ['log out', 'logout', 'keluar'];
+                    var candidates = Array.from(document.querySelectorAll('li, span, div, a'));
+                    for (var el of candidates) {
+                        var rect = el.getBoundingClientRect();
+                        if (rect.width === 0 || rect.height === 0) continue;
+                        if (el.closest('.ant-dropdown-hidden, [style*="display: none"], [style*="visibility: hidden"]')) continue;
+                        var text = (el.innerText || '').trim().toLowerCase();
+                        if (targets.some(function(k){ return text.includes(k); })) {
+                            return true;
+                        }
+                    }
+                    return false;
+                """)
+                
+                if not has_dropdown:
+                    log.info("  ⚠️ JS click did not reveal dropdown. Retrying with Selenium native ActionChains hover/click...")
+                    try:
+                        actions = ActionChains(driver)
+                        actions.move_to_element(profile_el).perform()
+                        time.sleep(0.5)
+                        actions.click(profile_el).perform()
+                        time.sleep(1.5)
+                        
+                        has_dropdown = driver.execute_script("""
+                            var targets = ['log out', 'logout', 'keluar'];
+                            var candidates = Array.from(document.querySelectorAll('li, span, div, a'));
+                            for (var el of candidates) {
+                                var rect = el.getBoundingClientRect();
+                                if (rect.width === 0 || rect.height === 0) continue;
+                                if (el.closest('.ant-dropdown-hidden, [style*="display: none"], [style*="visibility: hidden"]')) continue;
+                                var text = (el.innerText || '').trim().toLowerCase();
+                                if (targets.some(function(k){ return text.includes(k); })) {
+                                    return true;
+                                }
+                            }
+                            return false;
+                        """)
+                    except Exception as e:
+                        log.warning(f"  ⚠️ ActionChains failed: {e}")
+                
+                if has_dropdown:
+                    log.info("  ✅ Dropdown is now visible.")
+                    profile_clicked = True
                     break
-            except Exception:
-                continue
+                else:
+                    log.warning("  ⚠️ Dropdown menu elements not visible yet. Retrying...")
+            else:
+                log.warning(f"  ⚠️ Profile element not found on page (Attempt {attempt+1}). Retrying...")
+            time.sleep(1.5)
 
-        if not profile_el:
-            log.warning("  ⚠️ Profile element not found — cannot trigger logout.")
+        if not profile_clicked:
+            log.warning("  ⚠️ Profile element or dropdown could not be opened.")
             return False
 
-        actions.move_to_element(profile_el).click().perform()
-        log.info("  👆 Clicked profile menu.")
-        time.sleep(1.5)  # Wait for dropdown to render
-
         # ── Step 3: Find and click 'Log Out' in the dropdown ────────────
-        logout_clicked = driver.execute_script("""
+        logout_el = driver.execute_script("""
             var targets = ['log out', 'logout', 'keluar'];
             var candidates = Array.from(document.querySelectorAll(
                 'li.ant-menu-item, li[role="menuitem"], .ant-dropdown-menu-item,'
@@ -242,37 +335,97 @@ def _deliberate_logout_and_relogin(
             for (var el of candidates) {
                 var rect = el.getBoundingClientRect();
                 if (rect.width === 0 || rect.height === 0) continue;
+                if (el.closest('.ant-dropdown-hidden, [style*="display: none"], [style*="visibility: hidden"]')) continue;
+                
                 var text = (el.innerText || '').trim().toLowerCase();
                 if (targets.some(function(k){ return text === k; })) {
-                    el.click();
-                    return true;
+                    // Walk up to the closest interactive wrapper (e.g. li or .ant-dropdown-menu-item)
+                    var clickable = el.closest('li, button, a, [role="menuitem"], .ant-dropdown-menu-item') || el;
+                    return clickable;
                 }
             }
-            return false;
+            return null;
         """)
 
-        if not logout_clicked:
+        if not logout_el:
             log.warning("  ⚠️ 'Log Out' menu item not found in dropdown.")
             return False
 
-        log.info("  👈 Clicked 'Log Out' from profile dropdown.")
+        # Click it using Selenium
+        try:
+            log.info("  👈 Clicking 'Log Out' menu item...")
+            logout_el.click()
+        except Exception:
+            # Fallback to ActionChains
+            try:
+                ActionChains(driver).move_to_element(logout_el).click().perform()
+            except Exception as e:
+                log.warning(f"  ⚠️ Selenium click failed: {e}. Trying JS MouseEvents as fallback...")
+                driver.execute_script("""
+                    var el = arguments[0];
+                    var ev1 = new MouseEvent('mouseover', { bubbles: true, cancelable: true });
+                    var ev2 = new MouseEvent('mouseenter', { bubbles: true, cancelable: true });
+                    var ev3 = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+                    var ev4 = new MouseEvent('click', { bubbles: true, cancelable: true });
+                    var ev5 = new MouseEvent('mouseup', { bubbles: true, cancelable: true });
+                    el.dispatchEvent(ev1); el.dispatchEvent(ev2); el.dispatchEvent(ev3); el.dispatchEvent(ev4); el.dispatchEvent(ev5);
+                """, logout_el)
+        
         time.sleep(1.5)  # Wait for confirmation dialog
 
-        # ── Step 4: Click the 'Log Out' confirmation button ─────────────
-        confirm_clicked = driver.execute_script("""
-            var buttons = Array.from(document.querySelectorAll('button'));
-            for (var btn of buttons) {
-                var text = (btn.innerText || '').trim().toLowerCase();
-                if (text === 'log out' || text === 'logout' || text === 'keluar') {
-                    btn.click();
-                    return true;
+        # ── Step 4: Click the 'Log Out' confirmation button with retries ────
+        confirm_clicked = False
+        for confirm_attempt in range(5):
+            confirm_el = driver.execute_script("""
+                var targets = ['log out', 'logout', 'keluar'];
+                // ONLY look inside modal containers
+                var modal = document.querySelector('.ant-modal-content, .ant-modal, .ant-dialog, .ant-modal-wrap');
+                if (!modal) return null;
+                
+                var candidates = Array.from(modal.querySelectorAll('button, .ant-btn, [role="button"]'));
+                for (var btn of candidates) {
+                    var rect = btn.getBoundingClientRect();
+                    if (rect.width === 0 || rect.height === 0) continue;
+                    var text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+                    if (targets.some(function(k){ return text === k || text === ('confirm ' + k); })) {
+                        // Walk up to the closest clickable element (e.g. button or .ant-btn)
+                        var clickable = btn.closest('button, [role="button"], a, .ant-btn') || btn;
+                        return clickable;
+                    }
                 }
-            }
-            return false;
-        """)
+                return null;
+            """)
+            
+            if confirm_el:
+                log.info(f"  📍 Found confirmation button on Attempt {confirm_attempt+1}. Clicking...")
+                try:
+                    confirm_el.click()
+                except Exception as e:
+                    log.warning(f"  ⚠️ Selenium click failed: {e}. Trying ActionChains...")
+                    try:
+                        ActionChains(driver).move_to_element(confirm_el).click().perform()
+                    except Exception as e2:
+                        log.warning(f"  ⚠️ ActionChains click failed: {e2}. Trying JS click...")
+                        driver.execute_script("arguments[0].click();", confirm_el)
+                
+                time.sleep(2)
+                # Verify if modal is gone
+                modal_present = driver.execute_script("""
+                    var modal = document.querySelector('.ant-modal-content, .ant-modal, .ant-dialog, .ant-modal-wrap');
+                    return !!(modal && modal.offsetHeight > 0);
+                """)
+                if not modal_present:
+                    log.info("  ✅ Modal disappeared. Logout confirmed.")
+                    confirm_clicked = True
+                    break
+                else:
+                    log.warning("  ⚠️ Modal is still present after click. Retrying...")
+            else:
+                log.warning(f"  ⚠️ Confirmation button/modal not found yet (Attempt {confirm_attempt+1}). Retrying...")
+                time.sleep(1.5)
 
         if not confirm_clicked:
-            log.warning("  ⚠️ Confirmation 'Log Out' button not found.")
+            log.warning("  ⚠️ Confirmation 'Log Out' button could not be clicked.")
             try:
                 driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
             except Exception:
@@ -1362,11 +1515,8 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
                         # After re-entry, run merchant selection normally
                         success = _handle_merchant_selection(driver, active_id_forced=None, interactive=interactive)
                     else:
-                        # Fallback: direct URL to merchant selector
-                        log.warning("  ⚠️ Logout/relogin recovery failed — trying direct URL fallback.")
-                        driver.get(MERCHANT_SELECTOR_URL)
-                        time.sleep(3)
-                        success = _handle_merchant_selection(driver, active_id_forced=active_id, interactive=interactive)
+                        log.error("❌ Logout/relogin recovery failed. Cannot proceed.")
+                        success = False
                 if not success:
                     log.error("❌ Merchant selection failed.")
                     driver.quit()
