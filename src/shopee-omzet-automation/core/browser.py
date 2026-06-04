@@ -808,6 +808,7 @@ def _perform_login(driver, wait, username: str = None, password: str = None, pho
                         if wa_clicked:
                             log.info("👉 Berhasil memilih metode WhatsApp. Menunggu pengiriman...")
                             time.sleep(5)
+                            last_resend_time = time.time()  # Reset resend timer when WA OTP is triggered
                         else:
                             log.warning("⚠️ Opsi WhatsApp tidak ditemukan di menu.")
                     else:
@@ -830,6 +831,7 @@ def _perform_login(driver, wait, username: str = None, password: str = None, pho
                     except Exception as err:
                         log.warning(f"⚠️ Gagal memasukkan OTP ke elemen browser: {err}")
                     time.sleep(5)
+                    last_resend_time = time.time()  # Reset resend timer when OTP is successfully inputted
                 else:
                     log.info("ℹ️ Menunggu 10 detik untuk input langsung di browser...")
                     time.sleep(10)
@@ -848,7 +850,17 @@ def _perform_login(driver, wait, username: str = None, password: str = None, pho
                     except: pass
 
             if otp_attempted or not otp_input:
-                for cs in ["//button[contains(., 'Lanjutkan')]", "//button[contains(., 'Confirm')]", ".shopee-button--primary"]:
+                for cs in [
+                    "//button[contains(., 'Lanjutkan')]",
+                    "//button[contains(., 'Confirm')]",
+                    "//button[contains(., 'Verifikasi')]",
+                    "//button[contains(., 'Konfirmasi')]",
+                    "//button[contains(., 'Selanjutnya')]",
+                    "//button[contains(., 'Masuk')]",
+                    "//button[contains(., 'Next')]",
+                    ".shopee-button--primary",
+                    "button.shopee-button"
+                ]:
                     btns = driver.find_elements(By.XPATH, cs) if cs.startswith("//") else driver.find_elements(By.CSS_SELECTOR, cs)
                     for b in btns:
                         if b.is_displayed() and "ulang" not in b.text.lower():
@@ -1044,7 +1056,7 @@ def auto_switch_merchant(driver, target_name):
 
 
 
-def _handle_merchant_selection(driver, active_id_forced=None, interactive=True):
+def _handle_merchant_selection(driver, active_id_forced=None, interactive=True, username=None):
     log.info("===========================================================================")
     """
     Handles merchant selection, either automatically if a target is known 
@@ -1061,13 +1073,19 @@ def _handle_merchant_selection(driver, active_id_forced=None, interactive=True):
         
         # Try to find all merchants for interactive selection
         all_found = {}
-        all_merchants_data = {}
+        all_merchants_data = {
+            "superfood": "11511947",
+            "wonderfood": "14367488",
+            "lokarasa": "14384953",
+            "gurame bakar, do eat": "15892383",
+        }
         try:
             api_response_path = Path(__file__).resolve().parent.parent / "API" / "response.json"
-            with open(api_response_path, "r") as f:
-                data = json.load(f)
-                for m in data.get("data", {}).get("selectMerchant", {}).get("merchantList", []):
-                    all_merchants_data[m["merchantName"].lower()] = str(m["merchantId"])
+            if api_response_path.exists():
+                with open(api_response_path, "r") as f:
+                    data = json.load(f)
+                    for m in data.get("data", {}).get("selectMerchant", {}).get("merchantList", []):
+                        all_merchants_data[m["merchantName"].lower()] = str(m["merchantId"])
         except: pass
 
         target_names = list(all_merchants_data.keys())
@@ -1105,7 +1123,16 @@ def _handle_merchant_selection(driver, active_id_forced=None, interactive=True):
                         continue
                         
                     # Filter out obvious non-merchant generic texts jika terpaksa
-                    generic_texts = ["akun", "pengaturan", "log out", "halaman utama", "baru", "menu", "outlet", "shopeefood", "terapkan", "sembunyikan", "notifikasi", "pilih merchant lain", "pusat bantuan", "transaksi berhasil", "baris per halaman", "ringkasan toko", "nama toko", "jumlah total", "laporan saya", "penghasilan", "performa outlet", "periode transaksi", "ubah bahasa"]
+                    generic_texts = [
+                        "akun", "pengaturan", "log out", "halaman utama", "baru", "menu", "outlet", 
+                        "shopeefood", "terapkan", "sembunyikan", "notifikasi", "pilih merchant lain", 
+                        "pusat bantuan", "transaksi berhasil", "baris per halaman", "ringkasan toko", 
+                        "nama toko", "jumlah total", "laporan saya", "penghasilan", "performa outlet", 
+                        "periode transaksi", "ubah bahasa", "daftar merchant", "daftar di sini", 
+                        "memulai bisnis baru?", "pilih merchant", "gabung dengan merchant", 
+                        "buat merchant baru", "hubungi kami", "faq", "syarat & ketentuan", 
+                        "pusat edukasi seller"
+                    ]
                     if m_id == "Unknown" and (len(name) < 4 or any(g == name_key for g in generic_texts) or "diupdate pada" in name_key):
                         continue
 
@@ -1130,10 +1157,42 @@ def _handle_merchant_selection(driver, active_id_forced=None, interactive=True):
         if interactive:
             choice = input(f"\nPilih nomor (1-{len(merchants)}) atau Enter untuk lanjut: ").strip()
         else:
-            log.info("⏭️  [MERCHANT] Mode otomatis (tanpa timeout), memilih Enter (lanjut) secara otomatis...")
+            log.info("⏭️  [MERCHANT] Mode otomatis (tanpa timeout), memilih secara otomatis...")
             if "/food/dashboard" not in driver.current_url:
-                log.info("👉 [MERCHANT] Onboarding/Selector page detected. Automatically choosing the first merchant to proceed.")
-                choice = "1"
+                matched_idx = None
+                
+                # 1. Coba cocokkan dengan active_id_forced
+                if active_id_forced:
+                    for i, m in enumerate(merchants):
+                        if str(m["id"]) == str(active_id_forced):
+                            matched_idx = i + 1
+                            break
+                            
+                # 2. Coba cocokkan dengan username
+                if not matched_idx and username:
+                    username_lower = str(username).lower()
+                    target_keyword = None
+                    if "7303" in username_lower or any(f"73{x}" in username_lower for x in range(9, 14)):
+                        target_keyword = "superfood"
+                    elif "7304" in username_lower:
+                        target_keyword = "wonderfood"
+                    elif "7307" in username_lower:
+                        target_keyword = "lokarasa"
+                    elif "7308" in username_lower:
+                        target_keyword = "do eat"
+                    
+                    if target_keyword:
+                        for i, m in enumerate(merchants):
+                            if target_keyword in m["name"].lower():
+                                matched_idx = i + 1
+                                break
+                                
+                if matched_idx:
+                    log.info(f"👉 Ditemukan indeks merchant yang cocok: {matched_idx} ({merchants[matched_idx-1]['name']})")
+                    choice = str(matched_idx)
+                else:
+                    log.info("👉 [MERCHANT] Onboarding/Selector page detected. Automatically choosing the first merchant to proceed.")
+                    choice = "1"
             else:
                 choice = ""
             
@@ -1513,7 +1572,7 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
                     )
                     if recovered:
                         # After re-entry, run merchant selection normally
-                        success = _handle_merchant_selection(driver, active_id_forced=None, interactive=interactive)
+                        success = _handle_merchant_selection(driver, active_id_forced=None, interactive=interactive, username=username)
                     else:
                         log.error("❌ Logout/relogin recovery failed. Cannot proceed.")
                         success = False
