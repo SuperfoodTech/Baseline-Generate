@@ -122,10 +122,14 @@ class ModuleWrapper(sys.modules[__name__].__class__):
         set_session_file(value)
 
 sys.modules[__name__].__class__ = ModuleWrapper
-PARTNER_DASHBOARD = "https://partner.shopee.co.id/food/dashboard"
-TOKEN_TRIGGER_PAGE = "https://partner.shopee.co.id/settings/shopee-food/business-hours-settings"
-VALIDATE_URL    = "https://api.partner.shopee.co.id/nb/mss/web-api/PartnerAccountServer/GetUserInfo"
-SHOPEE_IMG_BASE = "https://down-id.img.susercontent.com/file"
+PARTNER_DASHBOARD    = "https://partner.shopee.co.id/food/dashboard"
+TOKEN_TRIGGER_PAGE   = "https://partner.shopee.co.id/settings/shopee-food/business-hours-settings"
+MERCHANT_SELECTOR_URL = "https://partner.shopee.co.id/authenticate/merchant-selector"
+VALIDATE_URL         = "https://api.partner.shopee.co.id/nb/mss/web-api/PartnerAccountServer/GetUserInfo"
+SHOPEE_IMG_BASE      = "https://down-id.img.susercontent.com/file"
+
+# Words that must NEVER be clicked — guard against accidental logout
+LOGOUT_KEYWORDS = ["log out", "logout", "keluar", "sign out", "signout"]
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -133,6 +137,189 @@ SHOPEE_IMG_BASE = "https://down-id.img.susercontent.com/file"
 def human_like_typing(element, text: str):
     # Direct input is faster; using it as requested
     element.send_keys(text)
+
+def _is_safe_to_click(element) -> bool:
+    """Returns False if the element text matches a logout/exit keyword."""
+    try:
+        text = (element.text or "").strip().lower()
+        if not text:
+            text = (element.get_attribute("innerText") or "").strip().lower()
+        return not any(kw in text for kw in LOGOUT_KEYWORDS)
+    except Exception:
+        return True  # Assume safe if text cannot be read
+
+def _detect_and_recover_logout(driver) -> bool:
+    """
+    Safety-net: detects if the browser accidentally got logged out.
+    Attempts re-entry using the existing Chrome profile cookies (no OTP needed).
+    Returns True if recovery succeeded, False otherwise.
+    """
+    current = driver.current_url.lower()
+    logged_out = (
+        "/login" in current
+        or "/authenticate/login" in current
+        or "about:blank" in current
+    )
+    if not logged_out:
+        return False  # Not logged out — nothing to do
+
+    log.warning("⚠️  [LOGOUT-RECOVERY] Accidental logout detected! Trying to recover via Chrome profile...")
+    try:
+        driver.get(PARTNER_DASHBOARD)
+        time.sleep(5)
+        recovered_url = driver.current_url.lower()
+        if "dashboard" in recovered_url or "merchant-selector" in recovered_url:
+            log.info("✅ [LOGOUT-RECOVERY] Recovered without OTP — Chrome profile cookies still valid.")
+            return True
+    except Exception as err:
+        log.warning(f"⚠️  [LOGOUT-RECOVERY] Recovery attempt failed: {err}")
+
+    log.warning("⚠️  [LOGOUT-RECOVERY] Could not recover automatically — full re-login may be needed.")
+    return False
+
+def _deliberate_logout_and_relogin(
+    driver,
+    username: str = None,
+    password: str = None,
+    phone:    str = None,
+) -> bool:
+    """
+    Intentional recovery strategy for when merchant cannot be detected.
+
+    Flow:
+      1. Click the profile area  →  open dropdown
+      2. Click 'Log Out' from the dropdown
+      3. Click the confirmation 'Log Out' button
+      4. Try Chrome profile auto-login (fast path, no OTP)
+      5. Fallback: enter credentials (username/password) via _perform_login()
+      Returns True if back on the portal, False on complete failure.
+    """
+    log.info("🔄 [LOGOUT-RELOGIN] Initiating deliberate logout for clean session recovery...")
+    try:
+        # ── Step 1: Navigate to a page that has the profile dropdown ───
+        if "/food/" not in driver.current_url and "/settings/" not in driver.current_url:
+            driver.get(PARTNER_DASHBOARD)
+            time.sleep(3)
+
+        actions = ActionChains(driver)
+
+        # ── Step 2: Click the profile/merchantName to open the dropdown ───
+        profile_el = None
+        for sel in [".merchantName", ".user-info", "li.ant-menu-item:last-child"]:
+            try:
+                el = driver.find_element(By.CSS_SELECTOR, sel)
+                if el.is_displayed():
+                    profile_el = el
+                    break
+            except Exception:
+                continue
+
+        if not profile_el:
+            log.warning("  ⚠️ Profile element not found — cannot trigger logout.")
+            return False
+
+        actions.move_to_element(profile_el).click().perform()
+        log.info("  👆 Clicked profile menu.")
+        time.sleep(1.5)  # Wait for dropdown to render
+
+        # ── Step 3: Find and click 'Log Out' in the dropdown ────────────
+        logout_clicked = driver.execute_script("""
+            var targets = ['log out', 'logout', 'keluar'];
+            var candidates = Array.from(document.querySelectorAll(
+                'li.ant-menu-item, li[role="menuitem"], .ant-dropdown-menu-item,'
+                + '[class*="menu-item"], span, div, a'
+            ));
+            for (var el of candidates) {
+                var rect = el.getBoundingClientRect();
+                if (rect.width === 0 || rect.height === 0) continue;
+                var text = (el.innerText || '').trim().toLowerCase();
+                if (targets.some(function(k){ return text === k; })) {
+                    el.click();
+                    return true;
+                }
+            }
+            return false;
+        """)
+
+        if not logout_clicked:
+            log.warning("  ⚠️ 'Log Out' menu item not found in dropdown.")
+            return False
+
+        log.info("  👈 Clicked 'Log Out' from profile dropdown.")
+        time.sleep(1.5)  # Wait for confirmation dialog
+
+        # ── Step 4: Click the 'Log Out' confirmation button ─────────────
+        confirm_clicked = driver.execute_script("""
+            var buttons = Array.from(document.querySelectorAll('button'));
+            for (var btn of buttons) {
+                var text = (btn.innerText || '').trim().toLowerCase();
+                if (text === 'log out' || text === 'logout' || text === 'keluar') {
+                    btn.click();
+                    return true;
+                }
+            }
+            return false;
+        """)
+
+        if not confirm_clicked:
+            log.warning("  ⚠️ Confirmation 'Log Out' button not found.")
+            try:
+                driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
+            except Exception:
+                pass
+            return False
+
+        log.info("  ✅ Logout confirmed. Waiting for login page...")
+        time.sleep(3)
+
+        # ── Step 5a: Try Chrome profile auto-login (fast path) ──────────
+        log.info("  🌐 Attempting Chrome profile auto-login...")
+        driver.get(PARTNER_DASHBOARD)
+        time.sleep(5)
+        url_now = driver.current_url.lower()
+        if "dashboard" in url_now or "merchant-selector" in url_now or "onboarding" in url_now:
+            log.info("  ✅ [LOGOUT-RELOGIN] Auto-login via Chrome profile succeeded!")
+            return True
+
+        # ── Step 5b: Fallback — login dengan kredensial ────────────────
+        log.info("  ⚠️ Chrome profile auto-login failed — logging in with credentials...")
+        if not (username and password) and not phone:
+            log.warning("  ⚠️ No credentials provided — cannot complete login.")
+            return False
+
+        # Navigate to login page if not already there
+        current = driver.current_url.lower()
+        if "login" not in current and "authenticate" not in current:
+            driver.get("https://partner.shopee.co.id/login")
+            time.sleep(4)
+
+        wait = WebDriverWait(driver, 30)
+        login_ok = _perform_login(driver, wait, username=username, password=password, phone=phone)
+        if not login_ok:
+            log.error("  ❌ Credential login failed.")
+            return False
+
+        # Wait for dashboard or merchant selector after login
+        time.sleep(3)
+        url_after = driver.current_url.lower()
+        if "dashboard" in url_after or "merchant-selector" in url_after or "onboarding" in url_after:
+            log.info("  ✅ [LOGOUT-RELOGIN] Credential login succeeded!")
+            return True
+
+        # Handle merchant-selector page if redirected there post-login
+        for _ in range(10):
+            url_after = driver.current_url.lower()
+            if "dashboard" in url_after or "merchant-selector" in url_after or "onboarding" in url_after:
+                log.info("  ✅ [LOGOUT-RELOGIN] Logged in and on portal.")
+                return True
+            time.sleep(1)
+
+        log.warning(f"  ⚠️ [LOGOUT-RELOGIN] Unexpected URL after credential login: {driver.current_url}")
+        return False
+
+    except Exception as e:
+        log.error(f"  ❌ [LOGOUT-RELOGIN] Failed: {e}")
+        return False
 
 def build_img_url(img_id: str) -> str:
     if not img_id: return ""
@@ -781,7 +968,11 @@ def _handle_merchant_selection(driver, active_id_forced=None, interactive=True):
             choice = input(f"\nPilih nomor (1-{len(merchants)}) atau Enter untuk lanjut: ").strip()
         else:
             log.info("⏭️  [MERCHANT] Mode otomatis (tanpa timeout), memilih Enter (lanjut) secara otomatis...")
-            choice = ""
+            if "/food/dashboard" not in driver.current_url:
+                log.info("👉 [MERCHANT] Onboarding/Selector page detected. Automatically choosing the first merchant to proceed.")
+                choice = "1"
+            else:
+                choice = ""
             
         if not choice: return True
         
@@ -807,69 +998,99 @@ def _handle_merchant_selection(driver, active_id_forced=None, interactive=True):
 
 def return_to_selector(driver) -> bool:
     """
-    Navigates to the merchant selection interface using UI clicks (Profile -> Pilih Merchant Lain).
-    This avoids using the full-page redirect URL.
+    Navigates to the merchant selection interface.
+
+    Strategy (safe order):
+      1. Hover .merchantName to open the profile dropdown.
+      2. Scan visible dropdown items with a LOGOUT_KEYWORDS blacklist.
+      3. Click the first item that contains 'Pilih Merchant' / 'Switch Merchant'.
+      4. If not found safely → fall back to direct URL navigation.
+
+    ⚠️  We NEVER do a blind element click after opening the dropdown because
+         doing so has been observed to trigger the 'Log Out' button and cause
+         an accidental logout (confirmed bug, 2026-06-04).
     """
-    log.debug("🔄 Opening merchant selector via UI menu...")
+    log.debug("🔄 Opening merchant selector via UI menu (safe mode)...")
     try:
-        # Ensure we are on a page where the menu exists
+        # Ensure we are on a page where the profile menu exists
         if "/food/dashboard" not in driver.current_url:
             driver.get(PARTNER_DASHBOARD)
-            time.sleep(2)
+            time.sleep(3)
 
-        wait = WebDriverWait(driver, 15)
+        wait    = WebDriverWait(driver, 10)
         actions = ActionChains(driver)
 
-        # 1. Find and hover over Profile/Account menu or Merchant Name
-        selectors = [
-            ".merchantName", 
-            "li[data-menu-id*='account']", 
-            ".ant-menu-item-only-child[data-menu-id*='account']",
-            "div[class*='account']",
-            ".user-info",
-            "li.ant-menu-item:last-child"
-        ]
+        # ── Step 1: Locate the profile / merchant-name element ──────────────
         profile_menu = None
-        for sel in selectors:
+        for sel in [".merchantName", ".user-info", "li.ant-menu-item:last-child"]:
             try:
                 el = driver.find_element(By.CSS_SELECTOR, sel)
                 if el.is_displayed():
                     profile_menu = el
                     break
-            except: continue
-        
-        if not profile_menu:
-            log.warning("⚠️ Could not find profile/merchant menu in UI.")
-            # If user strictly doesn't want URL, we try one more thing: look for any element with 'Pilih Merchant'
-            try:
-                el = driver.find_element(By.XPATH, "//*[contains(text(), 'Pilih Merchant')]")
-                el.click()
-                return True
-            except:
-                log.warning("⚠️ Falling back to URL navigation.")
-                driver.get("https://partner.shopee.co.id/authenticate/merchant-selector")
-                return True
+            except Exception:
+                continue
 
-        # Try to click directly or hover
+        if not profile_menu:
+            log.warning("⚠️ Profile menu not found — using direct URL fallback.")
+            driver.get(MERCHANT_SELECTOR_URL)
+            return True
+
+        # ── Step 2: Hover to open the dropdown ─────────────────────────────
         try:
             actions.move_to_element(profile_menu).perform()
-            time.sleep(0.5)
-        except: pass
-        
-        # Look for "Pilih Merchant Lain" or just click the merchant name if it opens a menu
-        try:
-            switch_trigger = wait.until(EC.element_to_be_clickable((By.XPATH, "//span[text()='Pilih Merchant Lain' or text()='Switch Merchant' or contains(text(), 'Ubah')]")))
-            driver.execute_script("arguments[0].click();", switch_trigger)
-        except:
-            # Maybe clicking the merchantName itself opens it?
-            driver.execute_script("arguments[0].click();", profile_menu)
-        
-        time.sleep(2) # Wait for list to appear
+            time.sleep(1)  # Let the dropdown render
+        except Exception:
+            pass
+
+        # ── Step 3: Scan dropdown items with blacklist guard ────────────────
+        # Use JS to read all visible menu items and find 'Pilih Merchant Lain'
+        safe_click_done = driver.execute_script("""
+            var keywords = ['pilih merchant', 'switch merchant', 'ganti merchant'];
+            var blacklist = ['log out', 'logout', 'keluar', 'sign out'];
+
+            // Gather all potentially clickable items currently visible
+            var candidates = Array.from(document.querySelectorAll(
+                'li.ant-menu-item, li[role="menuitem"], .ant-dropdown-menu-item, '
+                + '[class*="menu-item"], span, div, a'
+            ));
+
+            for (var el of candidates) {
+                var rect = el.getBoundingClientRect();
+                if (rect.width === 0 || rect.height === 0) continue;
+
+                var text = (el.innerText || '').trim().toLowerCase();
+                if (!text) continue;
+
+                // ⛔ NEVER click logout-related elements
+                if (blacklist.some(function(k){ return text.includes(k); })) continue;
+
+                // ✅ Click if it's a 'switch merchant' action
+                if (keywords.some(function(k){ return text.includes(k); })) {
+                    el.click();
+                    return true;
+                }
+            }
+            return false;
+        """)
+
+        if safe_click_done:
+            log.debug("  ✅ Clicked 'Pilih Merchant Lain' safely via JS scan.")
+            time.sleep(2)
+            return True
+
+        # ── Step 4: Safe fallback — direct URL (no UI interaction risk) ─────
+        log.warning("  ⚠️ 'Pilih Merchant Lain' not found in dropdown — using direct URL fallback.")
+        driver.get(MERCHANT_SELECTOR_URL)
+        time.sleep(3)
         return True
+
     except Exception as e:
-        log.error(f"❌ Failed to open selector via UI: {e}")
-        # Final fallback
-        driver.get("https://partner.shopee.co.id/authenticate/merchant-selector")
+        log.error(f"❌ return_to_selector failed: {e} — falling back to direct URL.")
+        try:
+            driver.get(MERCHANT_SELECTOR_URL)
+        except Exception:
+            pass
         return True
 
 def get_session(username=None, password=None, phone=None, headless=True, close_browser=True, target_name=None, interactive=True) -> dict | None:
@@ -910,13 +1131,38 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
                     if "dashboard" in current_url or "merchant-selector" in current_url:
                         log.info("✅ [SESSION] Restored from saved tokens.")
                         is_logged_in = True
-            
-            # Force fresh login only if genuinely NOT logged in on retry attempts
+
+            # On retry attempts, try injecting saved session tokens BEFORE resorting
+            # to a full fresh login. Chrome may have crashed mid-session (causing
+            # "Connection refused") but the session_{username}.json written by the
+            # previous successful warm cycle is still valid. Injecting those cookies
+            # into a fresh Chrome instance avoids triggering Shopee OTP.
             if not is_logged_in and attempt > 0:
-                log.info(f"⚠️ [SESSION] Forcing fresh login (Attempt {attempt+1})...")
-                driver.delete_all_cookies()
-                driver.get("https://partner.shopee.co.id/login")
-                time.sleep(4)
+                log.info(f"🔄 [SESSION] Attempt {attempt+1}: trying saved tokens before fresh login...")
+                saved = load_session()
+                if saved and saved.get("shopee_tob_token"):
+                    try:
+                        driver.add_cookie({"name": "shopee_tob_token", "value": saved["shopee_tob_token"]})
+                        if saved.get("shopee_tob_entity_id"):
+                            driver.add_cookie({"name": "shopee_tob_entity_id", "value": saved["shopee_tob_entity_id"]})
+                        for n, v in saved.get("extra_cookies", {}).items():
+                            try: driver.add_cookie({"name": n, "value": v})
+                            except: pass
+                        driver.refresh()
+                        time.sleep(4)
+                        current_url = driver.current_url.lower()
+                        if "dashboard" in current_url or "merchant-selector" in current_url:
+                            log.info(f"✅ [SESSION] Restored from saved tokens on retry {attempt+1} — no fresh login needed.")
+                            is_logged_in = True
+                    except Exception as _cookie_err:
+                        log.warning(f"  ⚠️ Cookie injection on retry failed: {_cookie_err}")
+
+                # Only wipe cookies and force fresh login if the token injection also failed
+                if not is_logged_in:
+                    log.info(f"⚠️ [SESSION] Saved tokens also invalid. Forcing fresh login (Attempt {attempt+1})...")
+                    driver.delete_all_cookies()
+                    driver.get("https://partner.shopee.co.id/login")
+                    time.sleep(4)
 
             # ── Step 3: Login if all above failed ──
             if not is_logged_in:
@@ -1090,10 +1336,27 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
                 if target_name:
                     success = auto_switch_merchant(driver, target_name)
                 else:
-                    if "/food/dashboard" in driver.current_url:
-                        log.info("🔄 Navigating to merchant selector...")
-                        return_to_selector(driver)
-                    success = _handle_merchant_selection(driver, active_id_forced=active_id, interactive=interactive)
+                    # When merchant cannot be detected, do a deliberate logout + relogin
+                    # via the Chrome profile. This gives a clean session state without OTP:
+                    #   1. Click profile → select 'Log Out' from dropdown
+                    #   2. Confirm logout
+                    #   3. Chrome profile auto-logs back in (no OTP)
+                    log.info("🔄 [MERCHANT] Unknown merchant — initiating logout/relogin recovery...")
+                    recovered = _deliberate_logout_and_relogin(
+                        driver,
+                        username=username,
+                        password=password,
+                        phone=phone,
+                    )
+                    if recovered:
+                        # After re-entry, run merchant selection normally
+                        success = _handle_merchant_selection(driver, active_id_forced=None, interactive=interactive)
+                    else:
+                        # Fallback: direct URL to merchant selector
+                        log.warning("  ⚠️ Logout/relogin recovery failed — trying direct URL fallback.")
+                        driver.get(MERCHANT_SELECTOR_URL)
+                        time.sleep(3)
+                        success = _handle_merchant_selection(driver, active_id_forced=active_id, interactive=interactive)
                 if not success:
                     log.error("❌ Merchant selection failed.")
                     driver.quit()
