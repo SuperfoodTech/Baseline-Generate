@@ -48,5 +48,20 @@ services:
       # Inisialisasi database dari skema pada run pertama
       - ./src/database:/docker-entrypoint-initdb.d
 
+  warmer:
+    build: .
+    container_name: shopee_session_warmer
+    restart: unless-stopped
+    working_dir: /app
+    command: uv run --project src shopee-session-monitor/warmer.py
+    env_file:
+      - ./shopee-session-monitor/.env
+    volumes:
+      - ./src/shopee-omzet-automation/data:/app/src/shopee-omzet-automation/data
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HEADLESS=true
+      - TZ=Asia/Jakarta
+
 volumes:
   postgres_data:
