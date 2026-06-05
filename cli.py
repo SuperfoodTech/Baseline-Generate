@@ -17,6 +17,8 @@ import asyncio
 import sys
 import os
 from datetime import datetime, timedelta
+from src.upload_csv_to_drive_and_git import process_csv_pipeline
+from src.upload_csv_to_drive_and_git import process_csv_pipeline
 
 
 # ── Colour helpers (ANSI) ──────────────────────────────────────────────
@@ -1032,6 +1034,12 @@ Examples:
         print(f"  {'':10s}   {DIM}→ {out_path}{RESET}")
     print(f"\n{CYAN}{'═'*58}{RESET}\n")
 
+    # --- UPLOAD DAN PUSH OTOMATIS ---
+    print(f"\n{CYAN}[INFO] Mencoba mengunggah hasil CSV/Laporan ke Google Drive dan push ke Git...{RESET}")
+    # Karena kita belum tahu secara spesifik nama file CSV yang Anda inginkan,
+    # Fungsi ini secara otomatis mencari file format 'data_YYYY-MM-DD.csv' di directory berjalan
+    # Anda dapat mengganti parameternya di bawah ini dengan lokasi file spesifik jika dibutuhkan.
+    process_csv_pipeline()
 
 if __name__ == "__main__":
     main()
