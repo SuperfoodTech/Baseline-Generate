@@ -34,7 +34,7 @@ class IncorrectCredentialsError(Exception):
     """Custom exception when login fails due to wrong username or password"""
     pass
 
-def json_to_grab_csv_fallback(json_data, exact_omzet, output_path):
+def json_to_grab_csv_fallback(json_data, output_path):
     """Fallback adapter: Converts JSON data to standard Grab CSV format."""
     rows = []
     grabfood_types = ['grabfood', 'grabfood for one']
