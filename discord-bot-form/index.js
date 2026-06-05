@@ -104,6 +104,27 @@ client.on('shardError', error => {
 const startBot = async () => {
     try {
         console.log('Sedang mencoba menghubungkan ke Discord...');
+        
+        // Ensure warmer is unpaused on startup to recover from any previous crashes
+        try {
+            const http = require('http');
+            const req = http.request({
+                socketPath: '/var/run/docker.sock',
+                path: '/v1.41/containers/shopee_session_warmer/unpause',
+                method: 'POST',
+                headers: {
+                    'Host': 'localhost',
+                    'Content-Length': 0
+                }
+            }, (res) => {
+                console.log(`[STARTUP] Checked warmer status: HTTP ${res.statusCode}`);
+            });
+            req.on('error', () => {});
+            req.end();
+        } catch (e) {
+            console.warn('[STARTUP] Failed to check warmer container status via Docker socket:', e.message);
+        }
+
         await client.login(process.env.DISCORD_TOKEN);
     } catch (error) {
         console.error('Gagal login ke Discord:', error);

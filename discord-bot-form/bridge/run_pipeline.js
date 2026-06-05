@@ -8,18 +8,19 @@
  */
 
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
-const { spawn }  = require('child_process');
-const path       = require('path');
-const fs         = require('fs');
+const { spawn } = require('child_process');
+const path = require('path');
+const fs = require('fs');
+const http = require('http');
 
 // ── Path resolver ────────────────────────────────────────────
 // bridge/ berada di: task-weekly/discord-bot-form/bridge/
 // src/    berada di: task-weekly/src/
 // Jadi dari __dirname (bridge/), naik 2 level ke task-weekly/, lalu masuk src/
-const SRC_DIR    = path.resolve(__dirname, '..', '..', 'src');
-const VENV_PY    = path.join(SRC_DIR, '.venv', 'bin', 'python');
+const SRC_DIR = path.resolve(__dirname, '..', '..', 'src');
+const VENV_PY = path.join(SRC_DIR, '.venv', 'bin', 'python');
 const PYTHON_EXE = fs.existsSync(VENV_PY) ? VENV_PY : 'python3';
-const CLI_PATH   = path.join(SRC_DIR, 'cli.py');
+const CLI_PATH = path.join(SRC_DIR, 'cli.py');
 
 /**
  * Konversi tanggal DD-MM-YYYY → YYYY-MM-DD
@@ -40,16 +41,16 @@ function convertDate(ddmmyyyy) {
  * @returns {'grab'|'shopee'|'all'}
  */
 function detectPlatform(aplikator) {
-    const lower    = aplikator.toLowerCase();
-    const hasGo    = lower.includes('gofood');
-    const hasGrab  = lower.includes('grabfood');
+    const lower = aplikator.toLowerCase();
+    const hasGo = lower.includes('gofood');
+    const hasGrab = lower.includes('grabfood');
     const hasShopee = lower.includes('shopeefood');
-    
+
     const selected = [];
     if (hasGo) selected.push('gofood');
     if (hasGrab) selected.push('grab');
     if (hasShopee) selected.push('shopee');
-    
+
     if (selected.length > 0) {
         return selected.join(',');
     }
@@ -80,32 +81,93 @@ function firstValue(str) {
  * @param {Function} [onLog]                  - Callback(line:string) untuk live log
  * @returns {Promise<{success:boolean, exitCode:number, output:string}>}
  */
-function runPipeline(formData, onLog = () => {}) {
+/**
+ * Pause or unpause the Shopee Session Warmer container via Docker socket.
+ * @param {'pause'|'unpause'} action
+ * @param {Function} onLog
+ * @returns {Promise<boolean>}
+ */
+function controlWarmer(action, onLog = console.log) {
+    return new Promise((resolve) => {
+        const options = {
+            socketPath: '/var/run/docker.sock',
+            path: `/v1.41/containers/shopee_session_warmer/${action}`,
+            method: 'POST',
+            headers: {
+                'Host': 'localhost',
+                'Content-Length': 0
+            }
+        };
+
+        const req = http.request(options, (res) => {
+            let data = '';
+            res.on('data', (chunk) => data += chunk);
+            res.on('end', () => {
+                if (res.statusCode === 204 || res.statusCode === 304) {
+                    onLog(`🐳 [DOCKER] Warmer container successfully ${action}d.`);
+                    resolve(true);
+                } else if (res.statusCode === 409) {
+                    onLog(`🐳 [DOCKER] Warmer container is already ${action}d.`);
+                    resolve(true);
+                } else {
+                    onLog(`⚠️ [DOCKER] Failed to ${action} warmer container: HTTP ${res.statusCode}`);
+                    resolve(false);
+                }
+            });
+        });
+
+        req.on('error', (err) => {
+            // Graceful fallback if not running in Docker or socket not mounted
+            resolve(false);
+        });
+
+        req.end();
+    });
+}
+
+/**
+ * Jalankan pipeline OFD dari formData Discord
+ *
+ * @param {Object}   formData
+ * @param {string}   formData.tagihan         - "weekly" | "baseline"
+ * @param {string}   formData.outlet          - nama outlet (bisa koma-separated)
+ * @param {string}   formData.cabang          - nama cabang (bisa koma-separated)
+ * @param {string}   formData.aplikator       - "GoFood, GrabFood, ShopeeFood"
+ * @param {string}   formData.tanggalMulai    - "DD-MM-YYYY"
+ * @param {string}   formData.tanggalSelesai  - "DD-MM-YYYY"
+ * @param {string}   formData.bd              - nama BD
+ * @param {Function} [onLog]                  - Callback(line:string) untuk live log
+ * @returns {Promise<{success:boolean, exitCode:number, output:string}>}
+ */
+function runPipeline(formData, onLog = () => { }) {
     let proc;
-    const promise = new Promise((resolve) => {
-        const startDate  = convertDate(formData.tanggalMulai);
-        const endDate    = convertDate(formData.tanggalSelesai);
-        const platform   = detectPlatform(formData.aplikator);
+    const promise = new Promise(async (resolve) => {
+        const startDate = convertDate(formData.tanggalMulai);
+        const endDate = convertDate(formData.tanggalSelesai);
+        const platform = detectPlatform(formData.aplikator);
         const taskChoice = formData.tagihan === 'baseline' ? '1' : '2';
-        const outlet     = firstValue(formData.outlet);
-        const bd         = formData.bd || '';
+        const outlet = firstValue(formData.outlet);
+        const bd = formData.bd || '';
+
+        // 1. Pause warmer sebelum memulai pipeline
+        await controlWarmer('pause', onLog);
 
         // Multi-cabang: jika hanya 1 cabang dipilih → filter spesifik
         // Jika banyak cabang atau "all" → kirim kosong agar cli.py proses semua
         const cabangList = (formData.cabang || '').split(',').map(s => s.trim()).filter(Boolean);
-        const cabang     = cabangList.length === 1 ? cabangList[0] : '';
+        const cabang = cabangList.length === 1 ? cabangList[0] : '';
 
         // ── Env vars yang dibaca cli.py (Discord mode) ──────────────
         const env = {
             ...process.env,
-            OFD_DISCORD_MODE : '1',
-            OFD_TASK_CHOICE  : taskChoice,
-            OFD_PLATFORM     : platform,
-            OFD_OUTLET       : outlet,
-            OFD_CABANG       : cabang,
-            OFD_BD           : bd,
-            OFD_APLIKATOR    : formData.aplikator || '',
-            OFD_WEBHOOK_URL  : process.env.WEBHOOK_URL || '',
+            OFD_DISCORD_MODE: '1',
+            OFD_TASK_CHOICE: taskChoice,
+            OFD_PLATFORM: platform,
+            OFD_OUTLET: outlet,
+            OFD_CABANG: cabang,
+            OFD_BD: bd,
+            OFD_APLIKATOR: formData.aplikator || '',
+            OFD_WEBHOOK_URL: process.env.WEBHOOK_URL || '',
         };
 
         // ── Argumen CLI ─────────────────────────────────────────────
@@ -115,7 +177,7 @@ function runPipeline(formData, onLog = () => {}) {
             CLI_PATH,
             platform,
             '--start', startDate,
-            '--end',   endDate,
+            '--end', endDate,
         ];
 
         onLog(`🚀 Menjalankan: \`${PYTHON_EXE} cli.py ${args.slice(1).join(' ')}\``);
@@ -125,7 +187,7 @@ function runPipeline(formData, onLog = () => {}) {
         let output = '';
 
         proc = spawn(PYTHON_EXE, args, {
-            cwd : SRC_DIR,
+            cwd: SRC_DIR,
             env,
             detached: true,
         });
@@ -145,7 +207,13 @@ function runPipeline(formData, onLog = () => {}) {
             process.stderr.write(data); // Stream errors to docker compose logs live and uncropped
         });
 
-        proc.on('close', (exitCode) => {
+        const cleanupAndResolve = async (data) => {
+            // 2. Unpause warmer setelah pipeline selesai
+            await controlWarmer('unpause', onLog);
+            resolve(data);
+        };
+
+        proc.on('close', async (exitCode) => {
             let notifData = null;
             const notifMatch = output.match(/DISCORD_NOTIF_JSON:\s*(\{.*\})/);
             if (notifMatch) {
@@ -156,19 +224,19 @@ function runPipeline(formData, onLog = () => {}) {
                 }
             }
 
-            resolve({
-                success  : exitCode === 0,
-                exitCode : exitCode ?? -1,
-                output   : output.trim(),
+            await cleanupAndResolve({
+                success: exitCode === 0,
+                exitCode: exitCode ?? -1,
+                output: output.trim(),
                 notifData: notifData
             });
         });
 
-        proc.on('error', (err) => {
-            resolve({
-                success  : false,
-                exitCode : -1,
-                output   : `Gagal memulai proses: ${err.message}`,
+        proc.on('error', async (err) => {
+            await cleanupAndResolve({
+                success: false,
+                exitCode: -1,
+                output: `Gagal memulai proses: ${err.message}`,
             });
         });
     });
