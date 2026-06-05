@@ -297,9 +297,9 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                         # Tambahkan kolom Month
                         if "Date" in tmp_df.columns:
                             parsed_date = pd.to_datetime(tmp_df["Date"], errors="coerce", format="%d/%m/%Y")
-                            # Memasukkan kolom Month tepat di sebelah kolom Date
+                            # Memasukkan kolom Month dengan nama bulan bahasa Inggris (March, April, dst)
                             col_idx = tmp_df.columns.get_loc("Date") + 1
-                            tmp_df.insert(col_idx, "Month", parsed_date.dt.month)
+                            tmp_df.insert(col_idx, "Month", parsed_date.dt.strftime('%B'))
                             
                         # Filter hanya untuk GrabFood
                         if "Grab Service" in tmp_df.columns:
