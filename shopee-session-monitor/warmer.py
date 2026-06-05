@@ -238,10 +238,12 @@ def warm_account(acc: dict) -> bool:
                 return null;
             """)
 
+            # Sesi RUSAK hanya jika profil kosong atau hanya bertuliskan "Admin" saja
+            # (tanpa nama merchant). Nama seperti "SuperFood", "WonderFood", "Admin: X"
+            # semua dianggap valid karena nama merchant terbaca.
             session_degraded = (
                 not profile_text or
-                profile_text.strip().lower() == "admin" or
-                ":" not in profile_text
+                profile_text.strip().lower() == "admin"
             )
 
             if session_degraded:
