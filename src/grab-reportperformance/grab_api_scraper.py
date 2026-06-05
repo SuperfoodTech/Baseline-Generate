@@ -278,17 +278,34 @@ class GrabAPI:
 
     async def execute_fallback(self, mgid, start_date, end_date):
         """Executes the fallback V1 + V2 API strategy when CSV export fails."""
-        # 1. Get list of all stores for this merchant group
+        # 1. Get list of all stores for this merchant group (with pagination)
         logger.info(f"  [Fallback] Extracting all store_ids from V1 stores list...")
-        stores_url = f"{self.base_url}/mex/finances/v1/transactions?merchant_group_id={mgid}&from={start_date}&to={end_date}&limit=100&offset=0&currency=IDR"
-        stores_resp = await self.call_api(stores_url)
         store_ids = []
-        if stores_resp.get("status") == 200:
-            stores_list = stores_resp.get("data", {}).get("data", [])
-            for s in stores_list:
-                sid = s.get("store_id")
-                if sid:
-                    store_ids.append(sid)
+        offset_stores = 0
+        limit_stores = 100
+        
+        while True:
+            stores_url = f"{self.base_url}/mex/finances/v1/transactions?merchant_group_id={mgid}&from={start_date}&to={end_date}&limit={limit_stores}&offset={offset_stores}&currency=IDR"
+            stores_resp = await self.call_api(stores_url)
+            
+            if stores_resp.get("status") == 200:
+                stores_list = stores_resp.get("data", {}).get("data", [])
+                if not stores_list:
+                    break
+                    
+                for s in stores_list:
+                    sid = s.get("store_id")
+                    if sid:
+                        store_ids.append(sid)
+                
+                if len(stores_list) < limit_stores:
+                    break
+                offset_stores += limit_stores
+            else:
+                break
+                
+        # Remove duplicates just in case
+        store_ids = list(set(store_ids))
         
         if not store_ids:
             # Fallback to merchant-selector if v1/transactions fails
