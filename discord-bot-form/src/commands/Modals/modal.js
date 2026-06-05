@@ -336,15 +336,22 @@ module.exports = {
                 bdOutlets.forEach(o => outletNamesSet.add(o));
             });
             let filteredOutlets = Array.from(outletNamesSet);
+            
+            let outletOptions;
             if (filteredOutlets.length === 0) {
-                filteredOutlets = outlets;
+                // Jika BD tidak punya outlet, jangan tampilkan semua outlet!
+                // Buat opsi palsu yang berakhiran _disabled agar tombol Lanjut mati.
+                outletOptions = [{
+                    label: '❌ Tidak ada outlet untuk BD ini',
+                    value: 'no_outlet_found_disabled'
+                }];
+            } else {
+                // 2. Pilih Outlet (single select)
+                outletOptions = filteredOutlets.slice(0, 25).map(name => ({
+                    label: name.substring(0, 100),
+                    value: name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100)
+                }));
             }
-
-            // 2. Pilih Outlet (single select, tanpa opsi 'Semua')
-            const outletOptions = filteredOutlets.slice(0, 25).map(name => ({
-                label: name.substring(0, 100),
-                value: name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 100)
-            }));
 
             const outletResult = await this.askSelection(bdResult.lastInteraction, {
                 title: 'Pilih Outlet',
