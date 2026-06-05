@@ -288,10 +288,25 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                         portal_safe_name = str(portal['user']).replace("/", "_").replace("\\", "_")
                         dest_xlsx = laporan_dir / f"{portal_safe_name}.xlsx"
                         
-                        # Convert CSV to XLSX
+                        # Convert S3 CSV to Cleaned XLSX per portal
                         tmp_df = pd.read_csv(downloaded_file)
+                        
+                        # Bersihkan spasi di nama kolom
+                        tmp_df.columns = [str(c).strip() for c in tmp_df.columns]
+                        
+                        # Tambahkan kolom Month
+                        if "Date" in tmp_df.columns:
+                            parsed_date = pd.to_datetime(tmp_df["Date"], errors="coerce", format="%d/%m/%Y")
+                            # Memasukkan kolom Month tepat di sebelah kolom Date
+                            col_idx = tmp_df.columns.get_loc("Date") + 1
+                            tmp_df.insert(col_idx, "Month", parsed_date.dt.month)
+                            
+                        # Filter hanya untuk GrabFood
+                        if "Grab Service" in tmp_df.columns:
+                            tmp_df = tmp_df[tmp_df["Grab Service"].astype(str).str.contains("grabfood", case=False, na=False)]
+                            
                         tmp_df.to_excel(dest_xlsx, index=False)
-                        log.info(f"  ✓ [PORTAL {portal_id}] {outlet_name} — Saved to: {dest_xlsx.name}")
+                        log.info(f"  ✓ [PORTAL {portal_id}] {outlet_name} — Saved Clean XLSX to: {dest_xlsx.name}")
 
                 except Exception as e:
                     log.error(f"  ✗ [ACCOUNT] {username} CRITICAL ERROR: {str(e)}")
