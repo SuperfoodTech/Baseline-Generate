@@ -38,33 +38,21 @@ def json_to_grab_csv_fallback(json_data, exact_omzet, output_path):
     """Fallback adapter: Converts JSON data to standard Grab CSV format."""
     rows = []
     grabfood_types = ['grabfood', 'grabfood for one']
-    valid_txs = [
-        t for t in json_data 
-        if str(t.get('transaction_type', '')).lower() in grabfood_types 
-        and t.get('transaction_status') != 'canceled'
-    ]
     
-    sum_net_total = sum(t.get('net_total', 0) for t in valid_txs)
-    ratio = (exact_omzet / sum_net_total) if sum_net_total > 0 else 0
-    running_sum = 0
-    
-    for i, tx in enumerate(valid_txs):
+    for tx in json_data:
+        if str(tx.get('transaction_type', '')).lower() not in grabfood_types or tx.get('transaction_status') == 'canceled':
+            continue
+
         created_dt = datetime.strptime(tx['created_at'], "%Y-%m-%dT%H:%M:%SZ")
         updated_dt = datetime.strptime(tx['updated_at'], "%Y-%m-%dT%H:%M:%SZ")
         
-        if i == len(valid_txs) - 1:
-            simulated_net_sales = exact_omzet - running_sum
-        else:
-            simulated_net_sales = round(tx.get('net_total', 0) * ratio)
-            running_sum += simulated_net_sales
-
         rows.append({
             "Created On": created_dt.strftime("%d %b %Y %I:%M %p"),
             "Updated On": updated_dt.strftime("%d %b %Y %I:%M %p"),
             "Long Order ID": tx.get('long_order_id', f"DUMMY-{tx['transaction_id']}"),
             "Category": tx.get('transaction_category', 'Payment').capitalize(),
             "Status": tx.get('transaction_status', 'Settled').capitalize(),
-            "Net Sales": simulated_net_sales
+            "Net Sales": tx.get('net_total', 0)
         })
         
     df = pd.DataFrame(rows)
@@ -290,30 +278,19 @@ class GrabAPI:
 
     async def execute_fallback(self, mgid, start_date, end_date):
         """Executes the fallback V1 + V2 API strategy when CSV export fails."""
-        # 1. Fetch exact omzet via V1 Summary
-        logger.info(f"  [Fallback] Fetching exact omzet via V1 Summary...")
-        summary_url = f"{self.base_url}/mex/finances/v1/transactions/summary?merchant_group_id={mgid}&from={start_date}&to={end_date}&currency=IDR"
-        summary_resp = await self.call_api(summary_url)
-        if summary_resp.get("status") != 200:
-            return None, f"Fallback summary failed: {summary_resp.get('data')}"
-            
-        s_data = summary_resp.get("data", {}).get("data", {})
-        net_sales = s_data.get("net_sales", 0)
-        gross_sales = s_data.get("gross_sales", 0)
-        exact_omzet = net_sales - gross_sales
-        logger.info(f"  [Fallback] Extracted Exact GrabFood Omzet: Rp{exact_omzet:,.0f}")
-        
-        # 2. Extract grab_id from v1 transactions list (more reliable than merchant-selector)
-        logger.info(f"  [Fallback] Extracting grab_id from V1 stores list...")
-        stores_url = f"{self.base_url}/mex/finances/v1/transactions?merchant_group_id={mgid}&from={start_date}&to={end_date}&limit=20&offset=0&currency=IDR"
+        # 1. Get list of all stores for this merchant group
+        logger.info(f"  [Fallback] Extracting all store_ids from V1 stores list...")
+        stores_url = f"{self.base_url}/mex/finances/v1/transactions?merchant_group_id={mgid}&from={start_date}&to={end_date}&limit=100&offset=0&currency=IDR"
         stores_resp = await self.call_api(stores_url)
-        grab_id = None
+        store_ids = []
         if stores_resp.get("status") == 200:
             stores_list = stores_resp.get("data", {}).get("data", [])
-            if stores_list and len(stores_list) > 0:
-                grab_id = stores_list[0].get("store_id")
+            for s in stores_list:
+                sid = s.get("store_id")
+                if sid:
+                    store_ids.append(sid)
         
-        if not grab_id:
+        if not store_ids:
             # Fallback to merchant-selector if v1/transactions fails
             ms_resp = await self.call_api(f"{self.base_url}/troy/user-profile/v1/merchant-selector")
             if ms_resp.get("status") == 200:
@@ -321,66 +298,56 @@ class GrabAPI:
                 for m in merchants:
                     if m.get("id") == mgid:
                         stores = m.get("stores", [])
-                        if stores:
-                            grab_id = stores[0].get("grabID") or stores[0].get("id")
+                        for st in stores:
+                            sid = st.get("grabID") or st.get("id")
+                            if sid:
+                                store_ids.append(sid)
                         break
                         
-        if not grab_id:
-            return None, "Fallback failed: Could not determine grab_id for pagination."
+        if not store_ids:
+            return None, "Fallback failed: Could not determine any store_id for pagination."
             
-        # 3. Fetch all transactions via V2 Lazy Load
-        logger.info(f"  [Fallback] Paginating V2 detail transactions...")
-        merchants_param = f"%7B%22merchants%22:[%7B%22stores%22:[%7B%22grab_id%22:%22{grab_id}%22%7D]%7D]%7D"
+        # 2. Fetch all transactions via V2 Lazy Load for EACH store_id
+        logger.info(f"  [Fallback] Paginating V2 detail transactions for {len(store_ids)} stores...")
         all_txs = []
-        offset = 0
-        limit = 20
         
-        while True:
-            tx_url = (
-                f"{self.base_url}/mex/finances/v2/transactions"
-                f"?merchant_group_id={mgid}&from={start_date}&to={end_date}"
-                f"&limit={limit}&offset={offset}&currency=IDR"
-                f"&merchants={merchants_param}&store_id={grab_id}"
-            )
-            # Use raw JS fetch because V2 requires custom headers that standard call_api might not send identically
-            js_code = f"""
-            async () => {{
-                try {{
-                    const r = await fetch("{tx_url}", {{
-                        headers: {{
-                            "Accept": "application/json",
-                            "x-merchant-id": "{mgid}",
-                            "x-currency": "IDR",
-                            "x-user-type": "user-profile",
-                            "x-mex-version": "v2"
-                        }}
-                    }});
-                    return {{ status: r.status, body: await r.json() }};
-                }} catch(e) {{ return {{ status: 0, error: e.toString() }}; }}
-            }}
-            """
-            res = await self.page.evaluate(js_code)
-            if res.get("status") != 200:
-                break
+        for store_id in store_ids:
+            merchants_param = f"%7B%22merchants%22:[%7B%22stores%22:[%7B%22grab_id%22:%22{store_id}%22%7D]%7D]%7D"
+            offset = 0
+            limit = 50
+            
+            while True:
+                tx_url = (
+                    f"{self.base_url}/mex/finances/v2/transactions"
+                    f"?merchant_group_id={mgid}&from={start_date}&to={end_date}"
+                    f"&limit={limit}&offset={offset}&currency=IDR"
+                    f"&merchants={merchants_param}&store_id={store_id}"
+                )
+                tx_resp = await self.call_api(tx_url)
+                if tx_resp.get("status") != 200:
+                    logger.warning(f"  [Fallback] V2 pagination failed at offset {offset} for store {store_id}: {tx_resp}")
+                    break
+                    
+                data_list = tx_resp.get("data", {}).get("data", {}).get("results", [])
+                if not data_list:
+                    break
+                    
+                all_txs.extend(data_list)
+                offset += limit
                 
-            results = res.get("body", {}).get("data", {}).get("results", [])
-            if not results:
-                break
-            all_txs.extend(results)
-            
-            if len(results) < limit:
-                break
-            offset += limit
-            
-        logger.info(f"  [Fallback] Retrieved {len(all_txs)} transactions.")
+                # Prevent infinite loop
+                if offset > 10000:
+                    break
         
+        logger.info(f"  [Fallback] Retrieved {len(all_txs)} total transactions across all stores.")
+        
+        # 3. Transform to CSV Format
         job_id = uuid.uuid4().hex[:8]
-        filename = f"downloads/grab_transactions_{self.username}_fallback_{job_id}.csv"
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        filename = f"downloads/grab_transactions_{mgid}_fallback_{job_id}.csv"
+        os.makedirs("downloads", exist_ok=True)
         
-        # 4. Generate the mock CSV
         try:
-            json_to_grab_csv_fallback(all_txs, exact_omzet, filename)
+            json_to_grab_csv_fallback(all_txs, filename)
             logger.info(f"  [Fallback] Successfully generated simulated CSV: {filename}")
             return filename, None
         except Exception as e:
@@ -729,31 +696,36 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
                 await p.stop()
             return None, "Auth failed"
 
-        # --- Native Grab CSV Export as PRIMARY METHOD ---
-        download_success = False
-        last_dl_err = ""
+        # --- Fast API Extraction (V1+V2) as PRIMARY METHOD ---
+        logger.info(f"  [Action] Executing Fast API Extraction (V1+V2) as primary method for {user}...")
+        fast_filename, fast_err = await api.execute_fallback(mgid, report_start, report_end)
         
-        for dl_attempt in range(3):
+        if fast_filename:
+            logger.info(f"  [Action] Fast API Extraction Success! Returning generated CSV.")
+            if context: await context.close()
+            if managed_browser: await managed_browser.close()
+            if p: await p.stop()
+            return fast_filename, None
+            
+        logger.warning(f"  [Action] Fast API Extraction failed for {user}: {fast_err}. Falling back to native CSV export...")
+        
+        # --- Native Grab CSV Export as FALLBACK METHOD ---
+        download_success = False
+        last_dl_err = f"Fast API Err: {fast_err}"
+        
+        for dl_attempt in range(1):
             try:
-                if dl_attempt > 0:
-                    logger.info(f"  [Action] Retrying download for {user} (Attempt {dl_attempt + 1}/3, no re-login)...")
-                    await asyncio.sleep(5)  # Brief pause before retry
-
                 ref_id, err = await api.start_async_download(mgid, report_start, report_end)
                 if not ref_id:
                     logger.warning(f"  [Download] start_async_download failed for {user}: {err}")
-                    last_dl_err = f"Request failed: {err}"
-                    if dl_attempt < 2:
-                        continue
-                    break # Break dl_attempt loop, let outer loop handle retry
+                    last_dl_err += f" | Req err: {err}"
+                    break
 
                 download_url, err = await api.poll_for_download(mgid, ref_id)
                 if not download_url:
                     logger.warning(f"  [Download] Polling failed for {user}: {err}")
-                    last_dl_err = f"Polling failed: {err}"
-                    if dl_attempt < 2:
-                        continue
-                    break # Break dl_attempt loop
+                    last_dl_err += f" | Poll err: {err}"
+                    break
 
                 job_id = uuid.uuid4().hex[:8]
                 filename = f"downloads/grab_transactions_{user}_{job_id}.csv"
@@ -763,10 +735,8 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
                     os.makedirs("logs", exist_ok=True)
                     await page.screenshot(path=f"logs/download_fail_{user}.png")
                     logger.warning(f"  [Download] CSV download failed for {user}: {err}")
-                    last_dl_err = f"Download failed: {err}"
-                    if dl_attempt < 2:
-                        continue
-                    break # Break dl_attempt loop
+                    last_dl_err += f" | DL err: {err}"
+                    break
 
                 # Success!
                 await context.close()
@@ -778,32 +748,12 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
 
             except SessionStuckError as se:
                 logger.warning(f"  [Action] SessionStuck on download for {user}: {se}")
-                last_dl_err = str(se)
-                if dl_attempt < 2:
-                    continue
-                break # Break dl_attempt loop
+                last_dl_err += f" | Stuck: {se}"
+                break
             except Exception as e:
-                logger.error(f"  [Error] Download attempt {dl_attempt + 1} failed for {user}: {e}")
-                last_dl_err = str(e)
-                if dl_attempt < 2:
-                    continue
-                break # Break dl_attempt loop
-
-        # If we are here, native download failed.
-        
-        # --- Fast API Extraction (V1+V2) as FALLBACK METHOD ---
-        logger.warning(f"  [Action] All 3 download polling attempts failed for {user}. Initiating API Fallback...")
-        fallback_filename, fallback_err = await api.execute_fallback(mgid, report_start, report_end)
-        
-        if fallback_filename:
-            logger.info(f"  [Fallback] Success! Returning fallback CSV as valid output.")
-            if context: await context.close()
-            if managed_browser: await managed_browser.close()
-            if p: await p.stop()
-            return fallback_filename, None
-        else:
-            logger.error(f"  ✗ [Fallback] Failed for {user}: {fallback_err}")
-            last_dl_err = f"{last_dl_err} | Fallback err: {fallback_err}"
+                logger.error(f"  [Error] Download attempt failed for {user}: {e}")
+                last_dl_err += f" | Ex: {e}"
+                break
             
         # If fallback also fails, then proceed to clean up and retry whole session if possible
         if context:
