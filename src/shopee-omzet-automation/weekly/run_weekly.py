@@ -477,8 +477,8 @@ def run_pipeline():
     for fpath in xlsx_files:
         filename = os.path.basename(fpath)
         
-        # Skip Master and Analyzed reports
-        if filename.startswith("Master_") or filename.endswith("_Analyzed.xlsx"):
+        # Skip Master and other compiled/analyzed reports
+        if filename.startswith("Master_") or filename.startswith("CUSTOM_") or filename.startswith("Merged_") or filename.endswith("_Analyzed.xlsx"):
             continue
             
         # Determine Merchant Name from filename
@@ -533,18 +533,19 @@ def run_pipeline():
                     if col in df.columns:
                         df[col] = df[col].apply(clean_shopee_monetary)
                 
-                # Calculate new metrics based on corrected raw values (allow decimals for Commission)
-                commission_real = df['Nilai Transaksi'] * 0.25
-                revenue_real = df['Nilai Transaksi'] - commission_real
-                ofd_fees_real = df['Harga Makanan'] - revenue_real
+                # Calculate new metrics based on corrected raw values (keep decimals for Commission, Revenue, and OFD Fees)
+                commission_real = (df['Nilai Transaksi'] * 0.25).fillna(0)
+                revenue_real = (df['Nilai Transaksi'] - commission_real).fillna(0)
+                ofd_fees_real = (df['Harga Makanan'] - revenue_real).fillna(0)
                 
                 # Insert new columns
                 df['Commission'] = commission_real
                 df['Revenue'] = revenue_real
                 df['OFD Fees'] = ofd_fees_real
                 
-                # Add Merchant Name column at the beginning
-                df.insert(0, "Merchant Name", matched_merchant)
+                # Add Merchant Name column at the beginning if not already present
+                if "Merchant Name" not in df.columns:
+                    df.insert(0, "Merchant Name", matched_merchant)
                 
                 # Fix scientific notation for Order IDs
                 if "No. Pesanan" in df.columns:
@@ -583,10 +584,9 @@ def run_pipeline():
                 final_cols = [c for c in desired_order if c in df.columns] + [c for c in df.columns if c not in desired_order]
                 df = df[final_cols]
                 
-                # Save individual analyzed report
-                out_path = fpath.replace(".xlsx", "_Analyzed.xlsx")
-                df.to_excel(out_path, index=False)
-                log.info(f"     ✅ [DATA] Saved analyzed data: {os.path.basename(out_path)}")
+                # Save individual analyzed report by overwriting the raw file in place
+                df.to_excel(fpath, index=False)
+                log.info(f"     ✅ [DATA] Saved analyzed data (overwriting raw file): {os.path.basename(fpath)}")
                 
                 all_analyzed_data.append(df)
             else:

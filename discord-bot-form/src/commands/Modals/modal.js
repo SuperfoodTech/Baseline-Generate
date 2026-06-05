@@ -1235,6 +1235,7 @@ module.exports = {
                 const nameIdx = baseHeaders.indexOf('Nama Outlet');
                 const appIdx = baseHeaders.indexOf('Aplikasi');
                 const usernameIdx = baseHeaders.indexOf('Nama Pengguna');
+                const outletBdIdx = baseHeaders.findIndex(h => h.toLowerCase() === 'bd');
 
                 const outlets = [];
                 const outletAppMap = {};
@@ -1277,22 +1278,31 @@ module.exports = {
                                 }
                             }
 
-                            // BD matching
-                            if (usernameIdx !== -1 && cols.length > usernameIdx) {
-                                const username = cols[usernameIdx].toLowerCase();
-                                const bdName = userToBdMap[username]; // ONLY map if username is found in credentials mapping
-                                if (bdName) {
-                                    const bdKey = bdName.toLowerCase();
-                                    if (!bdOutletsMap[bdKey]) {
-                                        bdOutletsMap[bdKey] = new Set();
-                                    }
-                                    bdOutletsMap[bdKey].add(outletName);
-
-                                    if (!outletBdMap[normalizedOutlet]) {
-                                        outletBdMap[normalizedOutlet] = new Set();
-                                    }
-                                    outletBdMap[normalizedOutlet].add(bdName);
+                            // BD matching (Primary: BD column, Fallback: Username mapping)
+                            let bdName = null;
+                            if (outletBdIdx !== -1 && cols.length > outletBdIdx) {
+                                const val = cols[outletBdIdx].trim();
+                                if (val && val !== '-' && val !== '') {
+                                    bdName = val;
                                 }
+                            }
+
+                            if (!bdName && usernameIdx !== -1 && cols.length > usernameIdx) {
+                                const username = cols[usernameIdx].toLowerCase();
+                                bdName = userToBdMap[username];
+                            }
+
+                            if (bdName) {
+                                const bdKey = bdName.toLowerCase();
+                                if (!bdOutletsMap[bdKey]) {
+                                    bdOutletsMap[bdKey] = new Set();
+                                }
+                                bdOutletsMap[bdKey].add(outletName);
+
+                                if (!outletBdMap[normalizedOutlet]) {
+                                    outletBdMap[normalizedOutlet] = new Set();
+                                }
+                                outletBdMap[normalizedOutlet].add(bdName);
                             }
                         }
                     }

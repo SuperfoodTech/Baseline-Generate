@@ -95,7 +95,7 @@ def upload_to_gsheets(file_path, sheet_name="Grab", clear=True):
         return
 
     print(f"Reading {file_path}...")
-    df_master = pd.read_excel(file_path)
+    df_master = pd.read_excel(file_path, dtype=str)
 
     # Tambah Flag dan Month jika belum ada di Master
     if "Flag" not in df_master.columns:

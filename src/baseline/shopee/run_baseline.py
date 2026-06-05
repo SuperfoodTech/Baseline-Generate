@@ -98,9 +98,9 @@ def subtract_months(dt, months):
         dt = (dt - timedelta(days=1)).replace(day=1)
     return dt
 
-def resolve_bd_to_usernames(bd_filter, max_age_hours=24):
+def resolve_bd_to_names_and_usernames(bd_filter, max_age_hours=24):
     if not bd_filter:
-        return []
+        return [], []
         
     import os
     import time
@@ -116,15 +116,18 @@ def resolve_bd_to_usernames(bd_filter, max_age_hours=24):
         with open(creds_cache, "w", encoding="utf-8") as f:
             f.write(resp.text)
     except Exception as e:
-        log.warning(f"⚠️ Failed to download credentials in resolve_bd_to_usernames: {e}. Will use cache if available.")
+        log.warning(f"⚠️ Failed to download credentials in resolve_bd_to_names_and_usernames: {e}. Will use cache if available.")
             
     if not os.path.exists(creds_cache):
-        return [b.strip().lower() for b in bd_filter.split("|")]
+        inputs = [b.strip().lower() for b in bd_filter.split("|")]
+        return inputs, inputs
         
     try:
-        df_creds = robust_read_csv(creds_cache, expected_cols=4)
+        df_creds = robust_read_csv(creds_cache)
         inputs = [b.strip().lower() for b in bd_filter.split("|")]
-        resolved = []
+        resolved_users = []
+        resolved_bds = []
+        
         for inp in inputs:
             clean_inp = inp
             if clean_inp.startswith("bd "):
@@ -139,14 +142,28 @@ def resolve_bd_to_usernames(bd_filter, max_age_hours=24):
                     clean_bd = clean_bd[3:].strip()
                     
                 if clean_bd == clean_inp or bd_val == inp or username_val == inp:
-                    resolved.append(username_val)
+                    if username_val and username_val != 'nan':
+                        resolved_users.append(username_val)
+                    if bd_val and bd_val != 'nan':
+                        resolved_bds.append(bd_val)
+                        if clean_bd != bd_val:
+                            resolved_bds.append(clean_bd)
                     matched = True
             if not matched:
-                resolved.append(inp)
-        return resolved
+                resolved_users.append(inp)
+                resolved_bds.append(inp)
+                
+        resolved_users = list(set(resolved_users))
+        resolved_bds = list(set(resolved_bds))
+        return resolved_users, resolved_bds
     except Exception as e:
         log.error(f"⚠️ Error resolving BD filter: {e}")
-        return [b.strip().lower() for b in bd_filter.split("|")]
+        inputs = [b.strip().lower() for b in bd_filter.split("|")]
+        return inputs, inputs
+
+def resolve_bd_to_usernames(bd_filter, max_age_hours=24):
+    users, _ = resolve_bd_to_names_and_usernames(bd_filter, max_age_hours)
+    return users
 
 def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=None, bd_filter=None):
     """
@@ -178,8 +195,12 @@ def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=
             sf_df = df[df['aplikasi'] == app_name]
             
             if bd_filter:
-                resolved_bds = resolve_bd_to_usernames(bd_filter, max_age_hours)
-                sf_df = sf_df[sf_df['nama pengguna'].astype(str).str.strip().str.lower().isin(resolved_bds)]
+                resolved_users, resolved_bds = resolve_bd_to_names_and_usernames(bd_filter, max_age_hours)
+                mask_user = sf_df['nama pengguna'].astype(str).str.strip().str.lower().isin(resolved_users)
+                mask_bd = pd.Series(False, index=sf_df.index)
+                if 'bd' in sf_df.columns:
+                    mask_bd = sf_df['bd'].astype(str).str.strip().str.lower().isin(resolved_bds)
+                sf_df = sf_df[mask_user | mask_bd]
             
             if merchant_filter:
                 if "|" in merchant_filter:
