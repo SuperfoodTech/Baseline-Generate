@@ -223,6 +223,49 @@ def warm_account(acc: dict) -> bool:
 
         log.info(f"  │  [{username}] ✅ Browser terbuka. URL: {driver.current_url}")
 
+        # ── 1.5 Cek kesehatan sesi via teks profil .merchantName ──────────
+        # Sesi SEHAT  → profil bertuliskan "Admin: SuperFood" (ada titik dua + nama merchant)
+        # Sesi RUSAK  → profil hanya bertuliskan "Admin" saja (tanpa titik dua / nama merchant)
+        try:
+            profile_text = driver.execute_script("""
+                var el = document.querySelector('.merchantName');
+                if (el && el.offsetHeight > 0) return (el.innerText || '').trim().split('\\n')[0];
+                var triggers = document.querySelectorAll('.ant-dropdown-trigger, .ant-dropdown-link');
+                for (var t of triggers) {
+                    var txt = (t.innerText || '').trim().split('\\n')[0];
+                    if (txt) return txt;
+                }
+                return null;
+            """)
+
+            session_degraded = (
+                not profile_text or
+                profile_text.strip().lower() == "admin" or
+                ":" not in profile_text
+            )
+
+            if session_degraded:
+                log.warning(f"  │  [{username}] ⚠️  Profil menunjukkan '{profile_text}' — merchant tidak aktif. Trigger recovery...")
+                recovered = browser._deliberate_logout_and_relogin(
+                    driver,
+                    username=username,
+                    password=password,
+                    phone=phone,
+                )
+                if not recovered:
+                    log.error(f"  │  [{username}] ❌ Recovery logout-relogin gagal.")
+                    send_discord_alert(
+                        f"🔴 **[Session Warmer]** Akun `{username}` sesi rusak dan recovery gagal — perlu intervensi manual."
+                    )
+                    log.info(f"  └─ [{username}] GAGAL\n")
+                    return False
+                log.info(f"  │  [{username}] ✅ Recovery berhasil. Melanjutkan refresh token...")
+            else:
+                log.info(f"  │  [{username}] ✅ Sesi aktif: {profile_text}")
+
+        except Exception as _profile_err:
+            log.warning(f"  │  [{username}] ⚠️  Tidak bisa membaca profil: {_profile_err}")
+
         # ── 2. Navigate to Business Hours — triggers fresh tob_token ───────
         log.info(f"  │  [{username}] 🔄 Navigasi ke Business Hours untuk refresh token...")
         session_tokens = browser.refresh_tokens(driver)
