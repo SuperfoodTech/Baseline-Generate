@@ -367,7 +367,10 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                 continue
                 
             print(f"  🔍 [CHECK] Raw file '{xlsx_path.name}' has {len(df)} rows. Including in MASTER...")
-            if "Merchant" not in df.columns:
+            # Selalu timpa kolom Merchant bawaan S3 dengan nama file (Akun) agar tergabung per akun
+            if "Merchant" in df.columns:
+                df["Merchant"] = xlsx_path.stem
+            else:
                 df.insert(0, "Merchant", xlsx_path.stem)
             frames.append(df)
         except Exception as e:
