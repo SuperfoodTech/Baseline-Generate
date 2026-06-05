@@ -27,9 +27,9 @@ async def perform_shopee_login(page, username, password):
         await page.wait_for_selector(login_btn)
         await page.click(login_btn)
         
-        log.info("  [Login] Waiting for manual OTP / Redirect (300s timeout)...")
+        log.info("  [Login] Waiting for manual OTP / Redirect (No timeout)...")
         try:
-            await page.wait_for_url(lambda u: "login" not in u.lower() and "authenticate" not in u.lower() or "dashboard" in u.lower(), timeout=300000)
+            await page.wait_for_url(lambda u: "login" not in u.lower() and "authenticate" not in u.lower() or "dashboard" in u.lower(), timeout=0)
             return True
         except:
             if "login" not in page.url.lower(): return True

@@ -1,13 +1,13 @@
 {
   "shopee_tob_token": "B:EXh+8mK1qYPY1KlEhhABRROYzKnMLoXoOqDPMZeb04+BMkGwPc2YQahx1iK16r82BZClTUzsr8g3+bLMc7YI2/VSjZc7BNpvSbZphMIyjaTMqaoCO7RyR6X7etF6N44fy0EGBzOnxI+p/5nZPaPJhwDalhBpqMCA6+fX0QmBMpK7C+psTEd2CT0ZLzp4ceL8RCZ1Oz9HBawxo+0i6w0eyTmdB+Fp+OMncjB68ak=",
   "shopee_tob_entity_id": "15892383",
-  "saved_at": "2026-06-05T15:00:08.948787",
+  "saved_at": "2026-06-05T16:48:56.614240",
   "extra_cookies": {
-    "shopee_tob_entity_id": "",
-    "_sapid": "a9e7f74aa581e220acba3b48dadf5db539f3ba2034813d0f13dd677d",
-    "__shopee_partner_website_x_token_live": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyaWQiOiI1MzAzODUyNjQ5IiwicmVnaW9uIjoiSUQiLCJidXNpbmVzc0lkIjoxLCJ0b2tlbiI6IkI6RVhoKzhtSzFxWVBZMUtsRWhoQUJSUk9ZektuTUxvWG9PcURQTVplYjA0K0JNa0d3UGMyWVFhaHgxaUsxNnI4MkJaQ2xUVXpzcjhnMytiTE1jN1lJMi9WU2paYzdCTnB2U2JacGhNSXlqYVRNcWFvQ083UnlSNlg3ZXRGNk40NGZ5MEVHQnpPbnhJK3AvNW5aUGFQSmh3RGFsaEJwcU1DQTYrZlgwUW1CTXBLN0MrcHNURWQyQ1QwWkx6cDRjZUw4UkNaMU96OUhCYXd4byswaTZ3MGV5VG1kQitGcCtPTW5jakI2OGFrPSIsImVycm9yTXNnIjoiIiwiZXJyb3JDb2RlIjowLCJpYXQiOjE3ODA2NDQ5NjUsImV4cCI6MTg2NzA0NDk2NX0.w9-m6UQKoi2BZ8YWtG_1Csqvlq5f8xsHDIbyKGJozx3H4JfKWsiubAMVTg1HtPfhDM-LVGVJbGSMSYhULTw6R5oewwVNXFQ4--SCJBCvQqXXPgZbj3sxW3zVIhPaEpwQ5XUTjwDY1qvZOfzD8-sZvMLzyOG2ucechpmFFtuDomY",
+    "shopee_foody_mid": "15892383",
     "shopee_request_from": "partner_web",
-    "shopee_tob_token": "B:EXh+8mK1qYPY1KlEhhABRROYzKnMLoXoOqDPMZeb04+BMkGwPc2YQahx1iK16r82BZClTUzsr8g3+bLMc7YI2/VSjZc7BNpvSbZphMIyjaTMqaoCO7RyR6X7etF6N44fy0EGBzOnxI+p/5nZPaPJhwDalhBpqMCA6+fX0QmBMpK7C+psTEd2CT0ZLzp4ceL8RCZ1Oz9HBawxo+0i6w0eyTmdB+Fp+OMncjB68ak=",
-    "shopee_foody_mid": "15892383"
+    "__shopee_partner_website_x_token_live": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyaWQiOiI1MzAzODUyNjQ5IiwicmVnaW9uIjoiSUQiLCJidXNpbmVzc0lkIjoxLCJ0b2tlbiI6IkI6RVhoKzhtSzFxWVBZMUtsRWhoQUJSUk9ZektuTUxvWG9PcURQTVplYjA0K0JNa0d3UGMyWVFhaHgxaUsxNnI4MkJaQ2xUVXpzcjhnMytiTE1jN1lJMi9WU2paYzdCTnB2U2JacGhNSXlqYVRNcWFvQ083UnlSNlg3ZXRGNk40NGZ5MEVHQnpPbnhJK3AvNW5aUGFQSmh3RGFsaEJwcU1DQTYrZlgwUW1CTXBLN0MrcHNURWQyQ1QwWkx6cDRjZUw4UkNaMU96OUhCYXd4byswaTZ3MGV5VG1kQitGcCtPTW5jakI2OGFrPSIsImVycm9yTXNnIjoiIiwiZXJyb3JDb2RlIjowLCJpYXQiOjE3ODA2NDQ5NjUsImV4cCI6MTg2NzA0NDk2NX0.w9-m6UQKoi2BZ8YWtG_1Csqvlq5f8xsHDIbyKGJozx3H4JfKWsiubAMVTg1HtPfhDM-LVGVJbGSMSYhULTw6R5oewwVNXFQ4--SCJBCvQqXXPgZbj3sxW3zVIhPaEpwQ5XUTjwDY1qvZOfzD8-sZvMLzyOG2ucechpmFFtuDomY",
+    "_sapid": "a9e7f74aa581e220acba3b48dadf5db539f3ba2034813d0f13dd677d",
+    "shopee_tob_entity_id": "",
+    "shopee_tob_token": "B:EXh+8mK1qYPY1KlEhhABRROYzKnMLoXoOqDPMZeb04+BMkGwPc2YQahx1iK16r82BZClTUzsr8g3+bLMc7YI2/VSjZc7BNpvSbZphMIyjaTMqaoCO7RyR6X7etF6N44fy0EGBzOnxI+p/5nZPaPJhwDalhBpqMCA6+fX0QmBMpK7C+psTEd2CT0ZLzp4ceL8RCZ1Oz9HBawxo+0i6w0eyTmdB+Fp+OMncjB68ak="
   }
 }

@@ -86,7 +86,7 @@ def get_otp_code(username: str, phone: str) -> str:
     log.info(f"⏳ [DISCORD] Menunggu input OTP dari Discord untuk akun {username}...")
     
     start_wait = time.time()
-    while time.time() - start_wait < 300:
+    while time.time() - start_wait < 86400:
         if otp_file.exists():
             try:
                 data = json.loads(otp_file.read_text())
@@ -735,7 +735,7 @@ def _perform_login(driver, wait, username: str = None, password: str = None, pho
     otp_attempted = False
     wa_otp_triggered = False
     last_resend_time = time.time()
-    while time.time() - start_wait < 300:
+    while time.time() - start_wait < 86400:
         if "/authenticate/login" not in driver.current_url: break
         try:
             otp_input = None

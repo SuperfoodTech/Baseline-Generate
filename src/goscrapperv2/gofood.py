@@ -655,10 +655,6 @@ def login_outlet_gofood_flow(outlet_info):
 
                 time.sleep(1.0)
 
-                if time.time() - start_time > 600:
-                    console.print("[error]❌ Timeout 10 menit.[/error]")
-                    break
-
         except KeyboardInterrupt:
             console.print("\n[warning]⚠️ Dibatalkan oleh pengguna.[/warning]")
         except Exception as e:
