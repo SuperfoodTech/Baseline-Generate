@@ -10,9 +10,9 @@ def upload_to_drive_via_appscript(file_path, folder_id=""):
     load_dotenv()
     # Anda bisa meletakkan APPS_SCRIPT_URL di dalam file .env
     # Atau ganti langsung string di bawah ini jika tidak pakai .env
-    apps_script_url = os.getenv("APPS_SCRIPT_URL", "ISI_DENGAN_URL_WEB_APP_APPS_SCRIPT_ANDA")
+    apps_script_url = os.getenv("APPS_SCRIPT_URL", "https://script.google.com/macros/s/AKfycbxgoG5JkbJgNapXEWU59kTmFYvTAo2oUtdVyMqziSznQ9gLj7F1pN2gwdWQmKwIHQDP/exec")
     
-    if apps_script_url == "ISI_DENGAN_URL_WEB_APP_APPS_SCRIPT_ANDA":
+    if not apps_script_url or apps_script_url == "ISI_DENGAN_URL_WEB_APP_APPS_SCRIPT_ANDA":
         print("❌ Error: APPS_SCRIPT_URL belum diatur. Silakan ganti URL di dalam script atau di file .env")
         return None
 

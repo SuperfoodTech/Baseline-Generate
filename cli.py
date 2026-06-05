@@ -1035,11 +1035,12 @@ Examples:
     print(f"\n{CYAN}{'═'*58}{RESET}\n")
 
     # --- UPLOAD DAN PUSH OTOMATIS ---
-    print(f"\n{CYAN}[INFO] Mencoba mengunggah hasil CSV/Laporan ke Google Drive dan push ke Git...{RESET}")
-    # Karena kita belum tahu secara spesifik nama file CSV yang Anda inginkan,
-    # Fungsi ini secara otomatis mencari file format 'data_YYYY-MM-DD.csv' di directory berjalan
-    # Anda dapat mengganti parameternya di bawah ini dengan lokasi file spesifik jika dibutuhkan.
-    process_csv_pipeline()
+    print(f"\n{CYAN}[INFO] Mencoba mengunggah hasil CSV/Laporan ke Google Drive...{RESET}")
+    # Masukkan ID Folder Google Drive Anda di bawah ini
+    # (ID Folder adalah kode acak di URL Drive Anda, contoh: 1AbCdEfGhIjKlMnOpQrStUvWxYz)
+    ID_FOLDER_GDRIVE = "1lmKw_rwPOCghrofH3Ah1-reKCLNH_HyK" 
+    
+    process_csv_pipeline(folder_id=ID_FOLDER_GDRIVE)
 
 if __name__ == "__main__":
     main()
