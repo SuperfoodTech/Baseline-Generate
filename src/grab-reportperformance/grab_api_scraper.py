@@ -340,26 +340,35 @@ class GrabAPI:
         if not store_ids:
             return None, "Fallback failed: Could not determine any store_id for pagination."
             
-        # 2. Fetch all transactions via V2 Lazy Load for EACH store_id
+        # 2. Fetch all transactions via V2 Lazy Load in BATCHES of 50 stores
         logger.info(f"  [Fallback] Paginating V2 detail transactions for {len(store_ids)} stores...")
         all_txs = []
         
-        for store_id in store_ids:
-            merchants_param = f"%7B%22merchants%22:[%7B%22stores%22:[%7B%22grab_id%22:%22{store_id}%22%7D]%7D]%7D"
+        batch_size = 50
+        for i in range(0, len(store_ids), batch_size):
+            store_batch = store_ids[i:i+batch_size]
+            
+            # Construct the merchants parameter for this batch
+            # Format: {"merchants":[{"stores":[{"grab_id":"A"},{"grab_id":"B"}]}]}
+            store_objs = []
+            for sid in store_batch:
+                store_objs.append(f"%7B%22grab_id%22:%22{sid}%22%7D")
+            merchants_param = f"%7B%22merchants%22:[%7B%22stores%22:[{','.join(store_objs)}]%7D]%7D"
+            
             for c_start, c_end in date_chunks:
                 offset = 0
-                limit = 50
+                limit = 100  # Increased limit per request
                 
                 while True:
                     tx_url = (
                         f"{self.base_url}/mex/finances/v2/transactions"
                         f"?merchant_group_id={mgid}&from={c_start}&to={c_end}"
                         f"&limit={limit}&offset={offset}&currency=IDR"
-                        f"&merchants={merchants_param}&store_id={store_id}"
+                        f"&merchants={merchants_param}"
                     )
                     tx_resp = await self.call_api(tx_url)
                     if tx_resp.get("status") != 200:
-                        logger.warning(f"  [Fallback] V2 pagination failed at offset {offset} for store {store_id}: {tx_resp}")
+                        logger.warning(f"  [Fallback] V2 pagination failed at offset {offset} for batch: {tx_resp}")
                         break
                         
                     data_list = tx_resp.get("data", {}).get("data", {}).get("results", [])
@@ -370,7 +379,7 @@ class GrabAPI:
                     offset += limit
                     
                     # Prevent infinite loop
-                    if offset > 10000:
+                    if offset > 20000:
                         break
         
         logger.info(f"  [Fallback] Retrieved {len(all_txs)} total transactions across all stores.")
