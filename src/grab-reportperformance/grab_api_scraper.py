@@ -303,18 +303,28 @@ class GrabAPI:
         exact_omzet = net_sales - gross_sales
         logger.info(f"  [Fallback] Extracted Exact GrabFood Omzet: Rp{exact_omzet:,.0f}")
         
-        # 2. Extract grab_id from store_ids in a previous API or by hitting merchant-selector again
-        ms_resp = await self.call_api(f"{self.base_url}/troy/user-profile/v1/merchant-selector")
+        # 2. Extract grab_id from v1 transactions list (more reliable than merchant-selector)
+        logger.info(f"  [Fallback] Extracting grab_id from V1 stores list...")
+        stores_url = f"{self.base_url}/mex/finances/v1/transactions?merchant_group_id={mgid}&from={start_date}&to={end_date}&limit=20&offset=0&currency=IDR"
+        stores_resp = await self.call_api(stores_url)
         grab_id = None
-        if ms_resp.get("status") == 200:
-            merchants = ms_resp.get("data", {}).get("merchants", [])
-            for m in merchants:
-                if m.get("id") == mgid:
-                    stores = m.get("stores", [])
-                    if stores:
-                        grab_id = stores[0].get("grabID") or stores[0].get("id")
-                    break
+        if stores_resp.get("status") == 200:
+            stores_list = stores_resp.get("data", {}).get("data", [])
+            if stores_list and len(stores_list) > 0:
+                grab_id = stores_list[0].get("store_id")
         
+        if not grab_id:
+            # Fallback to merchant-selector if v1/transactions fails
+            ms_resp = await self.call_api(f"{self.base_url}/troy/user-profile/v1/merchant-selector")
+            if ms_resp.get("status") == 200:
+                merchants = ms_resp.get("data", {}).get("merchants", [])
+                for m in merchants:
+                    if m.get("id") == mgid:
+                        stores = m.get("stores", [])
+                        if stores:
+                            grab_id = stores[0].get("grabID") or stores[0].get("id")
+                        break
+                        
         if not grab_id:
             return None, "Fallback failed: Could not determine grab_id for pagination."
             
