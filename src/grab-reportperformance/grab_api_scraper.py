@@ -277,178 +277,114 @@ class GrabAPI:
             return False, str(e)
 
     async def execute_fallback(self, mgid, start_date, end_date):
-        """Executes the fallback V1 + V2 API strategy when CSV export fails."""
-        from datetime import datetime, timedelta
+        """Executes the S3 Insights bypass API strategy to replace V1+V2."""
+        from datetime import datetime
+        import json
+        import uuid
+        import requests
         
-        def get_date_chunks(start_str, end_str):
-            start = datetime.strptime(start_str, "%Y-%m-%d")
-            end = datetime.strptime(end_str, "%Y-%m-%d")
-            chunks = []
-            curr = start
-            while curr <= end:
-                chunk_end = min(curr + timedelta(days=30), end)
-                chunks.append((curr.strftime("%Y-%m-%d"), chunk_end.strftime("%Y-%m-%d")))
-                curr = chunk_end + timedelta(days=1)
-            return chunks
-
-        date_chunks = get_date_chunks(start_date, end_date)
+        logger.info(f"  [S3 Insights] Starting S3 bypass for {start_date} to {end_date}...")
         
-        # 1. Get list of all stores for this merchant group (with pagination and chunking)
-        logger.info(f"  [Fallback] Extracting all store_ids from V1 stores list...")
-        store_ids = []
-        for c_start, c_end in date_chunks:
-            offset_stores = 0
-            limit_stores = 100
-            
-            while True:
-                stores_url = f"{self.base_url}/mex/finances/v1/transactions?merchant_group_id={mgid}&from={c_start}&to={c_end}&limit={limit_stores}&offset={offset_stores}&currency=IDR"
-                stores_resp = await self.call_api(stores_url)
+        # 1. Fetch store list for payload (hanya butuh memanggil 1 kali untuk dapat semua store)
+        stores_url = f"{self.base_url}/mex/finances/v1/transactions?merchant_group_id={mgid}&from={start_date}&to={start_date}&limit=50&offset=0&currency=IDR"
+        st_resp = await self.call_api(stores_url)
+        store_grab_ids = []
+        if st_resp.get("status") == 200:
+            for st in st_resp.get("data", {}).get("data", []):
+                sid = st.get("store_id")
+                if sid: store_grab_ids.append(sid)
                 
-                if stores_resp.get("status") == 200:
-                    stores_list = stores_resp.get("data", {}).get("data", [])
-                    if not stores_list:
-                        break
-                        
-                    for s in stores_list:
-                        sid = s.get("store_id")
-                        if sid:
-                            store_ids.append(sid)
+        # Remove duplicates
+        store_grab_ids = list(set(store_grab_ids))
+        logger.info(f"  [S3 Insights] Found {len(store_grab_ids)} stores. Building payload...")
+                
+        # 2. Convert dates to ISO 8601
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+        start_date_str = start_dt.strftime("%Y-%m-%dT00:00:00.000Z")
+        end_date_str = end_dt.strftime("%Y-%m-%dT23:59:59.000Z")
+        
+        insights_url = f"{self.base_url}/mex-insights/download/v1/csv?merchant_group_id={mgid}&currency=IDR"
+        payload = {
+            "merchant_group_id": mgid,
+            "parentEntityIds": [],
+            "businessLines": [],
+            "endDate": end_date_str,
+            "queryNames": ["sales-performance-download"],
+            "startDate": start_date_str,
+            "storeGrabIDs": store_grab_ids,
+            "storeZeusIDs": []
+        }
+        
+        # 3. Post to Insights API directly using evaluate to bypass Playwright context limits
+        res_json = await self.page.evaluate(f"""
+        async (payloadObj) => {{
+            const r = await fetch("{insights_url}", {{
+                method: "POST",
+                headers: {{
+                    "accept": "application/json",
+                    "content-type": "application/json",
+                    "x-api-source": "mex-insign",
+                    "x-currency": "IDR",
+                    "x-merchant-id": "{mgid}"
+                }},
+                body: JSON.stringify(payloadObj)
+            }});
+            if (!r.ok) return {{ error: await r.text() }};
+            return await r.json();
+        }}
+        """, payload)
+        
+        if not res_json or "ref_id" not in res_json:
+            return None, f"Failed to get ref_id from S3 Insights API: {res_json}"
+            
+        ref_id = res_json.get("ref_id")
+        logger.info(f"  [S3 Insights] Ref ID obtained: {ref_id}. Polling for generated CSV...")
+        
+        # 4. Poll for URL
+        for i in range(40):
+            await asyncio.sleep(5)
+            p_url = f"{self.base_url}/mex-insights/download/v1/generated-insights/{ref_id}"
+            p_data = await self.page.evaluate(f"""
+            async () => {{
+                const r = await fetch("{p_url}", {{
+                    headers: {{
+                        "accept": "application/json",
+                        "x-api-source": "mex-insign",
+                        "x-merchant-id": "{mgid}"
+                    }}
+                }});
+                if (!r.ok) return {{ status: "HTTP_ERROR" }};
+                return await r.json();
+            }}
+            """)
+            
+            status = p_data.get("status")
+            if status == "SUCCESS":
+                s3_url = p_data.get("s3_url")
+                if not s3_url:
+                    return None, "S3 Insights status SUCCESS but no s3_url provided."
                     
-                    if len(stores_list) < limit_stores:
-                        break
-                    offset_stores += limit_stores
+                job_id = uuid.uuid4().hex[:8]
+                filename = f"downloads/grab_transactions_{mgid}_s3_{job_id}.csv"
+                os.makedirs("downloads", exist_ok=True)
+                
+                # Using standard requests to fetch S3 (since it's a pre-signed URL)
+                logger.info(f"  [S3 Insights] S3 Link found! Downloading to {filename}...")
+                csv_req = requests.get(s3_url)
+                if csv_req.status_code == 200:
+                    with open(filename, 'w', encoding='utf-8') as f:
+                        f.write(csv_req.text)
+                    logger.info(f"  [S3 Insights] CSV successfully downloaded.")
+                    return filename, None
                 else:
-                    break
+                    return None, f"Failed to download from S3 URL. HTTP {csv_req.status_code}"
+            elif status == "IN_PROGRESS":
+                continue
+            else:
+                return None, f"S3 Polling failed with status: {status}"
                 
-        # Remove duplicates just in case
-        store_ids = list(set(store_ids))
-        
-        if not store_ids:
-            # Fallback to merchant-selector if v1/transactions fails
-            ms_resp = await self.call_api(f"{self.base_url}/troy/user-profile/v1/merchant-selector")
-            if ms_resp.get("status") == 200:
-                merchants = ms_resp.get("data", {}).get("merchants", [])
-                for m in merchants:
-                    if m.get("id") == mgid:
-                        stores = m.get("stores", [])
-                        for st in stores:
-                            sid = st.get("grabID") or st.get("id")
-                            if sid:
-                                store_ids.append(sid)
-                        break
-                        
-        if not store_ids:
-            return None, "Fallback failed: Could not determine any store_id for pagination."
-            
-        # 2. Fetch all transactions via V2 Lazy Load in BATCHES of 20 stores
-        logger.info(f"  [Fallback] Paginating V2 detail transactions for {len(store_ids)} stores...")
-        all_txs = []
-        
-        batch_size = 20
-        for i in range(0, len(store_ids), batch_size):
-            store_batch = store_ids[i:i+batch_size]
-            
-            # Construct the merchants parameter for this batch
-            # Format: {"merchants":[{"stores":[{"grab_id":"A"},{"grab_id":"B"}]}]}
-            store_objs = []
-            for sid in store_batch:
-                store_objs.append(f"%7B%22grab_id%22:%22{sid}%22%7D")
-            merchants_param = f"%7B%22merchants%22:[%7B%22stores%22:[{','.join(store_objs)}]%7D]%7D"
-            
-            for c_start, c_end in date_chunks:
-                offset = 0
-                limit = 50  # Must be 50 to avoid Grab API error
-                
-                while True:
-                    tx_url = (
-                        f"{self.base_url}/mex/finances/v2/transactions"
-                        f"?merchant_group_id={mgid}&from={c_start}&to={c_end}"
-                        f"&limit={limit}&offset={offset}&currency=IDR"
-                        f"&merchants={merchants_param}"
-                    )
-                    tx_resp = await self.call_api(tx_url)
-                    if tx_resp.get("status") != 200:
-                        logger.warning(f"  [Fallback] V2 pagination failed at offset {offset} for batch: {tx_resp}")
-                        break
-                        
-                    data_list = tx_resp.get("data", {}).get("data", {}).get("results", [])
-                    if not data_list:
-                        break
-                        
-                    all_txs.extend(data_list)
-                    offset += limit
-                    
-                    # Prevent infinite loop
-                    if offset > 20000:
-                        break
-        
-        # 3. Calculate exact omzet adjustments per calendar month
-        logger.info(f"  [Fallback] Fetching exact omzet via V1 Summary for adjustments...")
-        try:
-            import calendar
-            curr_dt = datetime.strptime(start_date, "%Y-%m-%d")
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-            
-            curr_y, curr_m = curr_dt.year, curr_dt.month
-            while (curr_y < end_dt.year) or (curr_y == end_dt.year and curr_m <= end_dt.month):
-                m_start = f"{curr_y:04d}-{curr_m:02d}-01"
-                last_day = calendar.monthrange(curr_y, curr_m)[1]
-                m_end = f"{curr_y:04d}-{curr_m:02d}-{last_day}"
-                
-                summary_url = f"{self.base_url}/mex/finances/v1/transactions/summary?merchant_group_id={mgid}&from={m_start}&to={m_end}&currency=IDR"
-                s_resp = await self.call_api(summary_url)
-                
-                if s_resp.get("status") == 200:
-                    s_data = s_resp.get("data", {}).get("data", {})
-                    # Grab's true Net Sales (native export omzet) is actually net_sales minus gross_sales!
-                    v1_net_sales = s_data.get("net_sales", 0) - s_data.get("gross_sales", 0)
-                    
-                    v2_sum = 0
-                    month_prefix = f"{curr_y:04d}-{curr_m:02d}"
-                    for tx in all_txs:
-                        if str(tx.get('transaction_type', '')).lower() not in ['grabfood', 'grabfood for one'] or tx.get('transaction_status') == 'canceled':
-                            continue
-                        tx_date = tx.get('updated_at', tx.get('created_at', ''))
-                        if tx_date and tx_date.startswith(month_prefix):
-                            v2_sum += tx.get("net_total", 0)
-                            
-                    adjustment = v1_net_sales - v2_sum
-                    if adjustment != 0:
-                        all_txs.append({
-                            "transaction_id": f"ADJUST-{curr_y:04d}{curr_m:02d}",
-                            "short_order_number": "",
-                            "long_order_id": "", # Empty so it won't be counted as order
-                            "store_id": store_ids[0] if store_ids else "",
-                            "store_name": "Omzet Adjustment",
-                            "transaction_type": "grabfood",
-                            "transaction_category": "adjustment",
-                            "transaction_sub_category": "",
-                            "transaction_status": "settled",
-                            "net_total": adjustment,
-                            "created_at": f"{m_end}T23:59:59Z",
-                            "updated_at": f"{m_end}T23:59:59Z"
-                        })
-                
-                if curr_m == 12:
-                    curr_y, curr_m = curr_y + 1, 1
-                else:
-                    curr_m += 1
-        except Exception as e:
-            logger.warning(f"  [Fallback] Failed to calculate omzet adjustments: {str(e)}")
-
-        logger.info(f"  [Fallback] Retrieved {len(all_txs)} total transactions across all stores.")
-        
-        # 4. Transform to CSV Format
-        job_id = uuid.uuid4().hex[:8]
-        filename = f"downloads/grab_transactions_{mgid}_fallback_{job_id}.csv"
-        os.makedirs("downloads", exist_ok=True)
-        
-        try:
-            json_to_grab_csv_fallback(all_txs, filename)
-            logger.info(f"  [Fallback] Successfully generated simulated CSV: {filename}")
-            return filename, None
-        except Exception as e:
-            return None, f"Fallback CSV generation failed: {e}"
+        return None, "S3 Polling timeout after 40 attempts."
 
 async def perform_login(page, user, pwd):
     """Robust login steps — clears cookies on mismatch and handles sticky 'Welcome back' pages."""

@@ -367,7 +367,8 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                 continue
                 
             print(f"  🔍 [CHECK] Raw file '{xlsx_path.name}' has {len(df)} rows. Including in MASTER...")
-            df.insert(0, "Merchant", xlsx_path.stem)
+            if "Merchant" not in df.columns:
+                df.insert(0, "Merchant", xlsx_path.stem)
             frames.append(df)
         except Exception as e:
             print(f"  ❌ [CHECK] Gagal membaca atau memproses '{xlsx_path.name}': {e}")
@@ -381,27 +382,47 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     # --- APPLY BASELINE LOGIC (From result.py) ---
     working = master_df.copy()
     
-    # Preprocess columns
-    if "Updated On" in working.columns:
+    # Preprocess columns for both Old format and New S3 Insights format
+    if "Date" in working.columns and "Updated On" not in working.columns:
+        working["Updated On"] = pd.to_datetime(working["Date"], errors="coerce", format="%d/%m/%Y")
+    elif "Updated On" in working.columns:
         working["Updated On"] = pd.to_datetime(working["Updated On"], errors="coerce", format="%d %b %Y %I:%M %p")
+        
     if "Long Order ID" in working.columns:
         working["Long Order ID"] = working["Long Order ID"].fillna("").astype(str).str.strip()
-    if "Category" in working.columns:
+        
+    if "Grab Service" in working.columns and "Category" not in working.columns:
+        working["Category"] = working["Grab Service"].fillna("").astype(str).str.strip().str.casefold()
+    elif "Category" in working.columns:
         working["Category"] = working["Category"].fillna("").astype(str).str.strip().str.casefold()
-    if "Net Sales" in working.columns:
+        
+    if "Net Sales (Rp)" in working.columns and "Net Sales" not in working.columns:
+        # Hapus koma/titik ribuan jika ada
+        working["Net Sales (Rp)"] = working["Net Sales (Rp)"].astype(str).str.replace(',', '').str.replace('.', '')
+        working["Net Sales"] = pd.to_numeric(working["Net Sales (Rp)"], errors="coerce").fillna(0)
+    elif "Net Sales" in working.columns:
         working["Net Sales"] = pd.to_numeric(working["Net Sales"], errors="coerce").fillna(0)
+        
     if "Status" in working.columns:
         working["Status"] = working["Status"].fillna("").astype(str).str.strip().str.casefold()
 
     valid_long_order_id = working["Long Order ID"].str.match(r"^[A-Za-z0-9-]+$", na=False) if "Long Order ID" in working.columns else pd.Series(True, index=working.index)
-    is_order_category = working["Category"].isin(["payment", "adjustment"]) if "Category" in working.columns else pd.Series(True, index=working.index)
+    
+    # S3 Insights categories like 'grabfood', 'grabmart' OR Old format 'payment', 'adjustment'
+    is_order_category = working["Category"].str.contains("grabfood", case=False, na=False) | working["Category"].isin(["payment", "adjustment"]) if "Category" in working.columns else pd.Series(True, index=working.index)
     is_not_cancelled = working["Status"].ne("cancelled") if "Status" in working.columns else pd.Series(True, index=working.index)
     
     # Do NOT filter by valid_long_order_id to keep adjustment rows
     valid_orders = working.loc[is_order_category & is_not_cancelled].copy()
     
-    # Mark which rows actually count as physical orders
-    valid_orders["Is_Valid_Order"] = valid_orders["Long Order ID"].str.match(r"^[A-Za-z0-9-]+$", na=False)
+    # Parse Number of Transactions if S3 format
+    if "Number of Transactions" in valid_orders.columns:
+        # S3 format has aggregated order counts
+        valid_orders["Number of Transactions"] = valid_orders["Number of Transactions"].astype(str).str.replace(',', '').str.replace('.', '')
+        valid_orders["Order_Counter"] = pd.to_numeric(valid_orders["Number of Transactions"], errors="coerce").fillna(0)
+    else:
+        # Old format counts valid Long Order IDs
+        valid_orders["Order_Counter"] = valid_orders["Long Order ID"].str.match(r"^[A-Za-z0-9-]+$", na=False).astype(int)
     
     if "Updated On" in valid_orders.columns:
         valid_orders = valid_orders.loc[valid_orders["Updated On"].notna()].copy()
@@ -423,7 +444,7 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     summary = (
         valid_orders.groupby(["Merchant", "Month"], as_index=False)
         .agg(
-            Order_Count=("Is_Valid_Order", "sum"),
+            Order_Count=("Order_Counter", "sum"),
             Omzet_Net_Sales=("Net Sales", "sum"),
         )
         .sort_values(["Merchant", "Month"])
