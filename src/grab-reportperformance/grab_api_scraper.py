@@ -240,7 +240,7 @@ class GrabAPI:
         err = f"Status {resp.get('status')}: {resp.get('data') or resp.get('error')}"
         return None, err
 
-    async def poll_for_download(self, mgid, ref_id, max_retries=60):
+    async def poll_for_download(self, mgid, ref_id, max_retries=6):
         """Wait for report to be ready"""
         url = f"{self.base_url}/mex/finances/v1/generated-report/{ref_id}"
         params = {
@@ -722,27 +722,21 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
         # --- Download steps (retried WITHOUT re-login to avoid account blocking) ---
         download_success = False
         last_dl_err = ""
-        for dl_attempt in range(3):
+        
+        # Hanya coba 1 kali. Jika Grab tidak bisa menyediakan CSV dalam 30 detik, langsung Fallback
+        for dl_attempt in range(1):
             try:
-                if dl_attempt > 0:
-                    logger.info(f"  [Action] Retrying download for {user} (Attempt {dl_attempt + 1}/3, no re-login)...")
-                    await asyncio.sleep(5)  # Brief pause before retry
-
                 ref_id, err = await api.start_async_download(mgid, report_start, report_end)
                 if not ref_id:
                     logger.warning(f"  [Download] start_async_download failed for {user}: {err}")
                     last_dl_err = f"Request failed: {err}"
-                    if dl_attempt < 2:
-                        continue
-                    break # Break dl_attempt loop, let outer loop handle retry
+                    break
 
                 download_url, err = await api.poll_for_download(mgid, ref_id)
                 if not download_url:
                     logger.warning(f"  [Download] Polling failed for {user}: {err}")
                     last_dl_err = f"Polling failed: {err}"
-                    if dl_attempt < 2:
-                        continue
-                    break # Break dl_attempt loop
+                    break
 
                 job_id = uuid.uuid4().hex[:8]
                 filename = f"downloads/grab_transactions_{user}_{job_id}.csv"
@@ -753,9 +747,7 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
                     await page.screenshot(path=f"logs/download_fail_{user}.png")
                     logger.warning(f"  [Download] CSV download failed for {user}: {err}")
                     last_dl_err = f"Download failed: {err}"
-                    if dl_attempt < 2:
-                        continue
-                    break # Break dl_attempt loop
+                    break
 
                 # Success!
                 await context.close()
@@ -768,20 +760,16 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
             except SessionStuckError as se:
                 logger.warning(f"  [Action] SessionStuck on download for {user}: {se}")
                 last_dl_err = str(se)
-                if dl_attempt < 2:
-                    continue
-                break # Break dl_attempt loop
+                break
             except Exception as e:
-                logger.error(f"  [Error] Download attempt {dl_attempt + 1} failed for {user}: {e}")
+                logger.error(f"  [Error] Download attempt failed for {user}: {e}")
                 last_dl_err = str(e)
-                if dl_attempt < 2:
-                    continue
-                break # Break dl_attempt loop
+                break
 
-        # If we are here, download failed after 3 attempts.
+        # If we are here, native download failed.
         
         # --- EXECUTE FALLBACK INSTEAD OF GIVING UP ---
-        logger.warning(f"  [Action] All 3 download polling attempts failed for {user}. Initiating API Fallback...")
+        logger.warning(f"  [Action] CSV Export failed or timed out (30s) for {user}. Initiating API Fallback...")
         fallback_filename, fallback_err = await api.execute_fallback(mgid, report_start, report_end)
         
         if fallback_filename:
