@@ -382,9 +382,62 @@ class GrabAPI:
                     if offset > 20000:
                         break
         
+        # 3. Calculate exact omzet adjustments per calendar month
+        logger.info(f"  [Fallback] Fetching exact omzet via V1 Summary for adjustments...")
+        try:
+            import calendar
+            curr_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+            
+            curr_y, curr_m = curr_dt.year, curr_dt.month
+            while (curr_y < end_dt.year) or (curr_y == end_dt.year and curr_m <= end_dt.month):
+                m_start = f"{curr_y:04d}-{curr_m:02d}-01"
+                last_day = calendar.monthrange(curr_y, curr_m)[1]
+                m_end = f"{curr_y:04d}-{curr_m:02d}-{last_day}"
+                
+                summary_url = f"{self.base_url}/mex/finances/v1/transactions/summary?merchant_group_id={mgid}&from={m_start}&to={m_end}&currency=IDR"
+                s_resp = await self.call_api(summary_url)
+                
+                if s_resp.get("status") == 200:
+                    s_data = s_resp.get("data", {}).get("data", {})
+                    v1_net_sales = s_data.get("net_sales", 0)
+                    
+                    v2_sum = 0
+                    month_prefix = f"{curr_y:04d}-{curr_m:02d}"
+                    for tx in all_txs:
+                        if str(tx.get('transaction_type', '')).lower() not in ['grabfood', 'grabfood for one'] or tx.get('transaction_status') == 'canceled':
+                            continue
+                        tx_date = tx.get('updated_at', tx.get('created_at', ''))
+                        if tx_date and tx_date.startswith(month_prefix):
+                            v2_sum += tx.get("net_total", 0)
+                            
+                    adjustment = v1_net_sales - v2_sum
+                    if adjustment != 0:
+                        all_txs.append({
+                            "transaction_id": f"ADJUST-{curr_y:04d}{curr_m:02d}",
+                            "short_order_number": "",
+                            "long_order_id": "", # Empty so it won't be counted as order
+                            "store_id": store_ids[0] if store_ids else "",
+                            "store_name": "Omzet Adjustment",
+                            "transaction_type": "grabfood",
+                            "transaction_category": "adjustment",
+                            "transaction_sub_category": "",
+                            "transaction_status": "settled",
+                            "net_total": adjustment,
+                            "created_at": f"{m_end}T23:59:59Z",
+                            "updated_at": f"{m_end}T23:59:59Z"
+                        })
+                
+                if curr_m == 12:
+                    curr_y, curr_m = curr_y + 1, 1
+                else:
+                    curr_m += 1
+        except Exception as e:
+            logger.warning(f"  [Fallback] Failed to calculate omzet adjustments: {str(e)}")
+
         logger.info(f"  [Fallback] Retrieved {len(all_txs)} total transactions across all stores.")
         
-        # 3. Transform to CSV Format
+        # 4. Transform to CSV Format
         job_id = uuid.uuid4().hex[:8]
         filename = f"downloads/grab_transactions_{mgid}_fallback_{job_id}.csv"
         os.makedirs("downloads", exist_ok=True)

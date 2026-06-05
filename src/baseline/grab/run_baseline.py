@@ -397,7 +397,11 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     is_order_category = working["Category"].isin(["payment", "adjustment"]) if "Category" in working.columns else pd.Series(True, index=working.index)
     is_not_cancelled = working["Status"].ne("cancelled") if "Status" in working.columns else pd.Series(True, index=working.index)
     
-    valid_orders = working.loc[valid_long_order_id & is_order_category & is_not_cancelled].copy()
+    # Do NOT filter by valid_long_order_id to keep adjustment rows
+    valid_orders = working.loc[is_order_category & is_not_cancelled].copy()
+    
+    # Mark which rows actually count as physical orders
+    valid_orders["Is_Valid_Order"] = valid_orders["Long Order ID"].str.match(r"^[A-Za-z0-9-]+$", na=False)
     
     if "Updated On" in valid_orders.columns:
         valid_orders = valid_orders.loc[valid_orders["Updated On"].notna()].copy()
@@ -419,7 +423,7 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     summary = (
         valid_orders.groupby(["Merchant", "Month"], as_index=False)
         .agg(
-            Order_Count=("Long Order ID", "count"),
+            Order_Count=("Is_Valid_Order", "sum"),
             Omzet_Net_Sales=("Net Sales", "sum"),
         )
         .sort_values(["Merchant", "Month"])
