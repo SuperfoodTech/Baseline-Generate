@@ -243,7 +243,7 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     async with async_playwright() as p:
         # Load headless setting and concurrency from config.json walk-up
         headless_env = True
-        concurrency_limit = 3
+        concurrency_limit = 1
         try:
             import json
             for parent in Path(__file__).resolve().parents:
@@ -252,7 +252,7 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                     with open(config_file, "r") as f:
                         config_data = json.load(f)
                         headless_env = config_data.get("headless_grab", True)
-                        concurrency_limit = config_data.get("max_concurrency", 3)
+                        concurrency_limit = config_data.get("max_concurrency", 1)
                     break
         except Exception:
             pass
