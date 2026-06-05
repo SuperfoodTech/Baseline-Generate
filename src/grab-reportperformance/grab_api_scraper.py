@@ -340,11 +340,11 @@ class GrabAPI:
         if not store_ids:
             return None, "Fallback failed: Could not determine any store_id for pagination."
             
-        # 2. Fetch all transactions via V2 Lazy Load in BATCHES of 50 stores
+        # 2. Fetch all transactions via V2 Lazy Load in BATCHES of 20 stores
         logger.info(f"  [Fallback] Paginating V2 detail transactions for {len(store_ids)} stores...")
         all_txs = []
         
-        batch_size = 50
+        batch_size = 20
         for i in range(0, len(store_ids), batch_size):
             store_batch = store_ids[i:i+batch_size]
             
@@ -357,7 +357,7 @@ class GrabAPI:
             
             for c_start, c_end in date_chunks:
                 offset = 0
-                limit = 100  # Increased limit per request
+                limit = 50  # Must be 50 to avoid Grab API error
                 
                 while True:
                     tx_url = (
