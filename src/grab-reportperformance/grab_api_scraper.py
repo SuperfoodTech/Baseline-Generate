@@ -400,7 +400,8 @@ class GrabAPI:
                 
                 if s_resp.get("status") == 200:
                     s_data = s_resp.get("data", {}).get("data", {})
-                    v1_net_sales = s_data.get("net_sales", 0)
+                    # Grab's true Net Sales (native export omzet) is actually net_sales minus gross_sales!
+                    v1_net_sales = s_data.get("net_sales", 0) - s_data.get("gross_sales", 0)
                     
                     v2_sum = 0
                     month_prefix = f"{curr_y:04d}-{curr_m:02d}"
