@@ -240,7 +240,7 @@ class GrabAPI:
         err = f"Status {resp.get('status')}: {resp.get('data') or resp.get('error')}"
         return None, err
 
-    async def poll_for_download(self, mgid, ref_id, max_retries=6):
+    async def poll_for_download(self, mgid, ref_id, max_retries=12):
         """Wait for report to be ready"""
         url = f"{self.base_url}/mex/finances/v1/generated-report/{ref_id}"
         params = {
@@ -729,23 +729,35 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
                 await p.stop()
             return None, "Auth failed"
 
-        # --- Download steps (retried WITHOUT re-login to avoid account blocking) ---
-        download_success = False
-        last_dl_err = ""
+        # --- Fast API Extraction (V1+V2) as PRIMARY METHOD ---
+        logger.info(f"  [Action] Executing Fast API Extraction (V1+V2) as primary method for {user}...")
+        fast_filename, fast_err = await api.execute_fallback(mgid, report_start, report_end)
         
-        # Hanya coba 1 kali. Jika Grab tidak bisa menyediakan CSV dalam 30 detik, langsung Fallback
+        if fast_filename:
+            logger.info(f"  [Action] Fast API Extraction Success! Returning generated CSV.")
+            if context: await context.close()
+            if managed_browser: await managed_browser.close()
+            if p: await p.stop()
+            return fast_filename, None
+            
+        logger.warning(f"  [Action] Fast API Extraction failed for {user}: {fast_err}. Falling back to native CSV export...")
+        
+        # --- Native Grab CSV Export as FALLBACK ---
+        download_success = False
+        last_dl_err = f"Fast API Err: {fast_err}"
+        
         for dl_attempt in range(1):
             try:
                 ref_id, err = await api.start_async_download(mgid, report_start, report_end)
                 if not ref_id:
                     logger.warning(f"  [Download] start_async_download failed for {user}: {err}")
-                    last_dl_err = f"Request failed: {err}"
+                    last_dl_err += f" | Req err: {err}"
                     break
 
                 download_url, err = await api.poll_for_download(mgid, ref_id)
                 if not download_url:
                     logger.warning(f"  [Download] Polling failed for {user}: {err}")
-                    last_dl_err = f"Polling failed: {err}"
+                    last_dl_err += f" | Poll err: {err}"
                     break
 
                 job_id = uuid.uuid4().hex[:8]
@@ -756,7 +768,7 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
                     os.makedirs("logs", exist_ok=True)
                     await page.screenshot(path=f"logs/download_fail_{user}.png")
                     logger.warning(f"  [Download] CSV download failed for {user}: {err}")
-                    last_dl_err = f"Download failed: {err}"
+                    last_dl_err += f" | DL err: {err}"
                     break
 
                 # Success!
@@ -768,29 +780,13 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
                 return (filename, None)
 
             except SessionStuckError as se:
-                logger.warning(f"  [Action] SessionStuck on download for {user}: {se}")
-                last_dl_err = str(se)
+                logger.warning(f"  [Action] SessionStuck on native download for {user}: {se}")
+                last_dl_err += f" | Stuck: {se}"
                 break
             except Exception as e:
-                logger.error(f"  [Error] Download attempt failed for {user}: {e}")
-                last_dl_err = str(e)
+                logger.error(f"  [Error] Native download attempt failed for {user}: {e}")
+                last_dl_err += f" | Ex: {e}"
                 break
-
-        # If we are here, native download failed.
-        
-        # --- EXECUTE FALLBACK INSTEAD OF GIVING UP ---
-        logger.warning(f"  [Action] CSV Export failed or timed out (30s) for {user}. Initiating API Fallback...")
-        fallback_filename, fallback_err = await api.execute_fallback(mgid, report_start, report_end)
-        
-        if fallback_filename:
-            logger.info(f"  [Fallback] Success! Returning fallback CSV as valid output.")
-            if context: await context.close()
-            if managed_browser: await managed_browser.close()
-            if p: await p.stop()
-            return fallback_filename, None
-        else:
-            logger.error(f"  ✗ [Fallback] Failed for {user}: {fallback_err}")
-            last_dl_err = f"{last_dl_err} | Fallback err: {fallback_err}"
             
         # If fallback also fails, then proceed to clean up and retry whole session if possible
         if context:
