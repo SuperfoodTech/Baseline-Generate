@@ -278,31 +278,47 @@ class GrabAPI:
 
     async def execute_fallback(self, mgid, start_date, end_date):
         """Executes the fallback V1 + V2 API strategy when CSV export fails."""
-        # 1. Get list of all stores for this merchant group (with pagination)
+        from datetime import datetime, timedelta
+        
+        def get_date_chunks(start_str, end_str):
+            start = datetime.strptime(start_str, "%Y-%m-%d")
+            end = datetime.strptime(end_str, "%Y-%m-%d")
+            chunks = []
+            curr = start
+            while curr <= end:
+                chunk_end = min(curr + timedelta(days=30), end)
+                chunks.append((curr.strftime("%Y-%m-%d"), chunk_end.strftime("%Y-%m-%d")))
+                curr = chunk_end + timedelta(days=1)
+            return chunks
+
+        date_chunks = get_date_chunks(start_date, end_date)
+        
+        # 1. Get list of all stores for this merchant group (with pagination and chunking)
         logger.info(f"  [Fallback] Extracting all store_ids from V1 stores list...")
         store_ids = []
-        offset_stores = 0
-        limit_stores = 100
-        
-        while True:
-            stores_url = f"{self.base_url}/mex/finances/v1/transactions?merchant_group_id={mgid}&from={start_date}&to={end_date}&limit={limit_stores}&offset={offset_stores}&currency=IDR"
-            stores_resp = await self.call_api(stores_url)
+        for c_start, c_end in date_chunks:
+            offset_stores = 0
+            limit_stores = 100
             
-            if stores_resp.get("status") == 200:
-                stores_list = stores_resp.get("data", {}).get("data", [])
-                if not stores_list:
-                    break
-                    
-                for s in stores_list:
-                    sid = s.get("store_id")
-                    if sid:
-                        store_ids.append(sid)
+            while True:
+                stores_url = f"{self.base_url}/mex/finances/v1/transactions?merchant_group_id={mgid}&from={c_start}&to={c_end}&limit={limit_stores}&offset={offset_stores}&currency=IDR"
+                stores_resp = await self.call_api(stores_url)
                 
-                if len(stores_list) < limit_stores:
+                if stores_resp.get("status") == 200:
+                    stores_list = stores_resp.get("data", {}).get("data", [])
+                    if not stores_list:
+                        break
+                        
+                    for s in stores_list:
+                        sid = s.get("store_id")
+                        if sid:
+                            store_ids.append(sid)
+                    
+                    if len(stores_list) < limit_stores:
+                        break
+                    offset_stores += limit_stores
+                else:
                     break
-                offset_stores += limit_stores
-            else:
-                break
                 
         # Remove duplicates just in case
         store_ids = list(set(store_ids))
@@ -330,31 +346,32 @@ class GrabAPI:
         
         for store_id in store_ids:
             merchants_param = f"%7B%22merchants%22:[%7B%22stores%22:[%7B%22grab_id%22:%22{store_id}%22%7D]%7D]%7D"
-            offset = 0
-            limit = 50
-            
-            while True:
-                tx_url = (
-                    f"{self.base_url}/mex/finances/v2/transactions"
-                    f"?merchant_group_id={mgid}&from={start_date}&to={end_date}"
-                    f"&limit={limit}&offset={offset}&currency=IDR"
-                    f"&merchants={merchants_param}&store_id={store_id}"
-                )
-                tx_resp = await self.call_api(tx_url)
-                if tx_resp.get("status") != 200:
-                    logger.warning(f"  [Fallback] V2 pagination failed at offset {offset} for store {store_id}: {tx_resp}")
-                    break
-                    
-                data_list = tx_resp.get("data", {}).get("data", {}).get("results", [])
-                if not data_list:
-                    break
-                    
-                all_txs.extend(data_list)
-                offset += limit
+            for c_start, c_end in date_chunks:
+                offset = 0
+                limit = 50
                 
-                # Prevent infinite loop
-                if offset > 10000:
-                    break
+                while True:
+                    tx_url = (
+                        f"{self.base_url}/mex/finances/v2/transactions"
+                        f"?merchant_group_id={mgid}&from={c_start}&to={c_end}"
+                        f"&limit={limit}&offset={offset}&currency=IDR"
+                        f"&merchants={merchants_param}&store_id={store_id}"
+                    )
+                    tx_resp = await self.call_api(tx_url)
+                    if tx_resp.get("status") != 200:
+                        logger.warning(f"  [Fallback] V2 pagination failed at offset {offset} for store {store_id}: {tx_resp}")
+                        break
+                        
+                    data_list = tx_resp.get("data", {}).get("data", {}).get("results", [])
+                    if not data_list:
+                        break
+                        
+                    all_txs.extend(data_list)
+                    offset += limit
+                    
+                    # Prevent infinite loop
+                    if offset > 10000:
+                        break
         
         logger.info(f"  [Fallback] Retrieved {len(all_txs)} total transactions across all stores.")
         
