@@ -101,7 +101,7 @@ const makeProgressEmbed = (step, title, description, fields = []) => {
         .setColor(0x5865F2)
         .setTitle(`${steps[step].icon} ${title}`)
         .setDescription(`**Langkah Progres:**\n${progressStr}\n\n${description}`)
-        .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
+        .setFooter({ text: 'Sistem Baseline Performance' })
         .setTimestamp();
 
     if (fields && fields.length > 0) {
@@ -114,7 +114,7 @@ const makeProgressEmbed = (step, title, description, fields = []) => {
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('start')
-        .setDescription('Kirim formulir rekap laporan'),
+        .setDescription('Kirim formulir Laporan Baseline Performance'),
 
     async execute(interaction) {
         await interaction.deferReply();
@@ -127,11 +127,11 @@ module.exports = {
 
         const embed = new EmbedBuilder()
             .setColor(0x5865F2)
-            .setTitle('📊 Generate Baseline Report')
+            .setTitle('📊 Generate Baseline Performance Report')
             .setDescription(
-                'Klik tombol di bawah untuk mengisi formulir...'
+                'Klik tombol di bawah untuk menentukan BD, Outlet, dan Periode Baseline.'
             )
-            .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
+            .setFooter({ text: 'Sistem Baseline Performance' })
             .setTimestamp();
 
         const button = new ButtonBuilder()
@@ -205,7 +205,7 @@ module.exports = {
                             new EmbedBuilder()
                                 .setColor(0xFF0000)
                                 .setTitle('❌ Pipeline Dibatalkan Secara Paksa')
-                                .setDescription(`Proses rekap laporan telah dihentikan secara paksa oleh **${interaction.user.username}**.`)
+                                .setDescription(`Proses pipeline baseline telah dihentikan secara paksa oleh **${interaction.user.username}**.`)
                                 .setTimestamp()
                         ],
                         components: []
@@ -284,7 +284,7 @@ module.exports = {
                     .setColor(0x5865F2)
                     .setTitle('🔄 Menghubungkan ke Google Sheets...')
                     .setDescription('Mohon tunggu sejenak, kami sedang menyinkronkan daftar outlet dan BD terbaru secara langsung...')
-                    .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
+                    .setFooter({ text: 'Sistem Baseline Performance' })
                     .setTimestamp();
 
                 await interaction.editReply({ embeds: [loadingEmbed], components: [] });
@@ -312,9 +312,7 @@ module.exports = {
                 minValues: 1,
                 maxValues: 1,
                 isFirstStep: true,
-                fields: [
-                    { name: 'Jenis Laporan', value: formData.tagihan.toUpperCase(), inline: true }
-                ]
+
             });
 
             const selectedBdValues = bdResult.values;
@@ -336,7 +334,7 @@ module.exports = {
                 bdOutlets.forEach(o => outletNamesSet.add(o));
             });
             let filteredOutlets = Array.from(outletNamesSet);
-            
+
             let outletOptions;
             if (filteredOutlets.length === 0) {
                 // Jika BD tidak punya outlet, jangan tampilkan semua outlet!
@@ -422,10 +420,8 @@ module.exports = {
                 options: aplikatorOptions,
                 minValues: 1,
                 maxValues: aplikatorOptions.length,
-                fields: [
-                    { name: 'Jenis Laporan', value: formData.tagihan.toUpperCase(), inline: true },
-                    { name: 'BD Terpilih', value: bdDisplay.length > 512 ? bdDisplay.substring(0, 508) + '...' : bdDisplay, inline: true },
-                    { name: 'Outlet Terpilih', value: formData.outlet.length > 512 ? formData.outlet.substring(0, 508) + '...' : formData.outlet, inline: false }
+                fields: [{ name: 'BD Terpilih', value: bdDisplay.length > 512 ? bdDisplay.substring(0, 508) + '...' : bdDisplay, inline: true },
+                { name: 'Outlet Terpilih', value: formData.outlet.length > 512 ? formData.outlet.substring(0, 508) + '...' : formData.outlet, inline: false }
                 ]
             });
 
@@ -448,7 +444,6 @@ module.exports = {
 
             // 4. Pilih Rentang Tanggal
             const dateFields = [
-                { name: 'Jenis Laporan', value: formData.tagihan.toUpperCase(), inline: true },
                 { name: 'Aplikator', value: formData.aplikator, inline: true },
                 { name: 'BD Terpilih', value: bdDisplay.length > 512 ? bdDisplay.substring(0, 508) + '...' : bdDisplay, inline: true },
                 { name: 'Outlet Terpilih', value: formData.outlet.length > 512 ? formData.outlet.substring(0, 508) + '...' : formData.outlet, inline: false }
@@ -464,13 +459,12 @@ module.exports = {
                 .setTitle('📋 Review Data Sebelum Dijalankan')
                 .setDescription('Periksa kembali data di bawah ini. Jika sudah benar, tekan **Jalankan Pipeline**. Proses ini membutuhkan waktu **5–15 menit** dan tidak bisa dibatalkan.')
                 .addFields(
-                    { name: 'Jenis Tagihan', value: formData.tagihan.toUpperCase(), inline: true },
                     { name: 'Aplikator', value: formData.aplikator, inline: true },
                     { name: 'BD', value: bdDisplay || 'Semua BD', inline: true },
                     { name: 'Rentang Tanggal', value: `📅 ${formData.tanggalMulai} s/d ${formData.tanggalSelesai}`, inline: false },
                     { name: 'Outlet', value: formData.outlet.length > 512 ? formData.outlet.substring(0, 508) + '...' : formData.outlet }
                 )
-                .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
+                .setFooter({ text: 'Sistem Baseline Performance' })
                 .setTimestamp();
 
             const confirmRow = new ActionRowBuilder().addComponents(
@@ -525,15 +519,14 @@ module.exports = {
             const summaryEmbed = new EmbedBuilder()
                 .setColor(0x00FF00)
                 .setTitle('✅ Data Diterima')
-                .setDescription('Berikut adalah rangkuman data laporan mingguan yang berhasil direkapitulasi secara otomatis.')
+                .setDescription('Rangkuman Laporan Baseline Performance')
                 .addFields(
-                    { name: 'Jenis Tagihan', value: formData.tagihan.toUpperCase(), inline: true },
                     { name: 'Aplikator', value: formData.aplikator, inline: true },
                     { name: 'BD', value: bdDisplay || 'Semua BD', inline: true },
-                    { name: 'Rentang Tanggal', value: `📅 ${formData.tanggalMulai} s/d ${formData.tanggalSelesai}`, inline: false },
+                    { name: 'Rentang Tanggal', value: `${formData.tanggalMulai} s/d ${formData.tanggalSelesai}`, inline: false },
                     { name: 'Outlet', value: formData.outlet.length > 1024 ? formData.outlet.substring(0, 1020) + '...' : formData.outlet }
                 )
-                .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
+                .setFooter({ text: 'Sistem Baseline Performance' })
                 .setTimestamp();
 
             await interaction.channel.send({ embeds: [summaryEmbed] });
@@ -602,7 +595,7 @@ module.exports = {
                                 { name: '📱 Platform', value: formData.aplikator, inline: true },
                                 { name: '📅 Tanggal', value: `${formData.tanggalMulai} s/d ${formData.tanggalSelesai}`, inline: false }
                             )
-                            .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
+                            .setFooter({ text: 'Sistem Baseline Performance' })
                             .setTimestamp()
                     ]
                 });
@@ -627,7 +620,7 @@ module.exports = {
                         .setColor(0xFFA500)
                         .setTitle('⏳ Pipeline Sedang Berjalan...')
                         .setDescription(
-                            `Pipeline **${formData.tagihan.toUpperCase()}** sedang diproses.\n\n` +
+                            `Pipeline **Baseline Performance** sedang diproses.\n\n` +
                             `${makeProgressBar(0, totalPhases)}\n` +
                             `> 📍 **Outlet:** ${formData.outlet.substring(0, 100)}\n` +
                             `> 👤 **BD:** ${bdDisplay || 'Semua BD'}\n` +
@@ -636,7 +629,7 @@ module.exports = {
                             `🔄 *Memulai pipeline...*\n` +
                             `⏱️ Estimasi waktu: **3–10 menit**`
                         )
-                        .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
+                        .setFooter({ text: 'Sistem Baseline Performance' })
                         .setTimestamp()
                 ],
                 components: [cancelRow]
@@ -657,7 +650,7 @@ module.exports = {
                                 .setColor(0xFFA500)
                                 .setTitle('⏳ Pipeline Sedang Berjalan...')
                                 .setDescription(
-                                    `Pipeline **${formData.tagihan.toUpperCase()}** sedang diproses.\n\n` +
+                                    `Pipeline **Baseline Performance** sedang diproses.\n\n` +
                                     `${makeProgressBar(phaseNumber, totalPhases)}\n` +
                                     `> 📍 **Outlet:** ${formData.outlet.substring(0, 100)}\n` +
                                     `> 👤 **BD:** ${bdDisplay || 'Semua BD'}\n` +
@@ -666,7 +659,7 @@ module.exports = {
                                     `${currentPhase}\n` +
                                     `⏱️ Estimasi waktu: **3–10 menit**`
                                 )
-                                .setFooter({ text: 'Sistem Rekap Laporan Otomatis' })
+                                .setFooter({ text: 'Sistem Baseline Performance' })
                                 .setTimestamp()
                         ],
                         components: [cancelRow]
@@ -738,7 +731,7 @@ module.exports = {
                             .setColor(color)
                             .setTitle(title)
                             .setTimestamp()
-                            .setFooter({ text: 'Sistem Rekap Laporan Otomatis' });
+                            .setFooter({ text: 'Sistem Baseline Performance' });
 
                         const pdfUrl = result.notifData ? result.notifData.pdf_url : null;
                         const finalPdfUrl = pdfUrl || (result.output.replace(/\x1B\[[0-9;]*m/g, '').match(/URL:\s*(https:\/\/drive\.google\.com\/file\/d\/[^\s\r\n]+)/) || [])[1];
@@ -775,8 +768,8 @@ module.exports = {
                                 { name: '📍 Outlet', value: outlet, inline: true },
                                 { name: '📱 Aplikator', value: aplikator, inline: true },
                                 { name: '📅 Rentang Tanggal', value: `\`${start_date}\` → \`${end_date}\``, inline: false },
-                                { name: '📊 Rata-rata Omzet', value: omzetStr, inline: true },
-                                { name: '🛒 Rata-rata Order', value: orderStr, inline: true },
+                                { name: '📊 Rata-rata Omzet / Bulan', value: omzetStr, inline: true },
+                                { name: '🛒 Rata-rata Order / Bulan', value: orderStr, inline: true },
                                 { name: '📁 Nama File', value: `\`${pdf_name}\``, inline: false }
                             );
                         } else {
@@ -792,7 +785,7 @@ module.exports = {
                         const { embed, finalPdfUrl } = makeNotifEmbed(
                             '⚠️ Pipeline Selesai dengan Peringatan',
                             0xFFAA00,
-                            `Pipeline **${formData.tagihan.toUpperCase()}** selesai, tetapi ada beberapa peringatan:\n\n` +
+                            `Pipeline **Baseline Performance** selesai, tetapi ada beberapa peringatan:\n\n` +
                             `> Sebagian data mungkin tidak lengkap. Periksa laporan yang dihasilkan.`
                         );
 
@@ -816,7 +809,7 @@ module.exports = {
                         const { embed, finalPdfUrl } = makeNotifEmbed(
                             '✅ Pipeline Selesai!',
                             0x00C853,
-                            `Pipeline **${formData.tagihan.toUpperCase()}** berhasil dijalankan.\n` +
+                            `Pipeline **Baseline Performance** berhasil dijalankan.\n` +
                             `${makeProgressBar(totalPhases, totalPhases)}`
                         );
 
@@ -848,7 +841,7 @@ module.exports = {
                                 .setColor(0xFF0000)
                                 .setTitle('❌ Pipeline Gagal')
                                 .setDescription(
-                                    `Pipeline **${formData.tagihan.toUpperCase()}** gagal dijalankan.\n\n` +
+                                    `Pipeline **Baseline Performance** gagal dijalankan.\n\n` +
                                     `**Exit Code:** \`${result.exitCode}\`\n` +
                                     `\`\`\`\n${errSnippet.substring(0, 1000)}\n\`\`\``
                                 )
@@ -925,7 +918,7 @@ module.exports = {
         const { startStr, endStr } = calculateThreeFullMonths();
 
         const getEmbed = () => {
-            let description = 'Silakan pilih **📅 3 Bulan Penuh** untuk langsung menggunakan data 3 bulan penuh terakhir, atau klik **⚙️ Custom Date Range** untuk memasukkan tanggal manual.';
+            let description = 'Silakan pilih **📅 3 Bulan Penuh** (Rekomendasi agar perhitungan rata-rata bulanan akurat), atau klik **⚙️ Custom Date Range** (Pastikan rentang awal s/d akhir bulan penuh).';
             if (errorMsg) {
                 description = `⚠️ **Format tidak valid:** ${errorMsg}\n\n${description}`;
             }
@@ -984,7 +977,7 @@ module.exports = {
                 const modalId = `date_modal_${Date.now()}`;
                 const modal = new ModalBuilder()
                     .setCustomId(modalId)
-                    .setTitle('Rentang Tanggal Laporan');
+                    .setTitle('Rentang Tanggal (Bulan Kalender Penuh)');
 
                 const startInput = new TextInputBuilder()
                     .setCustomId('start_date_input')
