@@ -1,6 +1,0 @@
-export_type
-56
-page_num
-1
-page_size
-3

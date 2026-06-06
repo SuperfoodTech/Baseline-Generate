@@ -110,30 +110,14 @@ cli.py
 !src/VB/shopee/sessions/
 !src/VB/shopee/sessions/*.json
 
-# Whitelist specific Shopee profiles for session persistence
+# Whitelist specific Shopee profiles for session persistence (essential files only)
 !src/shopee-omzet-automation/data/chrome_profile_auto73*/
-!src/shopee-omzet-automation/data/chrome_profile_auto73*/**
-
-# Exclude bloat, cache, history, and lock files from the whitelisted profiles
-src/shopee-omzet-automation/data/chrome_profile_auto73*/**/Cache/
-src/shopee-omzet-automation/data/chrome_profile_auto73*/**/Code Cache/
-src/shopee-omzet-automation/data/chrome_profile_auto73*/**/GPUCache/
-src/shopee-omzet-automation/data/chrome_profile_auto73*/**/DawnGraphiteCache/
-src/shopee-omzet-automation/data/chrome_profile_auto73*/**/DawnWebGPUCache/
-src/shopee-omzet-automation/data/chrome_profile_auto73*/**/ShaderCache/
-src/shopee-omzet-automation/data/chrome_profile_auto73*/**/GrShaderCache/
-src/shopee-omzet-automation/data/chrome_profile_auto73*/**/BrowserMetrics/
-src/shopee-omzet-automation/data/chrome_profile_auto73*/**/locks/
-src/shopee-omzet-automation/data/chrome_profile_auto73*/**/lock
-src/shopee-omzet-automation/data/chrome_profile_auto73*/**/*Lock*
-src/shopee-omzet-automation/data/chrome_profile_auto73*/**/LOCK
-src/shopee-omzet-automation/data/chrome_profile_auto73*/**/LOG
-src/shopee-omzet-automation/data/chrome_profile_auto73*/**/LOG.old
-src/shopee-omzet-automation/data/chrome_profile_auto73*/**/History*
-src/shopee-omzet-automation/data/chrome_profile_auto73*/**/Favicons*
-src/shopee-omzet-automation/data/chrome_profile_auto73*/**/Top Sites*
-src/shopee-omzet-automation/data/chrome_profile_auto73*/**/Shortcuts*
-src/shopee-omzet-automation/data/chrome_profile_auto73*/**/Download Service/
-src/shopee-omzet-automation/data/chrome_profile_auto73*/**/Safe Browsing*
+src/shopee-omzet-automation/data/chrome_profile_auto73*/**
+!src/shopee-omzet-automation/data/chrome_profile_auto73*/Local State
+!src/shopee-omzet-automation/data/chrome_profile_auto73*/profile_auto73*/
+!src/shopee-omzet-automation/data/chrome_profile_auto73*/profile_auto73*/Cookies
+!src/shopee-omzet-automation/data/chrome_profile_auto73*/profile_auto73*/Preferences
+!src/shopee-omzet-automation/data/chrome_profile_auto73*/profile_auto73*/Sessions/
+!src/shopee-omzet-automation/data/chrome_profile_auto73*/profile_auto73*/Sessions/**
 
 
