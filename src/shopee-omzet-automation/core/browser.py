@@ -466,27 +466,39 @@ def _deliberate_logout_and_relogin(
                         except Exception:
                             pass
                         
-                        # Tunggu HTTP request logout diproses oleh server Shopee
-                        time.sleep(3)
-                        
-                        # Validasi apakah modal sudah tertutup
-                        modal_gone = driver.execute_script("""
-                            var modals = Array.from(document.querySelectorAll('.ant-modal-content, .ant-modal, .ant-dialog, .ant-modal-wrap'));
-                            var activeModal = modals.find(m => {
-                                var style = window.getComputedStyle(m);
-                                return m.offsetHeight > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-                            });
-                            return !activeModal;
-                        """)
-                        
-                        current_url = driver.current_url.lower()
-                        if modal_gone or "login" in current_url or "authenticate" in current_url:
-                            log.info("  ✅ Modal berhasil tertutup. Logout terkonfirmasi.")
-                            confirm_clicked = True
+                        # Tunggu HTTP request logout diproses oleh server Shopee secara dinamis (max 20 detik)
+                        # Di server 1vCPU, request API ke Shopee bisa memakan waktu 5-15 detik!
+                        log.info("  ⏳ Menunggu respons server setelah klik konfirmasi (max 20s)...")
+                        for wait_sec in range(20):
+                            time.sleep(1)
+                            
+                            try:
+                                # Tangani kemungkinan munculnya alert native Javascript
+                                alert = driver.switch_to.alert
+                                alert.accept()
+                                log.info("  ⚠️ Native alert diterima dan ditutup.")
+                            except:
+                                pass
+                                
+                            modal_gone = driver.execute_script("""
+                                var modals = Array.from(document.querySelectorAll('.ant-modal-content, .ant-modal, .ant-dialog, .ant-modal-wrap'));
+                                var activeModal = modals.find(m => {
+                                    var style = window.getComputedStyle(m);
+                                    return m.offsetHeight > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+                                });
+                                return !activeModal;
+                            """)
+                            
+                            current_url = driver.current_url.lower()
+                            if modal_gone or "login" in current_url or "authenticate" in current_url:
+                                log.info(f"  ✅ Modal berhasil tertutup setelah {wait_sec+1} detik. Logout terkonfirmasi.")
+                                confirm_clicked = True
+                                break
+                                
+                        if confirm_clicked:
                             break
                         else:
-                            log.warning("  ⚠️ Modal masih terbuka di layar. Mengulang klik konfirmasi...")
-                            time.sleep(2)
+                            log.warning("  ⚠️ Modal masih terbuka di layar setelah 20 detik. Mengulang klik konfirmasi...")
                     else:
                         log.warning(f"  ⚠️ Tombol konfirmasi tidak ditemukan di dalam modal aktif (Attempt {confirm_attempt+1})...")
                         time.sleep(2)
