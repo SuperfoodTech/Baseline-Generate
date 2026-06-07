@@ -134,7 +134,7 @@ class ModuleWrapper(sys.modules[__name__].__class__):
 sys.modules[__name__].__class__ = ModuleWrapper
 PARTNER_DASHBOARD    = "https://partner.shopee.co.id/food/dashboard"
 TOKEN_TRIGGER_PAGE   = "https://partner.shopee.co.id/settings/shopee-food/business-hours-settings"
-MERCHANT_SELECTOR_URL = "https://partner.shopee.co.id/authenticate/merchant-selector"
+MERCHANT_SELECTOR_URL = PARTNER_DASHBOARD  # Disabled per user request (was: "https://partner.shopee.co.id/authenticate/merchant-selector")
 VALIDATE_URL         = "https://api.partner.shopee.co.id/nb/mss/web-api/PartnerAccountServer/GetUserInfo"
 SHOPEE_IMG_BASE      = "https://down-id.img.susercontent.com/file"
 
@@ -399,20 +399,40 @@ def _deliberate_logout_and_relogin(
             if confirm_el:
                 log.info(f"  📍 Found confirmation button on Attempt {confirm_attempt+1}. Clicking...")
                 try:
-                    confirm_el.click()
+                    # Use JS click first: more reliable in headless on slow servers
+                    driver.execute_script("""
+                        var btn = arguments[0];
+                        // Dispatch mouse events
+                        var ev1 = new MouseEvent('mouseover', { bubbles: true, cancelable: true });
+                        var ev2 = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+                        var ev3 = new MouseEvent('mouseup', { bubbles: true, cancelable: true });
+                        var ev4 = new MouseEvent('click', { bubbles: true, cancelable: true });
+                        btn.dispatchEvent(ev1); btn.dispatchEvent(ev2); btn.dispatchEvent(ev3); btn.dispatchEvent(ev4);
+                        btn.click(); // native fallback
+                    """, confirm_el)
                 except Exception as e:
-                    log.warning(f"  ⚠️ Selenium click failed: {e}. Trying ActionChains...")
+                    log.warning(f"  ⚠️ JS click failed: {e}. Trying Selenium click...")
                     try:
-                        ActionChains(driver).move_to_element(confirm_el).click().perform()
+                        confirm_el.click()
                     except Exception as e2:
-                        log.warning(f"  ⚠️ ActionChains click failed: {e2}. Trying JS click...")
-                        driver.execute_script("arguments[0].click();", confirm_el)
+                        log.warning(f"  ⚠️ Selenium click failed: {e2}.")
                 
-                time.sleep(2)
-                # Verify if modal is gone
+                # Increased wait time for 1vCPU slow servers to process the logout request
+                time.sleep(4)
+                
+                # Verify if modal is gone OR URL has changed
+                current_url = driver.current_url.lower()
+                if "login" in current_url or "authenticate" in current_url:
+                    log.info("  ✅ Redirected to login page. Logout confirmed.")
+                    confirm_clicked = True
+                    break
+                    
                 modal_present = driver.execute_script("""
                     var modal = document.querySelector('.ant-modal-content, .ant-modal, .ant-dialog, .ant-modal-wrap');
-                    return !!(modal && modal.offsetHeight > 0);
+                    if (!modal) return false;
+                    var style = window.getComputedStyle(modal);
+                    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                    return modal.offsetHeight > 0;
                 """)
                 if not modal_present:
                     log.info("  ✅ Modal disappeared. Logout confirmed.")
@@ -422,7 +442,7 @@ def _deliberate_logout_and_relogin(
                     log.warning("  ⚠️ Modal is still present after click. Retrying...")
             else:
                 log.warning(f"  ⚠️ Confirmation button/modal not found yet (Attempt {confirm_attempt+1}). Retrying...")
-                time.sleep(1.5)
+                time.sleep(2)
 
         if not confirm_clicked:
             log.warning("  ⚠️ Confirmation 'Log Out' button could not be clicked.")
@@ -1544,7 +1564,7 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
                     log.info(f"📍 [MERCHANT] Current: {active_name} (ID: {active_id})")
                     do_switch = False
                 else:
-                    log.info("📍 [MERCHANT] No active merchant detected. Redirecting...")
+                    log.info("📍 [MERCHANT] No active merchant detected. Triggering recovery...")
                     do_switch = True
 
             if do_switch:
