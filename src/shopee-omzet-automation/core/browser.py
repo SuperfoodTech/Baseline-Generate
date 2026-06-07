@@ -385,7 +385,7 @@ def _deliberate_logout_and_relogin(
                 
                 # Modal berhasil muncul! Sekarang cari dan klik tombol konfirmasinya
                 for confirm_attempt in range(5):
-                    confirm_el = driver.execute_script("""
+                    confirm_el, btn_html = driver.execute_script("""
                         var targets = ['log out', 'logout', 'keluar', 'ya', 'ok', 'confirm'];
                         var modals = Array.from(document.querySelectorAll('.ant-modal-content, .ant-modal, .ant-dialog, .ant-modal-wrap'));
                         
@@ -394,36 +394,70 @@ def _deliberate_logout_and_relogin(
                             return m.offsetHeight > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
                         });
                         
-                        if (!activeModal) return null;
+                        if (!activeModal) return [null, null];
+                        
+                        var foundBtn = null;
                         
                         // 1. Prioritaskan mencari tombol utama (Primary Button) di dalam modal
                         var primaryBtn = activeModal.querySelector('.ant-btn-primary');
                         if (primaryBtn) {
-                            return primaryBtn.closest('button, [role="button"], a, .ant-btn') || primaryBtn;
+                            foundBtn = primaryBtn.closest('button, [role="button"], a, .ant-btn') || primaryBtn;
                         }
                         
                         // 2. Jika tidak ada, cari berdasarkan teks
-                        var candidates = Array.from(activeModal.querySelectorAll('button, .ant-btn, [role="button"]'));
-                        for (var btn of candidates) {
-                            var rect = btn.getBoundingClientRect();
-                            if (rect.width === 0 || rect.height === 0) continue;
-                            
-                            var text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
-                            if (targets.some(function(k){ return text === k || text === ('confirm ' + k); })) {
-                                return btn.closest('button, [role="button"], a, .ant-btn') || btn;
+                        if (!foundBtn) {
+                            var candidates = Array.from(activeModal.querySelectorAll('button, .ant-btn, [role="button"]'));
+                            for (var btn of candidates) {
+                                var rect = btn.getBoundingClientRect();
+                                if (rect.width === 0 || rect.height === 0) continue;
+                                
+                                var text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+                                if (targets.some(function(k){ return text === k || text === ('confirm ' + k); })) {
+                                    foundBtn = btn.closest('button, [role="button"], a, .ant-btn') || btn;
+                                    break;
+                                }
                             }
                         }
-                        return null;
+                        
+                        if (foundBtn) {
+                            return [foundBtn, foundBtn.outerHTML];
+                        }
+                        return [null, null];
                     """)
                     
                     if confirm_el:
                         log.info(f"  📍 Tombol konfirmasi ditemukan (Attempt {confirm_attempt+1}). Mengeksekusi JS Click...")
+                        
+                        # --- DEBUGGING INJECTION ---
+                        if confirm_attempt == 0:
+                            log.info("  🔍 [DEBUG] Menyimpan screenshot sebelum klik modal...")
+                            try:
+                                import os
+                                debug_dir = os.path.join("src", "shopee-omzet-automation", "data", "debug")
+                                os.makedirs(debug_dir, exist_ok=True)
+                                ss_path = os.path.join(debug_dir, f"modal_debug_server_{attempt}.png")
+                                driver.save_screenshot(ss_path)
+                                log.info(f"  🔍 [DEBUG] Screenshot disimpan di {ss_path}")
+                                log.info(f"  🔍 [DEBUG] HTML Tombol: {btn_html}")
+                            except Exception as e:
+                                log.warning(f"  ⚠️ Gagal menyimpan screenshot debug: {e}")
+                        # ---------------------------
                         
                         # PENGUATAN: Gunakan JS Click secara paksa ke tombol dan isinya (span)
                         # karena Selenium native click sering diabaikan React di headless mode
                         try:
                             driver.execute_script("""
                                 var btn = arguments[0];
+                                // Eksekusi Pointer Event yang komprehensif
+                                var evOpts = { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse' };
+                                btn.dispatchEvent(new PointerEvent('pointerover', evOpts));
+                                btn.dispatchEvent(new PointerEvent('pointerenter', evOpts));
+                                btn.dispatchEvent(new PointerEvent('pointerdown', evOpts));
+                                btn.dispatchEvent(new MouseEvent('mousedown', evOpts));
+                                btn.dispatchEvent(new PointerEvent('pointerup', evOpts));
+                                btn.dispatchEvent(new MouseEvent('mouseup', evOpts));
+                                btn.dispatchEvent(new MouseEvent('click', evOpts));
+                                
                                 // Klik elemen utamanya
                                 btn.click();
                                 // Jika ada teks span di dalamnya, klik juga span-nya
