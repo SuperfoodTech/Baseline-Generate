@@ -325,135 +325,139 @@ def _deliberate_logout_and_relogin(
             log.warning("  ⚠️ Profile element or dropdown could not be opened.")
             return False
 
-        # ── Step 3: Find and click 'Log Out' in the dropdown ────────────
-        logout_el = driver.execute_script("""
-            var targets = ['log out', 'logout', 'keluar'];
-            var candidates = Array.from(document.querySelectorAll(
-                'li.ant-menu-item, li[role="menuitem"], .ant-dropdown-menu-item,'
-                + '[class*="menu-item"], span, div, a'
-            ));
-            for (var el of candidates) {
-                var rect = el.getBoundingClientRect();
-                if (rect.width === 0 || rect.height === 0) continue;
-                if (el.closest('.ant-dropdown-hidden, [style*="display: none"], [style*="visibility: hidden"]')) continue;
-                
-                var text = (el.innerText || '').trim().toLowerCase();
-                if (targets.some(function(k){ return text === k; })) {
-                    // Walk up to the closest interactive wrapper (e.g. li or .ant-dropdown-menu-item)
-                    var clickable = el.closest('li, button, a, [role="menuitem"], .ant-dropdown-menu-item') || el;
-                    return clickable;
-                }
-            }
-            return null;
-        """)
-
-        if not logout_el:
-            log.warning("  ⚠️ 'Log Out' menu item not found in dropdown.")
-            return False
-
-        # Click it using Selenium
-        try:
-            log.info("  👈 Clicking 'Log Out' menu item...")
-            logout_el.click()
-        except Exception:
-            # Fallback to ActionChains
-            try:
-                ActionChains(driver).move_to_element(logout_el).click().perform()
-            except Exception as e:
-                log.warning(f"  ⚠️ Selenium click failed: {e}. Trying JS MouseEvents as fallback...")
-                driver.execute_script("""
-                    var el = arguments[0];
-                    var ev1 = new MouseEvent('mouseover', { bubbles: true, cancelable: true });
-                    var ev2 = new MouseEvent('mouseenter', { bubbles: true, cancelable: true });
-                    var ev3 = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
-                    var ev4 = new MouseEvent('click', { bubbles: true, cancelable: true });
-                    var ev5 = new MouseEvent('mouseup', { bubbles: true, cancelable: true });
-                    el.dispatchEvent(ev1); el.dispatchEvent(ev2); el.dispatchEvent(ev3); el.dispatchEvent(ev4); el.dispatchEvent(ev5);
-                """, logout_el)
-        
-        time.sleep(1.5)  # Wait for confirmation dialog
-
-        # ── Step 4: Kuatkan Deteksi Modal & Klik Konfirmasi ────
+        # ── Step 3 & 4: Klik 'Log Out' di Dropdown dan Konfirmasi Modal ────────────
         from selenium.webdriver.support.ui import WebDriverWait
         from selenium.webdriver.support import expected_conditions as EC
         
+        wait = WebDriverWait(driver, 10)
         confirm_clicked = False
-        log.info("  ⏳ Menunggu modal konfirmasi muncul (memastikan UI sudah siap)...")
         
-        try:
-            # 1. Tunggu secara eksplisit sampai elemen modal terlihat di layar
-            wait = WebDriverWait(driver, 10)
-            wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, ".ant-modal-content, .ant-modal, .ant-dialog, .ant-modal-wrap")))
-            
-            # Beri waktu ekstra 1.5 detik agar animasi CSS (fade-in/zoom) selesai
-            # Seringkali di server lambat, modal sudah muncul di DOM tapi ukurannya belum penuh (animasi)
-            time.sleep(1.5)
-            
-            for confirm_attempt in range(5):
-                # 2. Cari tombol konfirmasi hanya di dalam modal yang sedang AKTIF/VISIBLE
-                confirm_el = driver.execute_script("""
-                    var targets = ['log out', 'logout', 'keluar'];
-                    var modals = Array.from(document.querySelectorAll('.ant-modal-content, .ant-modal, .ant-dialog, .ant-modal-wrap'));
+        for menu_attempt in range(3):
+            # 1. Cari elemen 'Log Out' di dropdown
+            logout_el = driver.execute_script("""
+                var targets = ['log out', 'logout', 'keluar'];
+                var candidates = Array.from(document.querySelectorAll(
+                    'li.ant-menu-item, li[role="menuitem"], .ant-dropdown-menu-item,'
+                    + '[class*="menu-item"], span, div, a'
+                ));
+                for (var el of candidates) {
+                    var rect = el.getBoundingClientRect();
+                    if (rect.width === 0 || rect.height === 0) continue;
+                    if (el.closest('.ant-dropdown-hidden, [style*="display: none"], [style*="visibility: hidden"]')) continue;
                     
-                    // Filter hanya modal yang tidak disembunyikan (bukan sisa dari notif lama)
-                    var activeModal = modals.find(m => {
-                        var style = window.getComputedStyle(m);
-                        return m.offsetHeight > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-                    });
-                    
-                    if (!activeModal) return null;
-                    
-                    var candidates = Array.from(activeModal.querySelectorAll('button, .ant-btn, [role="button"]'));
-                    for (var btn of candidates) {
-                        var rect = btn.getBoundingClientRect();
-                        if (rect.width === 0 || rect.height === 0) continue;
-                        
-                        var text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
-                        if (targets.some(function(k){ return text === k || text === ('confirm ' + k); })) {
-                            return btn.closest('button, [role="button"], a, .ant-btn') || btn;
-                        }
+                    var text = (el.innerText || '').trim().toLowerCase();
+                    if (targets.some(function(k){ return text === k; })) {
+                        return el.closest('li, button, a, [role="menuitem"], .ant-dropdown-menu-item') || el;
                     }
-                    return null;
-                """)
+                }
+                return null;
+            """)
+            
+            if not logout_el:
+                log.warning(f"  ⚠️ 'Log Out' menu item not found in dropdown (Attempt {menu_attempt+1}).")
+                time.sleep(2)
+                continue
+
+            # 2. Klik elemen 'Log Out' di dropdown
+            try:
+                log.info(f"  👈 Clicking 'Log Out' menu item (Attempt {menu_attempt+1})...")
+                logout_el.click()
+            except Exception:
+                try:
+                    ActionChains(driver).move_to_element(logout_el).click().perform()
+                except Exception as e:
+                    log.warning(f"  ⚠️ Selenium click failed: {e}. Trying JS MouseEvents...")
+                    driver.execute_script("""
+                        var el = arguments[0];
+                        var ev1 = new MouseEvent('mouseover', { bubbles: true, cancelable: true });
+                        var ev2 = new MouseEvent('mouseenter', { bubbles: true, cancelable: true });
+                        var ev3 = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+                        var ev4 = new MouseEvent('click', { bubbles: true, cancelable: true });
+                        var ev5 = new MouseEvent('mouseup', { bubbles: true, cancelable: true });
+                        el.dispatchEvent(ev1); el.dispatchEvent(ev2); el.dispatchEvent(ev3); el.dispatchEvent(ev4); el.dispatchEvent(ev5);
+                    """, logout_el)
+            
+            # 3. Tunggu modal muncul dengan Explicit Wait
+            log.info("  ⏳ Menunggu modal konfirmasi muncul...")
+            try:
+                wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, ".ant-modal-content, .ant-modal, .ant-dialog, .ant-modal-wrap")))
+                time.sleep(1.5) # Beri waktu agar animasi fade-in selesai
                 
-                if confirm_el:
-                    log.info(f"  📍 Tombol konfirmasi ditemukan (Attempt {confirm_attempt+1}). Mencoba klik...")
-                    try:
-                        confirm_el.click()
-                    except Exception as e:
-                        log.warning(f"  ⚠️ Selenium klik gagal: {e}. Coba JS klik...")
-                        try:
-                            driver.execute_script("arguments[0].click();", confirm_el)
-                        except Exception as e2:
-                            log.warning(f"  ⚠️ JS klik gagal: {e2}")
-                    
-                    # Tunggu server memproses request logout
-                    time.sleep(3)
-                    
-                    # 3. Validasi apakah modal sudah hilang
-                    modal_gone = driver.execute_script("""
+                # Modal berhasil muncul! Sekarang cari dan klik tombol konfirmasinya
+                for confirm_attempt in range(5):
+                    confirm_el = driver.execute_script("""
+                        var targets = ['log out', 'logout', 'keluar'];
                         var modals = Array.from(document.querySelectorAll('.ant-modal-content, .ant-modal, .ant-dialog, .ant-modal-wrap'));
+                        
                         var activeModal = modals.find(m => {
                             var style = window.getComputedStyle(m);
                             return m.offsetHeight > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
                         });
-                        return !activeModal;
+                        
+                        if (!activeModal) return null;
+                        
+                        var candidates = Array.from(activeModal.querySelectorAll('button, .ant-btn, [role="button"]'));
+                        for (var btn of candidates) {
+                            var rect = btn.getBoundingClientRect();
+                            if (rect.width === 0 || rect.height === 0) continue;
+                            
+                            var text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+                            if (targets.some(function(k){ return text === k || text === ('confirm ' + k); })) {
+                                return btn.closest('button, [role="button"], a, .ant-btn') || btn;
+                            }
+                        }
+                        return null;
                     """)
                     
-                    current_url = driver.current_url.lower()
-                    if modal_gone or "login" in current_url or "authenticate" in current_url:
-                        log.info("  ✅ Modal berhasil tertutup. Logout terkonfirmasi.")
-                        confirm_clicked = True
-                        break
+                    if confirm_el:
+                        log.info(f"  📍 Tombol konfirmasi ditemukan (Attempt {confirm_attempt+1}). Mencoba klik...")
+                        try:
+                            confirm_el.click()
+                        except Exception as e:
+                            log.warning(f"  ⚠️ Selenium klik gagal: {e}. Coba JS klik...")
+                            try:
+                                driver.execute_script("arguments[0].click();", confirm_el)
+                            except Exception as e2:
+                                log.warning(f"  ⚠️ JS klik gagal: {e2}")
+                        
+                        time.sleep(3) # Tunggu HTTP request
+                        
+                        # Validasi apakah modal sudah tertutup
+                        modal_gone = driver.execute_script("""
+                            var modals = Array.from(document.querySelectorAll('.ant-modal-content, .ant-modal, .ant-dialog, .ant-modal-wrap'));
+                            var activeModal = modals.find(m => {
+                                var style = window.getComputedStyle(m);
+                                return m.offsetHeight > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+                            });
+                            return !activeModal;
+                        """)
+                        
+                        current_url = driver.current_url.lower()
+                        if modal_gone or "login" in current_url or "authenticate" in current_url:
+                            log.info("  ✅ Modal berhasil tertutup. Logout terkonfirmasi.")
+                            confirm_clicked = True
+                            break
+                        else:
+                            log.warning("  ⚠️ Modal masih terbuka di layar. Mengulang klik konfirmasi...")
+                            time.sleep(2)
                     else:
-                        log.warning("  ⚠️ Modal masih terbuka di layar. Mengulang klik...")
+                        log.warning(f"  ⚠️ Tombol konfirmasi tidak ditemukan di dalam modal aktif (Attempt {confirm_attempt+1})...")
                         time.sleep(2)
+                
+                # Jika inner loop (konfirmasi) berhasil atau gagal tapi modal sudah muncul, kita stop outer loop
+                if confirm_clicked:
+                    break
                 else:
-                    log.warning(f"  ⚠️ Tombol konfirmasi tidak ditemukan di dalam modal aktif (Attempt {confirm_attempt+1})...")
-                    time.sleep(2)
-                    
-        except TimeoutException:
-            log.warning("  ⚠️ Modal konfirmasi tidak pernah muncul dalam batas waktu yang ditentukan.")
+                    log.warning("  ⚠️ Gagal mengklik tombol konfirmasi meski modal sudah muncul.")
+                    # Kita biarkan break karena modalnya nge-stuck, ngulang klik menu gak akan bantu
+                    break 
+
+            except TimeoutException:
+                # Modal tidak muncul sama sekali!
+                log.warning(f"  ⚠️ Modal konfirmasi tidak muncul setelah klik dropdown (Attempt {menu_attempt+1}).")
+                log.info("  🔄 Mengulang klik 'Log Out' di menu dropdown...")
+                time.sleep(1)
+                # Outer loop akan berulang untuk klik dropdown lagi
 
         if not confirm_clicked:
             log.warning("  ⚠️ Gagal menyelesaikan logout via UI.")
