@@ -373,87 +373,90 @@ def _deliberate_logout_and_relogin(
         
         time.sleep(1.5)  # Wait for confirmation dialog
 
-        # ── Step 4: Click the 'Log Out' confirmation button with retries ────
+        # ── Step 4: Kuatkan Deteksi Modal & Klik Konfirmasi ────
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        
         confirm_clicked = False
-        for confirm_attempt in range(5):
-            confirm_el = driver.execute_script("""
-                var targets = ['log out', 'logout', 'keluar'];
-                // Find ONLY the VISIBLE modal (prevent clicking hidden leftover modals)
-                var modals = Array.from(document.querySelectorAll('.ant-modal-content, .ant-modal, .ant-dialog, .ant-modal-wrap'));
-                var modal = modals.find(m => {
-                    var style = window.getComputedStyle(m);
-                    return m.offsetHeight > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-                });
-                if (!modal) return null;
-                
-                // Try to find the primary button first (usually the 'OK/Confirm' button)
-                var primaryBtn = modal.querySelector('.ant-btn-primary');
-                if (primaryBtn) return primaryBtn;
-                
-                // Fallback to searching by text
-                var candidates = Array.from(modal.querySelectorAll('button, .ant-btn, [role="button"]'));
-                for (var btn of candidates) {
-                    var rect = btn.getBoundingClientRect();
-                    if (rect.width === 0 || rect.height === 0) continue;
-                    var text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
-                    if (targets.some(function(k){ return text === k || text === ('confirm ' + k); })) {
-                        var clickable = btn.closest('button, [role="button"], a, .ant-btn') || btn;
-                        return clickable;
-                    }
-                }
-                return null;
-            """)
+        log.info("  ⏳ Menunggu modal konfirmasi muncul (memastikan UI sudah siap)...")
+        
+        try:
+            # 1. Tunggu secara eksplisit sampai elemen modal terlihat di layar
+            wait = WebDriverWait(driver, 10)
+            wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, ".ant-modal-content, .ant-modal, .ant-dialog, .ant-modal-wrap")))
             
-            if confirm_el:
-                log.info(f"  📍 Found confirmation button on Attempt {confirm_attempt+1}. Clicking...")
-                # Wait 3 seconds BEFORE clicking to ensure animations on slow servers are totally finished
-                time.sleep(3)
-                try:
-                    # Simplify JS click to just native click, avoiding event spam which might confuse React
-                    driver.execute_script("arguments[0].click();", confirm_el)
-                except Exception as e:
-                    log.warning(f"  ⚠️ JS click failed: {e}. Trying Selenium click...")
-                    try:
-                        confirm_el.click()
-                    except Exception as e2:
-                        log.warning(f"  ⚠️ Selenium click failed: {e2}.")
-                
-                # Also try pressing ENTER on the element as an additional fallback
-                try:
-                    confirm_el.send_keys(Keys.ENTER)
-                except Exception:
-                    pass
-                
-                # Increased wait time for 1vCPU slow servers to process the logout request
-                time.sleep(6)
-                
-                # Verify if modal is gone OR URL has changed
-                current_url = driver.current_url.lower()
-                if "login" in current_url or "authenticate" in current_url:
-                    log.info("  ✅ Redirected to login page. Logout confirmed.")
-                    confirm_clicked = True
-                    break
-                    
-                modal_present = driver.execute_script("""
+            # Beri waktu ekstra 1.5 detik agar animasi CSS (fade-in/zoom) selesai
+            # Seringkali di server lambat, modal sudah muncul di DOM tapi ukurannya belum penuh (animasi)
+            time.sleep(1.5)
+            
+            for confirm_attempt in range(5):
+                # 2. Cari tombol konfirmasi hanya di dalam modal yang sedang AKTIF/VISIBLE
+                confirm_el = driver.execute_script("""
+                    var targets = ['log out', 'logout', 'keluar'];
                     var modals = Array.from(document.querySelectorAll('.ant-modal-content, .ant-modal, .ant-dialog, .ant-modal-wrap'));
-                    var visibleModal = modals.find(m => {
+                    
+                    // Filter hanya modal yang tidak disembunyikan (bukan sisa dari notif lama)
+                    var activeModal = modals.find(m => {
                         var style = window.getComputedStyle(m);
                         return m.offsetHeight > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
                     });
-                    return !!visibleModal;
+                    
+                    if (!activeModal) return null;
+                    
+                    var candidates = Array.from(activeModal.querySelectorAll('button, .ant-btn, [role="button"]'));
+                    for (var btn of candidates) {
+                        var rect = btn.getBoundingClientRect();
+                        if (rect.width === 0 || rect.height === 0) continue;
+                        
+                        var text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+                        if (targets.some(function(k){ return text === k || text === ('confirm ' + k); })) {
+                            return btn.closest('button, [role="button"], a, .ant-btn') || btn;
+                        }
+                    }
+                    return null;
                 """)
-                if not modal_present:
-                    log.info("  ✅ Modal disappeared. Logout confirmed.")
-                    confirm_clicked = True
-                    break
+                
+                if confirm_el:
+                    log.info(f"  📍 Tombol konfirmasi ditemukan (Attempt {confirm_attempt+1}). Mencoba klik...")
+                    try:
+                        confirm_el.click()
+                    except Exception as e:
+                        log.warning(f"  ⚠️ Selenium klik gagal: {e}. Coba JS klik...")
+                        try:
+                            driver.execute_script("arguments[0].click();", confirm_el)
+                        except Exception as e2:
+                            log.warning(f"  ⚠️ JS klik gagal: {e2}")
+                    
+                    # Tunggu server memproses request logout
+                    time.sleep(3)
+                    
+                    # 3. Validasi apakah modal sudah hilang
+                    modal_gone = driver.execute_script("""
+                        var modals = Array.from(document.querySelectorAll('.ant-modal-content, .ant-modal, .ant-dialog, .ant-modal-wrap'));
+                        var activeModal = modals.find(m => {
+                            var style = window.getComputedStyle(m);
+                            return m.offsetHeight > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+                        });
+                        return !activeModal;
+                    """)
+                    
+                    current_url = driver.current_url.lower()
+                    if modal_gone or "login" in current_url or "authenticate" in current_url:
+                        log.info("  ✅ Modal berhasil tertutup. Logout terkonfirmasi.")
+                        confirm_clicked = True
+                        break
+                    else:
+                        log.warning("  ⚠️ Modal masih terbuka di layar. Mengulang klik...")
+                        time.sleep(2)
                 else:
-                    log.warning("  ⚠️ Modal is still present after click. Retrying...")
-            else:
-                log.warning(f"  ⚠️ Confirmation button/modal not found yet (Attempt {confirm_attempt+1}). Retrying...")
-                time.sleep(3)
+                    log.warning(f"  ⚠️ Tombol konfirmasi tidak ditemukan di dalam modal aktif (Attempt {confirm_attempt+1})...")
+                    time.sleep(2)
+                    
+        except TimeoutException:
+            log.warning("  ⚠️ Modal konfirmasi tidak pernah muncul dalam batas waktu yang ditentukan.")
 
         if not confirm_clicked:
-            log.warning("  ⚠️ Confirmation 'Log Out' button could not be clicked via UI.")
+            log.warning("  ⚠️ Gagal menyelesaikan logout via UI.")
             try:
                 driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
             except Exception:
