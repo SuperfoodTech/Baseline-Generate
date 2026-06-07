@@ -426,6 +426,19 @@ def _deliberate_logout_and_relogin(
 
         if not confirm_clicked:
             log.warning("  ⚠️ Confirmation 'Log Out' button could not be clicked via UI.")
+            
+            # --- DEBUG SCREENSHOT JIKA KLIK GAGAL ---
+            try:
+                import os
+                debug_dir = os.path.join("src", "shopee-omzet-automation", "data", "debug")
+                os.makedirs(debug_dir, exist_ok=True)
+                ss_fail_path = os.path.join(debug_dir, "modal_fail_server.png")
+                driver.save_screenshot(ss_fail_path)
+                log.info(f"  📸 [DEBUG] Screenshot penyebab kegagalan klik disimpan di {ss_fail_path}")
+            except Exception as e:
+                pass
+            # ----------------------------------------
+            
             log.info("  🛡️ Mengaktifkan 'Soft Session Kill' Fallback (Hanya hapus Cookie Sesi)...")
             try:
                 # Escape the modal just in case
