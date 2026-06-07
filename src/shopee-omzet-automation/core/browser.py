@@ -433,10 +433,26 @@ def _deliberate_logout_and_relogin(
                         # React akan mengabaikannya. Kita WAJIB menunggu 3 detik SEBELUM mengklik.
                         time.sleep(3)
                         
-                        # Eksekusi JS Click murni
+                        # Eksekusi JS Click murni + React Internal Bypass
                         try:
                             driver.execute_script("""
                                 var btn = arguments[0];
+                                
+                                // 1. REACT INTERNAL BYPASS (Sangat ampuh untuk Headless Server)
+                                // Mencari property internal React yang menyimpan event handler
+                                var reactKey = Object.keys(btn).find(k => k.startsWith('__reactProps$') || k.startsWith('__reactEventHandlers$'));
+                                if (reactKey && btn[reactKey] && typeof btn[reactKey].onClick === 'function') {
+                                    try {
+                                        // Paksa eksekusi fungsi onClick secara langsung tanpa melalui DOM
+                                        btn[reactKey].onClick({ 
+                                            preventDefault: function(){}, 
+                                            stopPropagation: function(){},
+                                            nativeEvent: { isTrusted: true } 
+                                        });
+                                    } catch(err) {}
+                                }
+                                
+                                // 2. NATIVE DOM CLICK
                                 btn.click();
                                 var span = btn.querySelector('span');
                                 if (span) span.click();
@@ -447,14 +463,6 @@ def _deliberate_logout_and_relogin(
                         # Native fallback
                         try:
                             confirm_el.click()
-                        except Exception:
-                            pass
-                            
-                        # FALLBACK TERAKUAT: Simulasi tombol ENTER dari Keyboard
-                        # Modal Ant Design selalu 'mendengarkan' tombol Enter di level document
-                        try:
-                            log.info("  ⌨️ Mengirimkan simulasi tombol ENTER ke modal...")
-                            ActionChains(driver).send_keys(Keys.ENTER).perform()
                         except Exception:
                             pass
                         
