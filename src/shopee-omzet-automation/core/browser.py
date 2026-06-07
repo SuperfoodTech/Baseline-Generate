@@ -378,17 +378,25 @@ def _deliberate_logout_and_relogin(
         for confirm_attempt in range(5):
             confirm_el = driver.execute_script("""
                 var targets = ['log out', 'logout', 'keluar'];
-                // ONLY look inside modal containers
-                var modal = document.querySelector('.ant-modal-content, .ant-modal, .ant-dialog, .ant-modal-wrap');
+                // Find ONLY the VISIBLE modal (prevent clicking hidden leftover modals)
+                var modals = Array.from(document.querySelectorAll('.ant-modal-content, .ant-modal, .ant-dialog, .ant-modal-wrap'));
+                var modal = modals.find(m => {
+                    var style = window.getComputedStyle(m);
+                    return m.offsetHeight > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+                });
                 if (!modal) return null;
                 
+                // Try to find the primary button first (usually the 'OK/Confirm' button)
+                var primaryBtn = modal.querySelector('.ant-btn-primary');
+                if (primaryBtn) return primaryBtn;
+                
+                // Fallback to searching by text
                 var candidates = Array.from(modal.querySelectorAll('button, .ant-btn, [role="button"]'));
                 for (var btn of candidates) {
                     var rect = btn.getBoundingClientRect();
                     if (rect.width === 0 || rect.height === 0) continue;
                     var text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
                     if (targets.some(function(k){ return text === k || text === ('confirm ' + k); })) {
-                        // Walk up to the closest clickable element (e.g. button or .ant-btn)
                         var clickable = btn.closest('button, [role="button"], a, .ant-btn') || btn;
                         return clickable;
                     }
@@ -398,8 +406,8 @@ def _deliberate_logout_and_relogin(
             
             if confirm_el:
                 log.info(f"  📍 Found confirmation button on Attempt {confirm_attempt+1}. Clicking...")
-                # Wait 2 seconds BEFORE clicking to ensure animations on slow servers are finished
-                time.sleep(2)
+                # Wait 3 seconds BEFORE clicking to ensure animations on slow servers are totally finished
+                time.sleep(3)
                 try:
                     # Simplify JS click to just native click, avoiding event spam which might confuse React
                     driver.execute_script("arguments[0].click();", confirm_el)
@@ -410,8 +418,14 @@ def _deliberate_logout_and_relogin(
                     except Exception as e2:
                         log.warning(f"  ⚠️ Selenium click failed: {e2}.")
                 
+                # Also try pressing ENTER on the element as an additional fallback
+                try:
+                    confirm_el.send_keys(Keys.ENTER)
+                except Exception:
+                    pass
+                
                 # Increased wait time for 1vCPU slow servers to process the logout request
-                time.sleep(4)
+                time.sleep(6)
                 
                 # Verify if modal is gone OR URL has changed
                 current_url = driver.current_url.lower()
@@ -421,11 +435,12 @@ def _deliberate_logout_and_relogin(
                     break
                     
                 modal_present = driver.execute_script("""
-                    var modal = document.querySelector('.ant-modal-content, .ant-modal, .ant-dialog, .ant-modal-wrap');
-                    if (!modal) return false;
-                    var style = window.getComputedStyle(modal);
-                    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-                    return modal.offsetHeight > 0;
+                    var modals = Array.from(document.querySelectorAll('.ant-modal-content, .ant-modal, .ant-dialog, .ant-modal-wrap'));
+                    var visibleModal = modals.find(m => {
+                        var style = window.getComputedStyle(m);
+                        return m.offsetHeight > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+                    });
+                    return !!visibleModal;
                 """)
                 if not modal_present:
                     log.info("  ✅ Modal disappeared. Logout confirmed.")
@@ -435,18 +450,15 @@ def _deliberate_logout_and_relogin(
                     log.warning("  ⚠️ Modal is still present after click. Retrying...")
             else:
                 log.warning(f"  ⚠️ Confirmation button/modal not found yet (Attempt {confirm_attempt+1}). Retrying...")
-                time.sleep(2)
+                time.sleep(3)
 
         if not confirm_clicked:
             log.warning("  ⚠️ Confirmation 'Log Out' button could not be clicked via UI.")
-            log.info("  ⚠️ Forcing logout by deleting session cookies...")
             try:
-                driver.delete_cookie("shopee_tob_token")
-                driver.delete_cookie("shopee_tob_entity_id")
                 driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
             except Exception:
                 pass
-            # Proceed to auto-login instead of failing
+            return False
 
 
         log.info("  ✅ Logout confirmed. Waiting for login page...")
