@@ -426,41 +426,18 @@ def _deliberate_logout_and_relogin(
                     """)
                     
                     if confirm_el:
-                        log.info(f"  📍 Tombol konfirmasi ditemukan (Attempt {confirm_attempt+1}). Mengeksekusi JS Click...")
+                        log.info(f"  📍 Tombol konfirmasi ditemukan (Attempt {confirm_attempt+1}). Menyiapkan eksekusi...")
                         
-                        # --- DEBUGGING INJECTION ---
-                        if confirm_attempt == 0:
-                            log.info("  🔍 [DEBUG] Menyimpan screenshot sebelum klik modal...")
-                            try:
-                                import os
-                                debug_dir = os.path.join("src", "shopee-omzet-automation", "data", "debug")
-                                os.makedirs(debug_dir, exist_ok=True)
-                                ss_path = os.path.join(debug_dir, f"modal_debug_server_{attempt}.png")
-                                driver.save_screenshot(ss_path)
-                                log.info(f"  🔍 [DEBUG] Screenshot disimpan di {ss_path}")
-                                log.info(f"  🔍 [DEBUG] HTML Tombol: {btn_html}")
-                            except Exception as e:
-                                log.warning(f"  ⚠️ Gagal menyimpan screenshot debug: {e}")
-                        # ---------------------------
+                        # KUNCI MASALAH: React butuh waktu untuk memasang event listener (onClick) ke tombol
+                        # setelah modal muncul. Jika kita klik di detik yang sama saat tombol ditemukan,
+                        # React akan mengabaikannya. Kita WAJIB menunggu 3 detik SEBELUM mengklik.
+                        time.sleep(3)
                         
-                        # PENGUATAN: Gunakan JS Click secara paksa ke tombol dan isinya (span)
-                        # karena Selenium native click sering diabaikan React di headless mode
+                        # Eksekusi JS Click murni
                         try:
                             driver.execute_script("""
                                 var btn = arguments[0];
-                                // Eksekusi Pointer Event yang komprehensif
-                                var evOpts = { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse' };
-                                btn.dispatchEvent(new PointerEvent('pointerover', evOpts));
-                                btn.dispatchEvent(new PointerEvent('pointerenter', evOpts));
-                                btn.dispatchEvent(new PointerEvent('pointerdown', evOpts));
-                                btn.dispatchEvent(new MouseEvent('mousedown', evOpts));
-                                btn.dispatchEvent(new PointerEvent('pointerup', evOpts));
-                                btn.dispatchEvent(new MouseEvent('mouseup', evOpts));
-                                btn.dispatchEvent(new MouseEvent('click', evOpts));
-                                
-                                // Klik elemen utamanya
                                 btn.click();
-                                // Jika ada teks span di dalamnya, klik juga span-nya
                                 var span = btn.querySelector('span');
                                 if (span) span.click();
                             """, confirm_el)
@@ -472,8 +449,17 @@ def _deliberate_logout_and_relogin(
                             confirm_el.click()
                         except Exception:
                             pass
+                            
+                        # FALLBACK TERAKUAT: Simulasi tombol ENTER dari Keyboard
+                        # Modal Ant Design selalu 'mendengarkan' tombol Enter di level document
+                        try:
+                            log.info("  ⌨️ Mengirimkan simulasi tombol ENTER ke modal...")
+                            ActionChains(driver).send_keys(Keys.ENTER).perform()
+                        except Exception:
+                            pass
                         
-                        time.sleep(3) # Tunggu HTTP request
+                        # Tunggu HTTP request logout diproses oleh server Shopee
+                        time.sleep(3)
                         
                         # Validasi apakah modal sudah tertutup
                         modal_gone = driver.execute_script("""
