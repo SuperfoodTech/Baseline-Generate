@@ -398,18 +398,11 @@ def _deliberate_logout_and_relogin(
             
             if confirm_el:
                 log.info(f"  📍 Found confirmation button on Attempt {confirm_attempt+1}. Clicking...")
+                # Wait 2 seconds BEFORE clicking to ensure animations on slow servers are finished
+                time.sleep(2)
                 try:
-                    # Use JS click first: more reliable in headless on slow servers
-                    driver.execute_script("""
-                        var btn = arguments[0];
-                        // Dispatch mouse events
-                        var ev1 = new MouseEvent('mouseover', { bubbles: true, cancelable: true });
-                        var ev2 = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
-                        var ev3 = new MouseEvent('mouseup', { bubbles: true, cancelable: true });
-                        var ev4 = new MouseEvent('click', { bubbles: true, cancelable: true });
-                        btn.dispatchEvent(ev1); btn.dispatchEvent(ev2); btn.dispatchEvent(ev3); btn.dispatchEvent(ev4);
-                        btn.click(); // native fallback
-                    """, confirm_el)
+                    # Simplify JS click to just native click, avoiding event spam which might confuse React
+                    driver.execute_script("arguments[0].click();", confirm_el)
                 except Exception as e:
                     log.warning(f"  ⚠️ JS click failed: {e}. Trying Selenium click...")
                     try:
@@ -445,12 +438,16 @@ def _deliberate_logout_and_relogin(
                 time.sleep(2)
 
         if not confirm_clicked:
-            log.warning("  ⚠️ Confirmation 'Log Out' button could not be clicked.")
+            log.warning("  ⚠️ Confirmation 'Log Out' button could not be clicked via UI.")
+            log.info("  ⚠️ Forcing logout by deleting session cookies...")
             try:
+                driver.delete_cookie("shopee_tob_token")
+                driver.delete_cookie("shopee_tob_entity_id")
                 driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
             except Exception:
                 pass
-            return False
+            # Proceed to auto-login instead of failing
+
 
         log.info("  ✅ Logout confirmed. Waiting for login page...")
         time.sleep(3)
