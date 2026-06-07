@@ -386,7 +386,7 @@ def _deliberate_logout_and_relogin(
                 # Modal berhasil muncul! Sekarang cari dan klik tombol konfirmasinya
                 for confirm_attempt in range(5):
                     confirm_el = driver.execute_script("""
-                        var targets = ['log out', 'logout', 'keluar'];
+                        var targets = ['log out', 'logout', 'keluar', 'ya', 'ok', 'confirm'];
                         var modals = Array.from(document.querySelectorAll('.ant-modal-content, .ant-modal, .ant-dialog, .ant-modal-wrap'));
                         
                         var activeModal = modals.find(m => {
@@ -396,6 +396,13 @@ def _deliberate_logout_and_relogin(
                         
                         if (!activeModal) return null;
                         
+                        // 1. Prioritaskan mencari tombol utama (Primary Button) di dalam modal
+                        var primaryBtn = activeModal.querySelector('.ant-btn-primary');
+                        if (primaryBtn) {
+                            return primaryBtn.closest('button, [role="button"], a, .ant-btn') || primaryBtn;
+                        }
+                        
+                        // 2. Jika tidak ada, cari berdasarkan teks
                         var candidates = Array.from(activeModal.querySelectorAll('button, .ant-btn, [role="button"]'));
                         for (var btn of candidates) {
                             var rect = btn.getBoundingClientRect();
@@ -410,15 +417,27 @@ def _deliberate_logout_and_relogin(
                     """)
                     
                     if confirm_el:
-                        log.info(f"  📍 Tombol konfirmasi ditemukan (Attempt {confirm_attempt+1}). Mencoba klik...")
+                        log.info(f"  📍 Tombol konfirmasi ditemukan (Attempt {confirm_attempt+1}). Mengeksekusi JS Click...")
+                        
+                        # PENGUATAN: Gunakan JS Click secara paksa ke tombol dan isinya (span)
+                        # karena Selenium native click sering diabaikan React di headless mode
+                        try:
+                            driver.execute_script("""
+                                var btn = arguments[0];
+                                // Klik elemen utamanya
+                                btn.click();
+                                // Jika ada teks span di dalamnya, klik juga span-nya
+                                var span = btn.querySelector('span');
+                                if (span) span.click();
+                            """, confirm_el)
+                        except Exception as e:
+                            log.warning(f"  ⚠️ JS klik gagal: {e}")
+                            
+                        # Native fallback
                         try:
                             confirm_el.click()
-                        except Exception as e:
-                            log.warning(f"  ⚠️ Selenium klik gagal: {e}. Coba JS klik...")
-                            try:
-                                driver.execute_script("arguments[0].click();", confirm_el)
-                            except Exception as e2:
-                                log.warning(f"  ⚠️ JS klik gagal: {e2}")
+                        except Exception:
+                            pass
                         
                         time.sleep(3) # Tunggu HTTP request
                         
