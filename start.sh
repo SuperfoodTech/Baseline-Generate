@@ -95,6 +95,10 @@ while true; do
     echo "================================================================="
     echo ""
     
+    echo "[INFO] Mengunggah CSV terbaru ke Drive & push ke Master..."
+    uv run python src/upload_csv_to_drive_and_git.py
+    echo ""
+    
     read -p "Apakah Anda ingin Lanjut (l) atau Keluar (k)? [L/K]: " choice
     case "$choice" in
         [lL]|[yY]*)
