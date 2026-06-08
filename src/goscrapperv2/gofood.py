@@ -795,7 +795,7 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
             label = curr_month.strftime('%B %Y')
             period_iter.append((curr_month.strftime('%Y-%m'), label))
             curr_month = (curr_month.replace(day=1) + timedelta(days=32)).replace(day=1)
-        excel_filename = 'revenue_3_bulan.xlsx'
+        excel_filename = f"GOFOOD_{start_date.strftime('%Y-%m-%d')}_to_{end_date.strftime('%Y-%m-%d')}.xlsx"
     else:
         # Custom range: per hari
         start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -808,7 +808,7 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
             label = curr_day.strftime('%d %b %Y')
             period_iter.append((curr_day.strftime('%Y-%m-%d'), label))
             curr_day = curr_day + timedelta(days=1)
-        excel_filename = f"revenue_{start_date.strftime('%Y-%m-%d')}_sampai_{end_date.strftime('%Y-%m-%d')}.xlsx"
+        excel_filename = f"GOFOOD_{start_date.strftime('%Y-%m-%d')}_to_{end_date.strftime('%Y-%m-%d')}.xlsx"
 
     global GLOBAL_OUTPUT_DIR
     if GLOBAL_OUTPUT_DIR:
@@ -1246,8 +1246,9 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
     avg_order_batal = round(total_order_batal / num_periods, 2) if num_periods > 0 else 0
 
     # Return structured data for baseline aggregation if requested
+    return_obj = None
     if return_data:
-        return {
+        return_obj = {
             'period_iter': period_iter,
             'totals': totals,
             'avg_omzet_bersih': avg_omzet_bersih,
@@ -1262,9 +1263,8 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
             wb = openpyxl.Workbook()
             ws = wb.active
             headers_excel = [
-                'Nomor HP', 'Outlet Name', 'Cabang', 'Store ID', 'Tanggal', 'Penjualan Kotor', 'Biaya Komisi', 
-                'Pengeluaran Iklan & Diskon', 'Total Potongan Ojol', 'Penjualan Bersih', 
-                'Rata-Rata Order per Cust', 'Order Sukses', 'Order Batal', 'Total Order'
+                'Tanggal', 'Outlet Name', 'Store ID', 'Penjualan Kotor', 'Biaya Komisi', 
+                'Pengeluaran Iklan & Diskon', 'Order Sukses', 'Order Batal'
             ]
             ws.append(headers_excel)
         else:
@@ -1277,14 +1277,13 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
                 wb = openpyxl.Workbook()
                 ws = wb.active
                 headers_excel = [
-                    'Nomor HP', 'Outlet Name', 'Cabang', 'Store ID', 'Tanggal', 'Penjualan Kotor', 'Biaya Komisi', 
-                    'Pengeluaran Iklan & Diskon', 'Total Potongan Ojol', 'Penjualan Bersih', 
-                    'Rata-Rata Order per Cust', 'Order Sukses', 'Order Batal', 'Total Order'
+                    'Tanggal', 'Outlet Name', 'Store ID', 'Penjualan Kotor', 'Biaya Komisi', 
+                    'Pengeluaran Iklan & Diskon', 'Order Sukses', 'Order Batal'
                 ]
                 ws.append(headers_excel)
     except Exception as e:
         print(f"❌ Error saat membuat/membuka workbook: {e}")
-        return
+        return return_obj
 
     username = os.getenv('ACTIVE_NOMOR_HP', 'Tidak Diketahui')
     created_on_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -1292,6 +1291,7 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
     cabang = os.getenv('ACTIVE_CABANG', 'Tidak Tersedia')
     store_id = os.getenv('ACTIVE_STORE_ID', 'Tidak Tersedia')
 
+    batch_data = []
     for idx, (raw_date, label) in enumerate(period_iter):
         omzet = int(totals[label]['revenue'])
         omzet_bersih = int(totals[label]['net_revenue'])
@@ -1307,22 +1307,34 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
         total_order_row = order_sukses + order_batal
         
         row_data = [
-            username,
-            nama_outlet,
-            cabang,
-            store_id,
             raw_date,
+            nama_outlet,
+            store_id,
             omzet,
             komisi,
             iklan,
-            pendapatan_ojol,
-            omzet_bersih,
-            rata_rata_order_per_cust,
             order_sukses,
-            order_batal,
-            total_order_row
+            order_batal
         ]
         ws.append(row_data)
+        batch_data.append(row_data)
+
+    # Tembak data ke Google Sheets via Apps Script Web App
+    appscript_url = os.getenv('APPSCRIPT_URL', '')
+    if appscript_url and batch_data:
+        try:
+            import requests
+            payload = {
+                "sheetName": "Sheet1", # Ganti jika nama tab sheet bukan Sheet1
+                "data": batch_data
+            }
+            resp = requests.post(appscript_url, json=payload, timeout=15)
+            if resp.status_code == 200:
+                print(f"✅ Berhasil mengirim {len(batch_data)} baris data ke Google Sheets")
+            else:
+                print(f"⚠️ Gagal mengirim data ke Google Sheets. Status: {resp.status_code}")
+        except Exception as e:
+            print(f"⚠️ Error saat mengirim data ke Apps Script: {e}")
 
     # Save dengan absolute path untuk clarity
     abs_excel_path = os.path.abspath(excel_filename)
@@ -1339,58 +1351,9 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
     except Exception as e:
         print(f"\n❌ Error saat menyimpan file Excel: {e}")
         print(f"   Path: {abs_excel_path}")
-        return
+        return return_obj
 
-    # --- 6. EXPORT KE CSV (untuk compatibility dengan Google Sheets) ---
-    csv_filename = excel_filename.replace('.xlsx', '.csv')
-    abs_csv_path = os.path.abspath(csv_filename)
-    try:
-        mode = 'w' if write_header or not os.path.exists(abs_csv_path) else 'a'
-        with open(abs_csv_path, mode, newline='', encoding='utf-8-sig') as csvfile:
-            writer = csv.writer(csvfile)
-            # Header
-            if mode == 'w':
-                headers_excel = [
-                    'Nomor HP', 'Outlet Name', 'Cabang', 'Store ID', 'Tanggal', 'Penjualan Kotor', 'Biaya Komisi', 
-                    'Pengeluaran Iklan & Diskon', 'Total Potongan Ojol', 'Penjualan Bersih', 
-                    'Rata-Rata Order per Cust', 'Order Sukses', 'Order Batal', 'Total Order'
-                ]
-                writer.writerow(headers_excel)
-            # Data rows
-            for idx, (raw_date, label) in enumerate(period_iter):
-                omzet = int(totals[label]['revenue'])
-                omzet_bersih = int(totals[label]['net_revenue'])
-                komisi = int(totals[label]['komisi'])
-                pendapatan_ojol = int(totals[label]['ojol_commission'])
-                order = int(totals[label]['orders'])
-                iklan = int(totals[label].get('pengeluaran_iklan', 0))
-                order_sukses = int(totals[label]['orders'])
-                order_batal = int(totals[label]['order_batal'])
-                rata_rata_order_per_cust = int(omzet / order_sukses) if order_sukses > 0 else 0
-                total_order_row = order_sukses + order_batal
-                
-                row_data = [
-                    username,
-                    nama_outlet,
-                    cabang,
-                    store_id,
-                    raw_date,
-                    omzet,
-                    komisi,
-                    iklan,
-                    pendapatan_ojol,
-                    omzet_bersih,
-                    rata_rata_order_per_cust,
-                    order_sukses,
-                    order_batal,
-                    total_order_row
-                ]
-                writer.writerow(row_data)
-        
-        print(f"✅ Juga di-export ke CSV (untuk Google Sheets):")
-        print(f"   {abs_csv_path}")
-    except Exception as e:
-        print(f"⚠️ Peringatan: Gagal membuat file CSV: {e}")
+    # --- 6. EXPORT KE CSV (Dihapus sesuai permintaan) ---
 
     for label, data in totals.items():
         console.print(f"[dim]- {label}: Omzet {int(data['revenue'])} | Omzet Bersih {int(data['net_revenue'])} | Komisi {int(data['komisi'])} | Potongan Ojol {int(data['ojol_commission'])} | Pesanan: {data['orders']} | Batal: {data['order_batal']}[/dim]")
@@ -1412,7 +1375,7 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
     
     DURATION_STORE = time.time() - START_TIME_STORE
     console.print(f"[info]⏱️ Waktu proses untuk store ini: [bold]{DURATION_STORE:.2f} detik[/bold][/info]\n")
-    return None
+    return return_obj
 
 def tulis_baseline_excel(all_results, start_date, end_date):
     """
