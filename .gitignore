@@ -106,18 +106,9 @@ cli.py
 !.env.example
 !src/baseline/shopee/data/
 !src/baseline/shopee/data/session.json
-!src/shopee-omzet-automation/data/session*.json
 !src/VB/shopee/sessions/
 !src/VB/shopee/sessions/*.json
 
-# Whitelist specific Shopee profiles for session persistence (essential files only)
-!src/shopee-omzet-automation/data/chrome_profile_auto73*/
-src/shopee-omzet-automation/data/chrome_profile_auto73*/**
-!src/shopee-omzet-automation/data/chrome_profile_auto73*/Local State
-!src/shopee-omzet-automation/data/chrome_profile_auto73*/profile_auto73*/
-!src/shopee-omzet-automation/data/chrome_profile_auto73*/profile_auto73*/Cookies
-!src/shopee-omzet-automation/data/chrome_profile_auto73*/profile_auto73*/Preferences
-!src/shopee-omzet-automation/data/chrome_profile_auto73*/profile_auto73*/Sessions/
-!src/shopee-omzet-automation/data/chrome_profile_auto73*/profile_auto73*/Sessions/**
+
 
 

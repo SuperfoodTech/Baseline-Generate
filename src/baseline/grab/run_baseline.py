@@ -518,6 +518,53 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     # Matikan push ke GSheets dan PostgreSQL
     log.info("⏭️ [SKIP] Push ke Google Sheets dan database dimatikan secara global untuk mode Baseline.")
 
+    # === UNGGAH KE GOOGLE DRIVE ===
+    DRIVE_PARENT_FOLDER_ID = "13Fg6prqaP2Xzfxsd_Qut-4cjrtxm9FMS"
+    # Nama subfolder diambil dari nama laporan_dir (misal: "2026-03-01_to_2026-05-31")
+    subfolder_name = laporan_dir.name 
+    
+    webhook_url = os.getenv("GRAB_DRIVE_UPLOAD_WEBHOOK_URL")
+    if webhook_url:
+        log.info("\n" + "="*60)
+        log.info("  MENGUNGGAH HASIL KE GOOGLE DRIVE")
+        log.info("="*60)
+        
+        import base64
+        import requests
+        
+        def _upload_file(filepath):
+            try:
+                with open(filepath, "rb") as f:
+                    encoded = base64.b64encode(f.read()).decode("utf-8")
+                payload = {
+                    "parentFolderId": DRIVE_PARENT_FOLDER_ID,
+                    "subFolderName": subfolder_name,
+                    "fileName": filepath.name,
+                    "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "fileData": encoded
+                }
+                log.info(f"  Mengunggah: {filepath.name} ...")
+                res = requests.post(webhook_url, json=payload, timeout=60)
+                if res.status_code == 200 and res.json().get("status") == "success":
+                    log.info(f"  ✓ Berhasil: {res.json().get('url')}")
+                else:
+                    log.error(f"  ✗ Gagal: {res.text}")
+            except Exception as e:
+                log.error(f"  ✗ Error mengunggah {filepath.name}: {e}")
+
+        # Unggah master baseline
+        if master_xlsx.exists():
+            _upload_file(master_xlsx)
+        
+        # Unggah file raw per-portal
+        for xlsx_path in xlsx_files:
+            if xlsx_path.exists():
+                _upload_file(xlsx_path)
+                
+        log.info("="*60)
+    else:
+        log.info("\n⏭️ [SKIP] GRAB_DRIVE_UPLOAD_WEBHOOK_URL tidak ditemukan di .env. Lewati proses unggah otomatis ke Google Drive.")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
