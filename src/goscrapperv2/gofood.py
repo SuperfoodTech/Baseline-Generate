@@ -1308,12 +1308,12 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
         total_order_row = order_sukses + order_batal
         
         row_data = [
-            raw_date,
+            f"'{raw_date}",
             nama_outlet,
             store_id_val,
-            omzet,
-            komisi,
-            iklan,
+            f"Rp{omzet:,}",
+            f"Rp{komisi:,}",
+            f"Rp{iklan:,}",
             order_sukses,
             order_batal
         ]
