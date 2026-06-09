@@ -33,6 +33,26 @@ services:
       - HEADLESS=true
       - TZ=Asia/Jakarta
 
+  # ── Service Terpisah: Discord Bot Session Monitor ─────────────────────
+  session-monitor:
+    build:
+      context: ./discord-bot-session-monitor
+      dockerfile: Dockerfile
+    container_name: ofd_session_monitor
+    init: true
+    restart: unless-stopped
+    # Variabel environment dari file .env milik bot session monitor
+    env_file:
+      - ./discord-bot-session-monitor/.env
+    # Volume shared: akses ke Python venv & data session Shopee
+    volumes:
+      - ./src/.venv:/app/src/.venv:ro
+      - ./src/shopee-omzet-automation/data:/app/src/shopee-omzet-automation/data
+      - ./check_shopee_browsers.py:/app/check_shopee_browsers.py:ro
+    environment:
+      - TZ=Asia/Jakarta
+      - HEADLESS=true
+
   db:
     image: postgres:15
     container_name: srs_postgres
