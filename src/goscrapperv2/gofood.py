@@ -121,6 +121,7 @@ def fetch_gofood_accounts_from_sheet(task="2"):
         idx_outlet     = col_idx(['nama outlet'])
         idx_email_duck = col_idx(['email duck'])
         idx_email_fm   = col_idx(['email foodmaster'])
+        idx_merchant   = col_idx(['merchant name'])
 
         for row in reader_rows[1:]:
             if idx_aplikasi is None or len(row) <= idx_aplikasi:
@@ -130,6 +131,12 @@ def fetch_gofood_accounts_from_sheet(task="2"):
                 continue
 
             nama = str(row[idx_outlet]).strip() if idx_outlet is not None and len(row) > idx_outlet else ''
+            
+            merchant_name = ""
+            if idx_merchant is not None and len(row) > idx_merchant:
+                val = str(row[idx_merchant]).strip()
+                if val and val != "-" and val.lower() != "nan":
+                    merchant_name = val
             
             # Ambil Email Duck sebagai prioritas utama
             email = ""
@@ -145,11 +152,12 @@ def fetch_gofood_accounts_from_sheet(task="2"):
             store_id = ""
 
             accounts.append({
-                'phone'      : phone,
-                'email'      : email,
-                'nama_outlet': nama,
-                'cabang'     : cabang,
-                'store_id'   : store_id,
+                'phone'        : phone,
+                'email'        : email,
+                'nama_outlet'  : nama,
+                'merchant_name': merchant_name,
+                'cabang'       : cabang,
+                'store_id'     : store_id,
             })
     else:
         # Parsing format sheet Live/Weekly (Default)
@@ -462,10 +470,10 @@ def tunggu_otp_terbaru(url_dasar, action="getOtp", label_email=None, timeout_det
     return otp_awal
 
 
-def get_merchant_id_from_api(token, target_name, target_cabang=""):
+def get_all_merchants_from_api(token):
     """
-    Mengambil list merchant_id dari akun GoFood menggunakan token aktif 
-    dan mencocokkan dengan nama_outlet atau cabang.
+    Mengambil SEMUA merchant_id dari akun GoFood menggunakan token aktif.
+    Mengembalikan list of dict: [{'id': 'G123', 'name': 'Outlet Name'}]
     """
     url = "https://api.gobiz.co.id/v1/merchants/search"
     headers = {
@@ -480,41 +488,22 @@ def get_merchant_id_from_api(token, target_name, target_cabang=""):
     payload = {
         "from": 0,
         "size": 200,
-        "_source": ["id", "merchant_name", "outlet_name", "outlet_address"]
+        "_source": ["id", "merchant_name", "outlet_name", "status", "is_active", "merchant_status"]
     }
     try:
         resp = requests.post(url, headers=headers, json=payload, timeout=15)
         if resp.status_code == 200:
             data = resp.json()
             hits = data.get("hits", [])
-            if not hits:
-                return ""
-
-            target_lower = str(target_name).lower().strip()
-            cabang_lower = str(target_cabang).lower().strip()
-            
-            # 1. Exact match (nama + cabang jika ada)
+            results = []
             for hit in hits:
-                m_name = hit.get("merchant_name", "").lower()
-                o_name = hit.get("outlet_name", "").lower()
-                combined = f"{m_name} {o_name}"
-                if target_lower in combined and (not cabang_lower or cabang_lower == 'tanpa cabang' or cabang_lower in combined):
-                    return hit.get("id", "")
-                    
-            # 2. Partial match (target_name ada di merchant_name)
-            for hit in hits:
-                m_name = hit.get("merchant_name", "").lower()
-                o_name = hit.get("outlet_name", "").lower()
-                if target_lower in m_name or target_lower in o_name:
-                    return hit.get("id", "")
-                    
-            # 3. Fallback: jika hanya ada 1 outlet di akun ini, langsung pakai
-            if len(hits) == 1:
-                return hits[0].get("id", "")
-                
+                # Boleh filter status active jika diperlukan, tapi kita ambil semua saja
+                name = hit.get("outlet_name") or hit.get("merchant_name") or hit.get("id")
+                results.append({"id": hit.get("id", ""), "name": name})
+            return results
     except Exception as e:
         print(f"⚠️ Gagal mendapatkan merchant_id dari API: {e}")
-    return ""
+    return []
 
 
 def login_outlet_gofood_flow(outlet_info):
@@ -780,7 +769,10 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
             label = curr_day.strftime('%d %b %Y')
             period_iter.append((curr_day.strftime('%Y-%m-%d'), label))
             curr_day = curr_day + timedelta(days=1)
-        excel_filename = f"GOFOOD_{start_date.strftime('%Y-%m-%d')}_to_{end_date.strftime('%Y-%m-%d')}.xlsx"
+            
+    # Supaya tidak menimpa file jika ada multiple store, gunakan _store_id
+    safe_store = _store_id.strip() if _store_id else 'unknown'
+    excel_filename = f"GOFOOD_{start_date.strftime('%Y-%m-%d')}_to_{end_date.strftime('%Y-%m-%d')}_{safe_store}.xlsx"
 
     global GLOBAL_OUTPUT_DIR
     if GLOBAL_OUTPUT_DIR:
@@ -1287,9 +1279,9 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
             f"'{raw_date}",
             nama_outlet,
             store_id_val,
-            f"Rp{omzet:,}",
-            f"Rp{komisi:,}",
-            f"Rp{iklan:,}",
+            omzet,
+            komisi,
+            iklan,
             order_sukses,
             order_batal
         ]
@@ -1711,42 +1703,68 @@ if __name__ == "__main__":
         # karena setiap akun sudah di-pass via parameter ke ambil_data_analytics)
         os.environ['BEARER_TOKEN']       = token
         
-        # Coba ambil store_id dari API jika masih kosong dan token valid
+        # Menentukan merchant_id mana saja yang akan di-scrape
+        merchants_to_process = []
         if not store_id and token:
-            auto_store_id = get_merchant_id_from_api(token, nama_outlet, cabang)
-            if auto_store_id:
-                store_id = auto_store_id
-                console.print(f"[success]✅ Berhasil mengambil merchant_id dari API: {store_id}[/success]")
-        
-        os.environ['ACTIVE_NOMOR_HP']    = phone
-        os.environ['ACTIVE_NAMA_OUTLET'] = nama_outlet
-        os.environ['ACTIVE_CABANG']      = cabang
-        os.environ['ACTIVE_STORE_ID']    = store_id
+            target_name = acc.get('merchant_name')
+            all_merchants = get_all_merchants_from_api(token)
+            
+            if not target_name or target_name == "-":
+                # Jika tidak spesifik Merchant Name, ambil SEMUA merchant_id di dalam satu akun
+                merchants_to_process = all_merchants
+                console.print(f"[success]✅ Mengambil SEMUA data pada {len(merchants_to_process)} merchant_id dalam akun ini.[/success]")
+            else:
+                # Jika ada target_name, filter spesifik
+                target_words = target_name.lower().split()
+                for m in all_merchants:
+                    # Tokenized match
+                    if all(w in m["name"].lower() for w in target_words):
+                        merchants_to_process.append(m)
+                        break
+                if not merchants_to_process and all_merchants:
+                    merchants_to_process.append(all_merchants[0]) # Fallback ke pertama jika tidak ketemu
+        elif store_id:
+            merchants_to_process = [{"id": store_id, "name": nama_outlet}]
 
-        console.print(f"\n[bold]{'='*55}[/bold]")
-        console.print(f"[bold cyan]Memproses:[/bold cyan] {nama_outlet} - {cabang} ({phone})")
-        if store_id:
-            console.print(f"[dim]Store ID: {store_id}[/dim]")
-        console.print(f"[bold]{'='*55}[/bold]")
+        if not merchants_to_process:
+            console.print(f"[warning]⚠️ Tidak ada merchant_id yang dapat diproses untuk akun ini.[/warning]")
+            continue
 
-        console.print("\nMemulai pengambilan data analytics...")
-        result = ambil_data_analytics(
-            write_header=(index == 0),
-            start_date=custom_start_date,
-            end_date=custom_end_date,
-            return_data=True,
-            token=token,
-            store_id=store_id,
-            nama_outlet=nama_outlet,
-            phone=phone,
-            cabang=cabang,
-        )
-        if result:
-            label = f"{nama_outlet} - {cabang}" if cabang and cabang != 'Tanpa Cabang' else nama_outlet
-            all_baseline_results.append({
-                'nama_outlet': label,
-                'result': result
-            })
+        # Loop melalui SEMUA merchant yang dipilih untuk ditarik datanya
+        for m_data in merchants_to_process:
+            current_store_id = m_data["id"]
+            current_nama_outlet = m_data["name"]
+            
+            os.environ['ACTIVE_NOMOR_HP']    = phone
+            os.environ['ACTIVE_NAMA_OUTLET'] = current_nama_outlet
+            os.environ['ACTIVE_CABANG']      = cabang
+            os.environ['ACTIVE_STORE_ID']    = current_store_id
+    
+            console.print(f"\n[bold]{'='*55}[/bold]")
+            console.print(f"[bold cyan]Memproses:[/bold cyan] {current_nama_outlet} - {cabang} ({phone})")
+            if current_store_id:
+                console.print(f"[dim]Store ID: {current_store_id}[/dim]")
+            console.print(f"[bold]{'='*55}[/bold]")
+    
+            console.print("\nMemulai pengambilan data analytics...")
+            result = ambil_data_analytics(
+                write_header=(index == 0 and m_data == merchants_to_process[0]),
+                start_date=custom_start_date,
+                end_date=custom_end_date,
+                return_data=True,
+                token=token,
+                store_id=current_store_id,
+                nama_outlet=current_nama_outlet,
+                phone=phone,
+                cabang=cabang,
+            )
+            if result:
+                label = f"{current_nama_outlet} - {cabang}" if cabang and cabang != 'Tanpa Cabang' else current_nama_outlet
+                all_baseline_results.append({
+                    'nama_outlet': label,
+                    'result': result
+                })
+
 
 
     # --- TULIS BASELINE EXCEL GABUNGAN ---
