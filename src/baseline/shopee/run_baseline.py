@@ -899,6 +899,49 @@ def run_pipeline():
         # Skip push
         log.info("⏭️ [SKIP] Push ke Google Sheets dan database dimatikan secara global untuk mode Baseline.")
 
+        # === UNGGAH KE GOOGLE DRIVE ===
+        DRIVE_PARENT_FOLDER_ID = "1kHkd1N3uPRaVYaQKTotEIELaT-_nzCCS"
+        subfolder_name = os.path.basename(report_dir)
+        
+        webhook_url = os.getenv("SHOPEE_DRIVE_UPLOAD_WEBHOOK_URL")
+        if webhook_url:
+            log.info("\n" + "="*60)
+            log.info("  MENGUNGGAH HASIL KE GOOGLE DRIVE (SHOPEE)")
+            log.info("="*60)
+            
+            import base64
+            import requests
+            import glob
+            
+            def _upload_file(filepath):
+                try:
+                    with open(filepath, "rb") as f:
+                        encoded = base64.b64encode(f.read()).decode("utf-8")
+                    payload = {
+                        "parentFolderId": DRIVE_PARENT_FOLDER_ID,
+                        "subFolderName": subfolder_name,
+                        "fileName": os.path.basename(filepath),
+                        "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        "fileData": encoded
+                    }
+                    log.info(f"  Mengunggah: {os.path.basename(filepath)} ...")
+                    res = requests.post(webhook_url, json=payload, timeout=60)
+                    if res.status_code == 200 and res.json().get("status") == "success":
+                        log.info(f"  ✓ Berhasil: {res.json().get('url')}")
+                    else:
+                        log.error(f"  ✗ Gagal: {res.text}")
+                except Exception as e:
+                    log.error(f"  ✗ Error mengunggah {os.path.basename(filepath)}: {e}")
+
+            all_excels = glob.glob(os.path.join(report_dir, "*.xlsx"))
+            for file_path in all_excels:
+                if os.path.exists(file_path):
+                    _upload_file(file_path)
+                    
+            log.info("="*60)
+        else:
+            log.info("\n⏭️ [SKIP] SHOPEE_DRIVE_UPLOAD_WEBHOOK_URL tidak ditemukan di .env. Lewati proses unggah otomatis ke Google Drive.")
+
     # Driver cleanup handled in finally block of download phase
     pass
 

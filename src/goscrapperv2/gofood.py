@@ -1289,7 +1289,8 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
     created_on_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     nama_outlet = os.getenv('ACTIVE_NAMA_OUTLET', 'Tidak Tersedia')
     cabang = os.getenv('ACTIVE_CABANG', 'Tidak Tersedia')
-    store_id = os.getenv('ACTIVE_STORE_ID', 'Tidak Tersedia')
+    _env_store = os.getenv('ACTIVE_STORE_ID', '')
+    store_id_val = _env_store if _env_store else 'Tidak Tersedia'
 
     batch_data = []
     for idx, (raw_date, label) in enumerate(period_iter):
@@ -1309,7 +1310,7 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
         row_data = [
             raw_date,
             nama_outlet,
-            store_id,
+            store_id_val,
             omzet,
             komisi,
             iklan,
@@ -1323,10 +1324,31 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
     appscript_url = os.getenv('APPSCRIPT_URL', '')
     if appscript_url and batch_data:
         try:
-            import requests
+            data_to_send = batch_data
+            # Jika mode baseline (return_data=True), agregasi data menjadi bulanan
+            if return_data:
+                monthly_agg = {}
+                for row in batch_data:
+                    # row: [tanggal, outlet, store_id, omzet, komisi, iklan, order_sukses, order_batal]
+                    try:
+                        dt = datetime.strptime(row[0], "%Y-%m-%d")
+                        m_label = dt.strftime("%Y-%m")
+                    except:
+                        m_label = row[0]
+                    
+                    if m_label not in monthly_agg:
+                        monthly_agg[m_label] = [m_label, row[1], row[2], 0, 0, 0, 0, 0]
+                    
+                    monthly_agg[m_label][3] += row[3]
+                    monthly_agg[m_label][4] += row[4]
+                    monthly_agg[m_label][5] += row[5]
+                    monthly_agg[m_label][6] += row[6]
+                    monthly_agg[m_label][7] += row[7]
+                data_to_send = list(monthly_agg.values())
+
             payload = {
                 "sheetName": "Sheet1", # Ganti jika nama tab sheet bukan Sheet1
-                "data": batch_data
+                "data": data_to_send
             }
             resp = requests.post(appscript_url, json=payload, timeout=15)
             if resp.status_code == 200:
