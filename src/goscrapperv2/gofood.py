@@ -462,6 +462,61 @@ def tunggu_otp_terbaru(url_dasar, action="getOtp", label_email=None, timeout_det
     return otp_awal
 
 
+def get_merchant_id_from_api(token, target_name, target_cabang=""):
+    """
+    Mengambil list merchant_id dari akun GoFood menggunakan token aktif 
+    dan mencocokkan dengan nama_outlet atau cabang.
+    """
+    url = "https://api.gobiz.co.id/v1/merchants/search"
+    headers = {
+        'Accept': 'application/json, text/plain, */*',
+        'Authentication-Type': 'go-id',
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json',
+        'Origin': 'https://portal.gofoodmerchant.co.id',
+        'Referer': 'https://portal.gofoodmerchant.co.id/',
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36'
+    }
+    payload = {
+        "from": 0,
+        "size": 200,
+        "_source": ["id", "merchant_name", "outlet_name", "outlet_address"]
+    }
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            hits = data.get("hits", [])
+            if not hits:
+                return ""
+
+            target_lower = str(target_name).lower().strip()
+            cabang_lower = str(target_cabang).lower().strip()
+            
+            # 1. Exact match (nama + cabang jika ada)
+            for hit in hits:
+                m_name = hit.get("merchant_name", "").lower()
+                o_name = hit.get("outlet_name", "").lower()
+                combined = f"{m_name} {o_name}"
+                if target_lower in combined and (not cabang_lower or cabang_lower == 'tanpa cabang' or cabang_lower in combined):
+                    return hit.get("id", "")
+                    
+            # 2. Partial match (target_name ada di merchant_name)
+            for hit in hits:
+                m_name = hit.get("merchant_name", "").lower()
+                o_name = hit.get("outlet_name", "").lower()
+                if target_lower in m_name or target_lower in o_name:
+                    return hit.get("id", "")
+                    
+            # 3. Fallback: jika hanya ada 1 outlet di akun ini, langsung pakai
+            if len(hits) == 1:
+                return hits[0].get("id", "")
+                
+    except Exception as e:
+        print(f"⚠️ Gagal mendapatkan merchant_id dari API: {e}")
+    return ""
+
+
 def login_outlet_gofood_flow(outlet_info):
     """
     Membuka browser Chromium untuk login otomatis 1 outlet.
@@ -538,102 +593,19 @@ def login_outlet_gofood_flow(outlet_info):
         # Langsung input ke email field, abaikan cookie & pop-up
         time.sleep(1.0)
 
-        # --- STEP 4: Ketik email secara human-like ---
+        # --- STEP 4 & 5: Manual Login ---
         if email:
             try:
-                email_input = page.wait_for_selector(
+                page.wait_for_selector(
                     'input[type="email"], input[name="email"], input[placeholder*="email" i], input[placeholder*="Email" i], input[type="text"]',
                     timeout=15000
                 )
-                if email_input:
-                    email_input.click()
-                    time.sleep(0.3)
-                    email_input.focus()
-                    time.sleep(0.3)
-                    for char in email:
-                        email_input.type(char, delay=0)
-                        time.sleep(random.uniform(0.05, 0.15))
-                    time.sleep(0.5)
-
-                    submit_btn = page.locator('button:has-text("Lanjut"), button:has-text("Submit"), button:has-text("Masuk"), button[type="submit"]')
-                    if submit_btn.count() > 0:
-                        submit_btn.first.click()
-                    else:
-                        email_input.press("Enter")
-                    time.sleep(3)
-
-                    # --- Pre-snapshot OTP sebelum tombol OTP diklik ---
-                    # Ini penting: snapshot diambil SEBELUM OTP dikirim agar nilai baru terdeteksi
-                    otp_endpoint = os.getenv("OTP_ENDPOINT_URL")
-                    label_email_cfg = os.getenv("GMAIL_OTP_LABEL", "OTP-GO")
-                    action_type = "getOtpEmail" if email else "getOtp"
-                    otp_snapshot_awal = ""
-                    if otp_endpoint:
-                        try:
-                            otp_snapshot_awal = ambil_otp_dari_endpoint(otp_endpoint, action=action_type, label_email=label_email_cfg)
-                            console.print(f"   [info]📸 Snapshot OTP awal: '{otp_snapshot_awal or '(kosong)'}' (sebelum OTP dikirim)[/info]")
-                        except Exception:
-                            otp_snapshot_awal = ""
-
-                    # Jika ada halaman pilihan login (password/OTP)
-                    try:
-                        btn_otp = page.locator('button:has-text("Masuk dengan OTP"), a:has-text("Masuk dengan OTP")').first
-                        if btn_otp.count() > 0 and btn_otp.is_visible():
-                            btn_otp.click()
-                            console.print("   [info]✅ Tombol 'Masuk dengan OTP' diklik. OTP sedang dikirim...[/info]")
-                            time.sleep(2)
-                    except Exception:
-                        pass
-
-                    # --- STEP 5: Automated OTP Polling & Fill ---
-                    if otp_endpoint:
-                        try:
-                            console.print("   [info]🤖 Menunggu field OTP muncul...[/info]")
-                            otp_input_selector = 'input[autocomplete="one-time-code"], input[aria-label*="digit" i], div[class*="otp" i] input:not([type="checkbox"]):not([type="radio"]), input[name*="otp" i]:not([type="checkbox"]):not([type="radio"]), input[maxlength="1"]:not([type="checkbox"]):not([type="radio"])'
-                            page.locator(otp_input_selector).first.wait_for(state="visible", timeout=15000)
-                            time.sleep(1)
-                            
-                            console.print("   [info]🤖 Polling OTP dari Gmail (snapshot awal sudah diambil sebelumnya)...[/info]")
-                            label_email = label_email_cfg
-                            
-                            otp_code = tunggu_otp_terbaru(otp_endpoint, action=action_type, label_email=label_email, timeout_detik=90, interval_detik=3, otp_awal_override=otp_snapshot_awal)
-                            
-                            if otp_code and not (otp_code.isdigit() and len(otp_code) in (4, 6)):
-                                console.print(f"   [warning]⚠️ OTP dari endpoint bukan format angka valid: {otp_code[:50]}...[/warning]")
-                                otp_code = None
-                                
-                            if otp_code:
-                                console.print(f"   [info]🤖 OTP didapat: {otp_code}. Memasukkan OTP...[/info]")
-                                otp_fields = page.locator(otp_input_selector).all()
-                                if len(otp_fields) > 0:
-                                    otp_fields[0].focus()
-                                    time.sleep(0.5)
-                                    otp_fields[0].type(otp_code, delay=300)
-                                    console.print("   [success]✅ OTP berhasil diisi otomatis.[/success]")
-                                    
-                                    # Coba klik tombol submit/konfirmasi/masuk OTP
-                                    time.sleep(1)
-                                    submit_otp_btn = page.locator('button:has-text("Masuk"), button:has-text("Konfirmasi"), button:has-text("Verifikasi"), button:has-text("Lanjut"), button[type="submit"]')
-                                    clicked = False
-                                    for i in range(submit_otp_btn.count()):
-                                        btn = submit_otp_btn.nth(i)
-                                        if btn.is_visible() and btn.is_enabled():
-                                            console.print(f"   [info]🤖 Mengklik tombol OTP: '{btn.text_content().strip()}'[/info]")
-                                            btn.click()
-                                            clicked = True
-                                            break
-                                    if not clicked:
-                                        console.print("   [info]🤖 Mengirim Enter sebagai fallback...[/info]")
-                                        page.keyboard.press("Enter")
-                                    time.sleep(2)
-                            else:
-                                console.print("   [warning]⚠️ Gagal mendapatkan OTP otomatis. Silakan isi manual di browser.[/warning]")
-                        except Exception as e:
-                            console.print(f"   [warning]⚠️ Gagal melakukan automasi OTP: {e}. Silakan isi manual.[/warning]")
-                    else:
-                        console.print("   [info]👉 Silakan isi kode OTP secara MANUAL di browser.[/info]")
+                console.print("   [info]👉 Silakan ketik EMAIL dan OTP secara MANUAL di browser.[/info]")
+                console.print(f"   [info]🔑 Email yang seharusnya dipakai: {email}[/info]")
             except Exception as e:
-                console.print(f"   [error]⚠️ Gagal ketik email: {e}[/error]")
+                console.print(f"   [error]⚠️ Gagal memuat halaman login email: {e}[/error]")
+        else:
+            console.print("   [info]👉 Silakan login secara MANUAL di browser.[/info]")
 
         access_token = None
         start_time = time.time()
@@ -1307,6 +1279,10 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
         rata_rata_order_per_cust = int(omzet / order_sukses) if order_sukses > 0 else 0
         total_order_row = order_sukses + order_batal
         
+        # Jika semua metrik utama kosong, lewati (jangan simpan/kirim)
+        if omzet == 0 and komisi == 0 and iklan == 0 and order_sukses == 0 and order_batal == 0:
+            continue
+            
         row_data = [
             f"'{raw_date}",
             nama_outlet,
@@ -1734,6 +1710,14 @@ if __name__ == "__main__":
         # Set token ke env hanya untuk backward compat (proses lain tidak terpengaruh
         # karena setiap akun sudah di-pass via parameter ke ambil_data_analytics)
         os.environ['BEARER_TOKEN']       = token
+        
+        # Coba ambil store_id dari API jika masih kosong dan token valid
+        if not store_id and token:
+            auto_store_id = get_merchant_id_from_api(token, nama_outlet, cabang)
+            if auto_store_id:
+                store_id = auto_store_id
+                console.print(f"[success]✅ Berhasil mengambil merchant_id dari API: {store_id}[/success]")
+        
         os.environ['ACTIVE_NOMOR_HP']    = phone
         os.environ['ACTIVE_NAMA_OUTLET'] = nama_outlet
         os.environ['ACTIVE_CABANG']      = cabang

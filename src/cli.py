@@ -677,7 +677,28 @@ def interactive_mode():
             except ValueError: pass
             print(f"  {RED}Pilihan tidak valid.{RESET}")
 
-        platform = "all"
+        print(f"\n  {BOLD}Pilih Platform untuk ditarik Baseline-nya:{RESET}")
+        print(f"    {GREEN}[1]{RESET} GrabFood")
+        print(f"    {GREEN}[2]{RESET} ShopeeFood")
+        print(f"    {GREEN}[3]{RESET} GoFood")
+        print(f"    {GREEN}[4]{RESET} Semua (Grab + Shopee + GoFood)")
+        print()
+        while True:
+            plat_choice = input(f"  {BOLD}Pilihan (1/2/3/4):{RESET} ").strip()
+            if plat_choice == "1":
+                platform = "grab"
+                break
+            elif plat_choice == "2":
+                platform = "shopee"
+                break
+            elif plat_choice == "3":
+                platform = "gofood"
+                break
+            elif plat_choice == "4":
+                platform = "all"
+                break
+            print(f"  {RED}Input tidak valid.{RESET}")
+
         scope_choice = "2"
         outlet = unified_outlet
         branch = None
