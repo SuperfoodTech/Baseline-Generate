@@ -1,7 +1,12 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const { Client, Collection, GatewayIntentBits } = require('discord.js');
+const { Client, Collection, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { startErrorPoller, setLastChannelId } = require('./src/errorPoller');
+const { runPipeline } = require('./bridge/run_pipeline');
+const recentTasks = require('./src/taskCache');
+
+const activeReRuns = new Map();
 
 // 1. Inisialisasi Client (Bot)
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -36,6 +41,7 @@ for (const folder of commandFolders) {
 // 4. Event ketika bot berhasil menyala
 client.once('clientReady', () => {
     console.log(`Bot sudah online sebagai ${client.user.tag}!`);
+    startErrorPoller(client);
 });
 
 // 5. Event ketika user menggunakan Slash Command atau berinteraksi dengan Menu
@@ -78,6 +84,154 @@ client.on('interactionCreate', async interaction => {
             const command = client.commands.get('start');
             if (command && command.cancelPipeline) {
                 await command.cancelPipeline(interaction);
+            }
+        } else if (interaction.customId.startsWith('rerun_')) {
+            const parts = interaction.customId.split('_');
+            const platform = parts[1].toLowerCase(); 
+            const taskId = parts[2];
+            
+            const cachedData = recentTasks.get(taskId);
+            if (!cachedData) {
+                return interaction.reply({
+                    content: '❌ **Sesi Re-Run Kedaluwarsa!** Cache tugas ini sudah hilang karena bot di-restart atau sudah terlalu lama. Silakan jalankan ulang via perintah `/start`.',
+                    ephemeral: true
+                });
+            }
+
+            // Create a copy of formData and isolate the platform
+            const formData = { ...cachedData };
+            
+            // Map the platform shortcut back to form data aplikator
+            if (platform === 'grab') formData.aplikator = 'GrabFood';
+            else if (platform === 'shopee') formData.aplikator = 'ShopeeFood';
+            else if (platform === 'gofood') formData.aplikator = 'GoFood';
+            else formData.aplikator = platform;
+
+            await interaction.reply({ 
+                content: `🔄 Sedang mengantre proses **Re-Run** untuk **${formData.aplikator}** (Outlet: ${formData.outlet})... Pantau *progress* di bawah ini.`, 
+                ephemeral: false 
+            });
+
+            // Re-bind error poller to this channel
+            setLastChannelId(interaction.channelId);
+
+            const bdDisplay = formData.bd ? formData.bd.split('|').join(', ') : 'Semua BD';
+            const steps = [
+                { id: platform, name: `Scraping data ${formData.aplikator}...` },
+                { id: 'merge', name: '📊 Menggabungkan laporan...' },
+                { id: 'pdf', name: '📄 Membuat PDF Laporan...' }
+            ];
+            const totalPhases = steps.length;
+            let phaseNumber = 0;
+            let currentPhase = 'Memulai proses...';
+
+            const makeProgressBar = (phase, total) => {
+                const filled = '█'.repeat(phase);
+                const empty = '░'.repeat(total - phase);
+                return `[${filled}${empty}] ${phase}/${total}`;
+            };
+
+            const buildEmbed = () => {
+                return new EmbedBuilder()
+                    .setColor(0xFFA500)
+                    .setTitle(`🔄 Re-Run Pipeline: ${formData.aplikator}`)
+                    .setDescription(
+                        `Pipeline **${formData.tagihan.toUpperCase()}** sedang diproses ulang.\n\n` +
+                        `${makeProgressBar(phaseNumber, totalPhases)}\n` +
+                        `> 📍 **Outlet:** ${formData.outlet.substring(0, 100)}\n` +
+                        `> 👤 **BD:** ${bdDisplay}\n` +
+                        `> 📱 **Platform:** ${formData.aplikator}\n` +
+                        `> 📅 **Rentang:** ${formData.tanggalMulai} s/d ${formData.tanggalSelesai}\n\n` +
+                        `${currentPhase}\n` +
+                        `⏱️ Estimasi waktu: **1–5 menit**`
+                    )
+                    .setFooter({ text: 'Sistem Re-Run Performance' })
+                    .setTimestamp();
+            };
+
+            const cancelRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`cancel_rerun_${taskId}`)
+                    .setLabel('⏹️ Batalkan Proses')
+                    .setStyle(ButtonStyle.Danger)
+            );
+
+            // Create an initial status message
+            const statusMsg = await interaction.channel.send({
+                embeds: [buildEmbed()],
+                components: [cancelRow]
+            });
+
+            let lastUpdate = Date.now();
+            
+            // Run pipeline
+            const pipeline = runPipeline(formData, async (logLine) => {
+                const lower = logLine.toLowerCase();
+                let newPhase = null;
+
+                let matchedIndex = -1;
+                if (lower.includes(platform) && (lower.includes('pipeline') || lower.includes('automation') || lower.includes('fetching') || lower.includes('scrapperv2'))) {
+                    matchedIndex = 0;
+                } else if (lower.includes('penggabungan') || lower.includes('gabung') || lower.includes('merging')) {
+                    matchedIndex = 1;
+                } else if (lower.includes('pdf') || lower.includes('apps script') || lower.includes('webhook')) {
+                    matchedIndex = 2;
+                }
+
+                if (matchedIndex !== -1) {
+                    phaseNumber = matchedIndex + 1;
+                    currentPhase = `**[${phaseNumber}/${totalPhases}]** ${steps[matchedIndex].name}`;
+                }
+
+                if (Date.now() - lastUpdate > 3000) {
+                    lastUpdate = Date.now();
+                    await statusMsg.edit({ embeds: [buildEmbed()], components: [cancelRow] }).catch(() => {});
+                }
+            });
+            
+            activeReRuns.set(taskId, pipeline.proc);
+
+            pipeline.promise.then(async (result) => {
+                activeReRuns.delete(taskId);
+                if (result.success) {
+                    await statusMsg.edit({
+                        content: `✅ **Re-Run Selesai!** Laporan untuk **${formData.aplikator}** berhasil diproses.`,
+                        embeds: [], components: []
+                    });
+                } else {
+                    await statusMsg.edit({
+                        content: `❌ **Re-Run Gagal!** Proses **${formData.aplikator}** berhenti dengan error (Exit Code: ${result.exitCode}).`,
+                        embeds: [], components: []
+                    });
+                }
+            }).catch(async (err) => {
+                activeReRuns.delete(taskId);
+                await statusMsg.edit({
+                    content: `❌ **Re-Run Error Tidak Terduga:** ${err.message}`,
+                    embeds: [], components: []
+                });
+            });
+        } else if (interaction.customId.startsWith('cancel_rerun_')) {
+            const taskId = interaction.customId.replace('cancel_rerun_', '');
+            const proc = activeReRuns.get(taskId);
+            
+            if (proc && !proc.killed) {
+                try {
+                    process.kill(-proc.pid, 'SIGINT'); // Kill process group
+                } catch (e) {
+                    try { proc.kill('SIGINT'); } catch (err) {}
+                }
+                activeReRuns.delete(taskId);
+                
+                await interaction.reply({
+                    content: '⏹️ **Sinyal pembatalan dikirim.** Proses Re-Run akan segera dihentikan.',
+                    ephemeral: true
+                });
+            } else {
+                await interaction.reply({
+                    content: '⚠️ **Gagal membatalkan:** Proses tidak ditemukan atau sudah selesai.',
+                    ephemeral: true
+                });
             }
         }
     }

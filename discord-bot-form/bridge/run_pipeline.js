@@ -168,6 +168,7 @@ function runPipeline(formData, onLog = () => { }) {
             OFD_BD: bd,
             OFD_APLIKATOR: formData.aplikator || '',
             OFD_WEBHOOK_URL: process.env.WEBHOOK_URL || '',
+            OFD_CHANNEL_ID: formData.channelId || ''
         };
 
         // ── Argumen CLI ─────────────────────────────────────────────

@@ -40,6 +40,9 @@ log = get_logger("browser")
 SESSION_FILE    = Path(__file__).resolve().parent.parent / "data" / "session.json"
 import sys
 import threading
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+from discord_notifier import send_discord_error
 
 _thread_local = threading.local()
 
@@ -688,7 +691,7 @@ def _init_driver(headless: bool):
 
 # ── Login Logic ────────────────────────────────────────────────────────────────
 
-def _perform_login(driver, wait, username: str = None, password: str = None, phone: str = None) -> bool:
+def _perform_login(driver, wait, username: str = None, password: str = None, phone: str = None, is_retry: bool = False) -> bool:
     log.info("➡️  [AUTH] Starting login sequence...")
     if not phone and (not username or not password):
         raise Exception("Shopee credentials are not configured! Please configure them in 'credentials.json' at the project root directory.")
@@ -764,6 +767,26 @@ def _perform_login(driver, wait, username: str = None, password: str = None, pho
 
         if login_btn: login_btn.click()
         else: raise Exception("Could not find Login button")
+
+    # Check for immediate credential errors
+    time.sleep(3)
+    try:
+        error_texts = driver.execute_script("""
+            var errs = Array.from(document.querySelectorAll('.shopee-form-item__error-message, .shopee-alert__title, .ant-message-custom-content span'));
+            return errs.map(e => e.innerText).filter(t => t.length > 0);
+        """)
+        for err_text in error_texts:
+            if "sandi" in err_text.lower() or "password" in err_text.lower() or "salah" in err_text.lower() or "nomor" in err_text.lower() or "username" in err_text.lower():
+                log.error(f"❌ Login error detected: {err_text}")
+                if is_retry:
+                    send_discord_error("Shopee", username or phone, "WRONG_CREDENTIALS", f"Gagal login: {err_text}", phone)
+                return False
+            if "blokir" in err_text.lower() or "blocked" in err_text.lower() or "dibatasi" in err_text.lower():
+                log.error(f"❌ Account block detected: {err_text}")
+                if is_retry:
+                    send_discord_error("Shopee", username or phone, "BLOCKED_ACCOUNT", f"Akun dibatasi/diblokir: {err_text}", phone)
+                return False
+    except: pass
 
     log.debug("  ⏳ Waiting for post-login redirect or OTP...")
     start_wait = time.time()
@@ -905,7 +928,7 @@ def _perform_login(driver, wait, username: str = None, password: str = None, pho
 
     return True
 
-def auto_switch_merchant(driver, target_name):
+def auto_switch_merchant(driver, target_name, is_retry=False):
     """
     Automated merchant switch using the profile menu dropdown on the dashboard.
     This avoids the selector page which often triggers forced re-logins.
@@ -1051,6 +1074,13 @@ def auto_switch_merchant(driver, target_name):
             log.debug(f"  ✅ Clicked {target_name} in menu.")
         else:
             log.warning(f"  ⚠️ Could not find {target_name} in the list. Will retry...")
+            if is_retry:
+                send_discord_error(
+                    platform="Shopee", 
+                    merchant=target_name, 
+                    error_type="SYSTEM_ERROR", 
+                    message=f"Gagal memilih outlet. Nama outlet '{target_name}' tidak terdaftar atau tidak dapat ditemukan di akun Shopee Partner ini."
+                )
             return False
 
         # Wait to see if we redirect to onboarding
@@ -1079,6 +1109,13 @@ def auto_switch_merchant(driver, target_name):
             return True
         except:
             log.warning(f"❌ [MERCHANT] UI name did not update to {target_name} in 15s.")
+            if is_retry:
+                send_discord_error(
+                    platform="Shopee", 
+                    merchant=target_name, 
+                    error_type="SYSTEM_ERROR", 
+                    message=f"Dashboard tidak memuat profil outlet '{target_name}' meskipun sudah dipilih."
+                )
             return False
     except Exception as e:
         log.error(f"❌ Auto-switch failed: {e}")
@@ -1423,7 +1460,7 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
                 
                 current_url = driver.current_url.lower()
                 if "login" in current_url or "authenticate" in current_url or "about:blank" in current_url:
-                    success = _perform_login(driver, wait, username, password, phone)
+                    success = _perform_login(driver, wait, username, password, phone, is_retry=(attempt == 2))
                     if not success:
                         log.error("❌ [AUTH] _perform_login failed.")
                         driver.quit()
@@ -1584,7 +1621,7 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
 
             if do_switch:
                 if target_name:
-                    success = auto_switch_merchant(driver, target_name)
+                    success = auto_switch_merchant(driver, target_name, is_retry=(attempt == 2))
                 else:
                     # When merchant cannot be detected, do a deliberate logout + relogin
                     # via the Chrome profile. This gives a clean session state without OTP:

@@ -10,6 +10,14 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import requests
 
+from pathlib import Path
+try:
+    sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+    from discord_notifier import send_discord_error
+except:
+    def send_discord_error(*args, **kwargs): pass
+
+
 from core.browser import get_session, return_to_selector, refresh_tokens, auto_switch_merchant
 from core.client import ShopeeClient
 from core.logger import get_logger
@@ -239,6 +247,12 @@ def download_file(url, filename, cookies=None, max_retries=3):
                 time.sleep(5)
             else:
                 log.error(f"❌ Failed to download {filename} after {max_retries} attempts: {e}")
+                send_discord_error(
+                    platform="Shopee", 
+                    merchant=filename.split("/")[-1], 
+                    error_type="DOWNLOAD_FAILED", 
+                    message=f"Gagal mengunduh file laporan Excel dari Shopee Partner setelah {max_retries} percobaan: {e}"
+                )
     return False
 
 
@@ -601,6 +615,12 @@ def run_pipeline():
 
     if not target_merchants:
         log.error("❌ No merchants to process. Aborting.")
+        send_discord_error(
+            platform="Shopee", 
+            merchant="Global", 
+            error_type="NO_DATA", 
+            message="Gagal memproses data outlet. Master data Google Sheet kosong atau koneksi API Database gagal terhubung."
+        )
         return
 
     if args.skip_download:
@@ -693,13 +713,33 @@ def run_pipeline():
                     s = str(val).strip()
                     if not s or s == '-': return 0
                     
+                    import re
+                    s = re.sub(r'[^\d\.\,\-]', '', s)
+                    if not s or s == '-': return 0
+
                     has_dot = '.' in s
+                    has_comma = ',' in s
                     try:
-                        num = float(s.replace(',', '.'))
-                        if has_dot:
-                            return int(round(num * 1000))
+                        if has_dot and has_comma:
+                            if s.rfind(',') > s.rfind('.'):
+                                s = s.split(',')[0].replace('.', '')
+                            else:
+                                s = s.split('.')[0].replace(',', '')
+                            return int(s)
+                        elif has_dot:
+                            parts = s.split('.')
+                            if len(parts[-1]) == 3:
+                                return int(s.replace('.', ''))
+                            else:
+                                return int(float(s))
+                        elif has_comma:
+                            parts = s.split(',')
+                            if len(parts[-1]) == 3:
+                                return int(s.replace(',', ''))
+                            else:
+                                return int(float(s.replace(',', '.')))
                         else:
-                            return int(num)
+                            return int(s)
                     except:
                         return 0
 

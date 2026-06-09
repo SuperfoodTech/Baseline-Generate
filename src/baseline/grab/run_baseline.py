@@ -259,7 +259,7 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
         semaphore = asyncio.Semaphore(concurrency_limit)
         failures = []
 
-        async def process_user(username, info):
+        async def process_user(username, info, is_retry=False):
             password = info["pwd"]
             related_portals = info["portals"]
             first_outlet = related_portals[0]["outlet"]
@@ -271,7 +271,8 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                         username, password, 
                         start_date=date_start, 
                         end_date=date_end,
-                        browser=browser
+                        browser=browser,
+                        is_retry=is_retry
                     )
 
                     if not downloaded_file:
@@ -327,7 +328,7 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                 username = f["user"]
                 info = unique_users[username]
                 log.info(f"\n  [RETRY ACCOUNT] Re-running sequentially for: {username}")
-                await process_user(username, info)
+                await process_user(username, info, is_retry=True)
                 
         await browser.close()
 
