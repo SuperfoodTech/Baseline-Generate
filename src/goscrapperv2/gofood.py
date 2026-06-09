@@ -1325,29 +1325,9 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
     if appscript_url and batch_data:
         try:
             data_to_send = batch_data
-            # Jika mode baseline (return_data=True), agregasi data menjadi bulanan
-            if return_data:
-                monthly_agg = {}
-                for row in batch_data:
-                    # row: [tanggal, outlet, store_id, omzet, komisi, iklan, order_sukses, order_batal]
-                    try:
-                        dt = datetime.strptime(row[0], "%Y-%m-%d")
-                        m_label = dt.strftime("%Y-%m")
-                    except:
-                        m_label = row[0]
-                    
-                    if m_label not in monthly_agg:
-                        monthly_agg[m_label] = [m_label, row[1], row[2], 0, 0, 0, 0, 0]
-                    
-                    monthly_agg[m_label][3] += row[3]
-                    monthly_agg[m_label][4] += row[4]
-                    monthly_agg[m_label][5] += row[5]
-                    monthly_agg[m_label][6] += row[6]
-                    monthly_agg[m_label][7] += row[7]
-                data_to_send = list(monthly_agg.values())
 
             payload = {
-                "sheetName": "Sheet1", # Ganti jika nama tab sheet bukan Sheet1
+                "sheetName": "Gofood", 
                 "data": data_to_send
             }
             resp = requests.post(appscript_url, json=payload, timeout=15)
