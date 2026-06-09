@@ -1622,6 +1622,20 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
             if do_switch:
                 if target_name:
                     success = auto_switch_merchant(driver, target_name, is_retry=(attempt == 2))
+                    if not success:
+                        log.warning(f"⚠️ [MERCHANT] auto_switch_merchant failed for target {target_name}. Initiating logout/relogin recovery...")
+                        recovered = _deliberate_logout_and_relogin(
+                            driver,
+                            username=username,
+                            password=password,
+                            phone=phone,
+                        )
+                        if recovered:
+                            log.info("🔄 [MERCHANT] Recovery successful. Retrying merchant switch...")
+                            success = auto_switch_merchant(driver, target_name, is_retry=(attempt == 2))
+                        else:
+                            log.error("❌ Recovery failed.")
+                            success = False
                 else:
                     # When merchant cannot be detected, do a deliberate logout + relogin
                     # via the Chrome profile. This gives a clean session state without OTP:
