@@ -32,7 +32,7 @@ function fetchCSV(url) {
     });
 }
 
-const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv';
+const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=0';
 
 let cachedSheetData = null;
 let lastCacheTime = 0;
@@ -759,18 +759,12 @@ module.exports = {
                             const orderLines = [];
                             const lowerApp = aplikator.toLowerCase();
 
-                            if (lowerApp.includes('gofood') || lowerApp.includes('all')) {
-                                omzetLines.push(`GoFood: **${omzet_go || 'Rp 0'}**`);
-                                orderLines.push(`GoFood: **${order_go || '0'}**`);
-                            }
-                            if (lowerApp.includes('grab') || lowerApp.includes('all')) {
-                                omzetLines.push(`GrabFood: **${omzet_gr || 'Rp 0'}**`);
-                                orderLines.push(`GrabFood: **${order_gr || '0'}**`);
-                            }
-                            if (lowerApp.includes('shopee') || lowerApp.includes('all')) {
-                                omzetLines.push(`ShopeeFood: **${omzet_sf || 'Rp 0'}**`);
-                                orderLines.push(`ShopeeFood: **${order_sf || '0'}**`);
-                            }
+                            omzetLines.push(`GoFood: **${omzet_go || 'Rp 0'}**`);
+                            orderLines.push(`GoFood: **${order_go || '0'}**`);
+                            omzetLines.push(`GrabFood: **${omzet_gr || 'Rp 0'}**`);
+                            orderLines.push(`GrabFood: **${order_gr || '0'}**`);
+                            omzetLines.push(`ShopeeFood: **${omzet_sf || 'Rp 0'}**`);
+                            orderLines.push(`ShopeeFood: **${order_sf || '0'}**`);
 
                             const omzetStr = omzetLines.join('\n') || '-';
                             const orderStr = orderLines.join('\n') || '-';
@@ -1253,7 +1247,7 @@ module.exports = {
             return Promise.resolve(cachedSheetData);
         }
 
-        const baselineUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=880434015&single=true&output=csv';
+        const baselineUrl = 'https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=880434015';
         const credsUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRYSUnKOqk29LCktTxdb0wPLbWMbRaWRP3eC_UA4AwYod1FW6zDMhtLMC5ghIvot2B8upCDfBsn-TCP/pub?gid=565510790&single=true&output=csv';
 
         return Promise.all([fetchCSV(baselineUrl), fetchCSV(credsUrl)])
