@@ -717,39 +717,39 @@ def login_outlet_gofood_flow(outlet_info):
                             pass
                         continue
 
-            try:
-                # Wait up to 30 seconds for the access token to appear
-                wait_time = 0
-                max_wait = 30
-                
-                # Jika manual OTP (tanpa endpoint), biarkan tanpa batas waktu (atau waktu yang lebih lama)
-                if not otp_endpoint:
-                    max_wait = 180
+                try:
+                    # Wait up to 30 seconds for the access token to appear
+                    wait_time = 0
+                    max_wait = 30
                     
-                while wait_time < max_wait:
-                    if page.is_closed():
-                        console.print("[warning]⚠️ Browser ditutup sebelum login selesai.[/warning]")
-                        send_discord_error("GoFood", phone, "SYSTEM_ERROR", "Proses login terganggu karena browser tertutup secara tiba-tiba atau kehilangan koneksi di tengah jalan.", "")
-                        break
-
-                    cookies = context.cookies()
-                    for cookie in cookies:
-                        if cookie['name'] == 'access_token':
-                            access_token = cookie['value']
+                    # Jika manual OTP (tanpa endpoint), biarkan tanpa batas waktu (atau waktu yang lebih lama)
+                    if not otp_endpoint:
+                        max_wait = 180
+                        
+                    while wait_time < max_wait:
+                        if page.is_closed():
+                            console.print("[warning]⚠️ Browser ditutup sebelum login selesai.[/warning]")
+                            send_discord_error("GoFood", phone, "SYSTEM_ERROR", "Proses login terganggu karena browser tertutup secara tiba-tiba atau kehilangan koneksi di tengah jalan.", "")
                             break
 
-                    if access_token:
-                        break
+                        cookies = context.cookies()
+                        for cookie in cookies:
+                            if cookie['name'] == 'access_token':
+                                access_token = cookie['value']
+                                break
 
-                    time.sleep(1.0)
-                    wait_time += 1
+                        if access_token:
+                            break
+
+                        time.sleep(1.0)
+                        wait_time += 1
+                        
+                except KeyboardInterrupt:
+                    console.print("\n[warning]⚠️ Dibatalkan oleh pengguna.[/warning]")
+                    break
+                except Exception as e:
+                    console.print(f"[error]❌ Error: {e}[/error]")
                     
-            except KeyboardInterrupt:
-                console.print("\n[warning]⚠️ Dibatalkan oleh pengguna.[/warning]")
-                break
-            except Exception as e:
-                console.print(f"[error]❌ Error: {e}[/error]")
-                
                 # Jika token tidak didapat
                 if not access_token:
                     if attempt < max_login_attempts - 1:
