@@ -28,8 +28,9 @@ automation-report-V1/
 │   │   ├── grab/
 │   │   └── shopee/
 │   ├── 📁 goscrapperv2/            # Scraper GoFood (Login & Dashboard)
+│   │   └── .env                    # Token sesi GoFood per akun (di-generate otomatis)
 │   ├── 📁 shopee-omzet-automation/ # Scraper Omzet ShopeeFood (Weekly)
-│   ├── 📁 appscriptOFD/            # Google Apps Script untuk upload ke Sheets
+│   ├── 📁 appscriptOFD/            # Google Apps Script untuk generate PDF & upload
 │   ├── 📁 database/                # Skema & migrasi PostgreSQL (SRS DB)
 │   ├── 📁 laporan/                 # Output laporan Excel hasil pipeline
 │   ├── 📁 logs/                    # Log eksekusi pipeline
@@ -37,6 +38,7 @@ automation-report-V1/
 │       └── setup_server.sh         # Script setup otomatis untuk server Linux
 │
 ├── 📁 discord-bot-form/            # Discord Bot (Interface Pelaporan)
+│   ├── .env.example                # Template konfigurasi bot ← SALIN INI
 │   ├── index.js                    # Entry point bot
 │   ├── deploy-commands.js          # Registrasi slash commands ke Discord
 │   ├── package.json
@@ -44,12 +46,15 @@ automation-report-V1/
 │       └── 📁 Modals/
 │           └── modal.js            # Logika form wizard & date picker
 │
+├── 📁 shopee-session-monitor/      # Session Warmer (Shopee Anti-Logout)
+│   └── .env.example                # Template konfigurasi warmer ← SALIN INI
+│
 ├── 📁 docs/                        # Dokumentasi teknis
 │   ├── database_erd.md             # ERD & penjelasan arsitektur database
 │   └── mitigation_proposal_local_trigger.md
 │
 ├── Dockerfile                      # Image Docker untuk deployment server
-├── docker-compose.yml              # Orkestrasi container (Bot + PostgreSQL)
+├── docker-compose.yml              # Orkestrasi container (Bot + Warmer + PostgreSQL)
 ├── start.sh                        # Launcher Linux untuk mode lokal
 └── start.bat                       # Launcher Windows untuk mode lokal
 ```
@@ -170,32 +175,93 @@ Script ini akan menginstal: **Docker**, **uv**, dan **Google Chrome**.
 
 ---
 
-### Langkah 2: Konfigurasi Environment Variables
+### Langkah 2: Clone Repository & Konfigurasi
 
-Buat file `.env` di dalam folder `discord-bot-form/`:
 ```bash
-cp discord-bot-form/.env.example discord-bot-form/.env
-nano discord-bot-form/.env
-```
-
-Isi variabel berikut:
-```env
-# Discord Bot
-DISCORD_TOKEN=TOKEN_BOT_DISCORD_ANDA
-CLIENT_ID=ID_APLIKASI_BOT
-GUILD_ID=ID_SERVER_DISCORD
-
-# Database (sudah dikonfigurasi di docker-compose.yml, sesuaikan jika perlu)
-DB_HOST=db
-DB_PORT=5432
-DB_USER=superfood_admin
-DB_PASS=superfood_password
-DB_NAME=srs_db
+git clone https://github.com/SuperfoodTech/automation-report-V1.git
+cd automation-report-V1
 ```
 
 ---
 
-### Langkah 3: Build & Jalankan Container
+### Langkah 3: Konfigurasi Environment Variables
+
+Sistem ini memiliki **3 file `.env`** yang harus disiapkan. Salin dari template masing-masing:
+
+```bash
+# 1. Bot Discord
+cp discord-bot-form/.env.example discord-bot-form/.env
+
+# 2. Session Warmer Shopee
+cp shopee-session-monitor/.env.example shopee-session-monitor/.env
+
+# 3. GoFood Token Sesi (di-generate otomatis saat login pertama)
+# File ini TIDAK perlu dibuat manual. Cukup pastikan folder ada:
+mkdir -p src/goscrapperv2
+```
+
+---
+
+### 📋 Referensi Lengkap Environment Variables
+
+#### 📁 `discord-bot-form/.env` — Discord Bot & Pipeline Trigger
+
+| Variabel | Wajib | Deskripsi | Contoh |
+|---|---|---|---|
+| `DISCORD_TOKEN` | ✅ | Token Bot Discord (dari Developer Portal) | `MTI...` |
+| `CLIENT_ID` | ✅ | Application ID Bot Discord | `1234567890` |
+| `GUILD_ID` | ✅ | ID Server (Guild) Discord tempat bot aktif | `9876543210` |
+| `WEBHOOK_URL` | ✅ | URL Google Apps Script untuk generate PDF Baseline | `https://script.google.com/macros/s/XXX/exec` |
+| `DB_HOST` | ✅ | Hostname database (gunakan `db` untuk Docker) | `db` |
+| `DB_PORT` | ✅ | Port database PostgreSQL | `5432` |
+| `DB_USER` | ✅ | Username database | `superfood_admin` |
+| `DB_PASS` | ✅ | Password database | `superfood_password` |
+| `DB_NAME` | ✅ | Nama database | `srs_db` |
+| `TZ` | — | Timezone container | `Asia/Jakarta` |
+
+> 💡 **Cara mendapatkan Discord token & ID:** Buka [discord.com/developers/applications](https://discord.com/developers/applications) → pilih aplikasi → **Bot** (untuk token) dan **General Information** (untuk Client ID).
+
+---
+
+#### 📁 `shopee-session-monitor/.env` — Shopee Session Warmer
+
+| Variabel | Wajib | Deskripsi | Default |
+|---|---|---|---|
+| `HEADLESS` | ✅ | `true` di server, `false` untuk lokal (lihat browser) | `true` |
+| `ACCOUNTS` | ✅ | Daftar username akun ShopeeFood yang di-warm, dipisah koma | `auto7303,auto7304_,...` |
+| `LOOP_DELAY_SECONDS` | — | Jeda antar siklus penuh (detik) | `1800` (30 menit) |
+| `ACCOUNT_DELAY_SECONDS` | — | Jeda antar pemrosesan tiap akun (detik) | `15` |
+| `DISCORD_WEBHOOK_URL` | — | Webhook Discord untuk notifikasi status warmer | _(kosong = nonaktif)_ |
+| `UPTIME_KUMA_PUSH_URL` | — | URL push monitor Uptime Kuma untuk health check | _(kosong = nonaktif)_ |
+
+---
+
+#### 📁 `src/goscrapperv2/.env` — Token Sesi GoFood _(Auto-generated)_
+
+> ⚠️ File ini **di-generate otomatis** oleh script saat pertama kali login GoFood. Tidak perlu dibuat manual.
+
+Format variabel yang disimpan secara otomatis:
+
+| Variabel | Deskripsi |
+|---|---|
+| `BEARER_TOKEN_{email}_{cabang}` | JWT token sesi GoFood per akun |
+| `NAMA_OUTLET_{email}_{cabang}` | Nama outlet sesuai akun |
+| `CABANG_{email}_{cabang}` | Nama cabang akun |
+| `STORE_ID_{email}_{cabang}` | Store/Merchant ID outlet (jika tersedia) |
+| `APPSCRIPT_URL` | URL Google Apps Script untuk upload data ke Sheets |
+
+---
+
+#### 📁 `src/baseline/.env` — Webhook Upload Baseline _(Opsional)_
+
+| Variabel | Deskripsi |
+|---|---|
+| `GRAB_DRIVE_UPLOAD_WEBHOOK_URL` | URL Apps Script untuk upload file Excel Grab ke Google Drive |
+| `SHOPEE_DRIVE_UPLOAD_WEBHOOK_URL` | URL Apps Script untuk upload file Excel Shopee ke Google Drive |
+
+---
+
+### Langkah 4: Build & Jalankan Container
 
 ```bash
 # Build image dan jalankan semua service
@@ -208,11 +274,18 @@ docker compose logs -f
 docker compose ps
 ```
 
+**Tiga container yang akan berjalan:**
+| Container | Service | Fungsi |
+|---|---|---|
+| `ofd_discord_bot` | `bot` | Discord Bot + Python Pipeline |
+| `shopee_session_warmer` | `warmer` | Menjaga sesi ShopeeFood agar tidak logout |
+| `srs_postgres` | `db` | Database PostgreSQL |
+
 ---
 
-### Langkah 4: Setup Discord Bot (Sekali)
+### Langkah 5: Daftarkan Discord Slash Commands (Sekali)
 
-Daftarkan slash commands ke server Discord yang ditentukan:
+Setelah container `bot` berjalan, daftarkan slash commands ke server Discord:
 ```bash
 # Masuk ke container yang berjalan
 docker exec -it ofd_discord_bot sh
@@ -234,7 +307,11 @@ docker compose restart bot
 
 # Lihat log service tertentu
 docker compose logs -f bot
+docker compose logs -f warmer
 docker compose logs -f db
+
+# Update setelah git pull (rebuild image)
+docker compose up -d --build
 ```
 
 ---
@@ -244,13 +321,15 @@ docker compose logs -f db
 Semua laporan Excel hasil pipeline disimpan di:
 ```
 src/laporan/
-├── grab/           # Laporan Weekly GrabFood
-├── grab_baseline/  # Laporan Baseline GrabFood
-├── grab_vb/        # Laporan VB GrabFood
-├── shopee/         # Laporan Weekly ShopeeFood
-├── shopee_baseline/# Laporan Baseline ShopeeFood
-├── shopee_vb/      # Laporan VB ShopeeFood
-└── gofood/         # Laporan GoFood
+├── grab/               # Laporan Weekly GrabFood
+├── grab_baseline/      # Laporan Baseline GrabFood
+├── grab_vb/            # Laporan VB GrabFood
+├── shopee/             # Laporan Weekly ShopeeFood
+├── shopee_baseline/    # Laporan Baseline ShopeeFood
+├── shopee_vb/          # Laporan VB ShopeeFood
+├── gofood/             # Laporan GoFood Weekly
+├── gofood_baseline/    # Laporan Baseline GoFood
+└── baseline/           # Laporan Gabungan (Grab + Shopee + GoFood)
 ```
 
 Setiap sub-folder diberi nama dengan format: `{start_date}_to_{end_date}/`.
@@ -277,7 +356,7 @@ graph TD
     D -->|Virtual Brand| G2[Shopee VB\nrun_baseline.py]
 
     E1 & E2 & E3 & F1 & F2 & F3 & G1 & G2 --> H[Output .xlsx\nsrc/laporan/...]
-    H --> I[Upload ke Google Sheets\nvia Apps Script]
+    H --> I[Generate PDF\nvia Google Apps Script]
     I --> J[Laporan Publik\ndi Discord Channel]
 ```
 
@@ -318,7 +397,9 @@ graph TD
 
 - **Mode Lokal vs Server**: `start.sh` secara otomatis menjalankan browser dalam mode **headful** (`HEADLESS=false`) agar staff dapat menyelesaikan OTP/CAPTCHA secara manual. Di server, Docker menggunakan `HEADLESS=true`.
 - **Session & Cookie**: Data sesi browser Playwright disimpan di `src/shopee-omzet-automation/data/` dan di-mount ke volume Docker agar tidak hilang saat container di-restart.
+- **GoFood Token**: Token sesi GoFood disimpan otomatis ke `src/goscrapperv2/.env` setelah login via `LoginManual.py`. Volume Docker perlu di-mount agar token tidak hilang.
 - **Database Port**: PostgreSQL di-expose ke port `5433` (host) → `5432` (container) untuk menghindari konflik dengan instalasi PostgreSQL lokal.
+- **Docker Socket**: Container `bot` membutuhkan akses ke `/var/run/docker.sock` untuk bisa pause/unpause container `warmer` secara otomatis saat pipeline berjalan.
 - **Concurrency**: Gunakan `filelock` yang sudah terintegrasi untuk mencegah konflik jika beberapa pipeline dijalankan bersamaan.
 
 ---
