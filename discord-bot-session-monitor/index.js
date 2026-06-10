@@ -272,6 +272,41 @@ client.on('interactionCreate', async interaction => {
             return;
         }
 
+        // Tangani Tombol Re-Run Pipeline
+        if (interaction.customId.startsWith('rerun_')) {
+            const parts = interaction.customId.split('_');
+            // Format: rerun_Platform_MerchantNameSanitized
+            const platform = parts[1].toLowerCase(); 
+            const merchantSanitized = parts.slice(2).join('_');
+
+            await interaction.reply({ 
+                content: `🔄 Sedang mengantre proses **Re-Run** untuk aplikator **${platform.toUpperCase()}** (Merchant ID/Nama mirip: ${merchantSanitized})... Silakan pantau log server.`, 
+                ephemeral: false 
+            });
+
+            // Eksekusi cli.py di background
+            const CLI_PATH = path.resolve(__dirname, '../cli.py');
+            const PYTHON_BIN = path.resolve(__dirname, '../src/.venv/bin/python');
+            
+            // Catatan: Karena nama merchant dispasi diganti '_', kita tidak bisa match persis 100% jika ada spasi asli,
+            // namun PoC ini cukup memanggil script secara background.
+            const runArgs = [CLI_PATH, platform, '--task', 'all'];
+            console.log(`Menjalankan Re-run: ${PYTHON_BIN} ${runArgs.join(' ')}`);
+
+            const child = spawn(PYTHON_BIN, runArgs, {
+                env: { ...process.env, HEADLESS: 'true' },
+                cwd: path.resolve(__dirname, '../')
+            });
+
+            child.stdout.on('data', (data) => console.log(`[RERUN ${platform}]`, data.toString().trim()));
+            child.stderr.on('data', (data) => console.error(`[RERUN ERR ${platform}]`, data.toString().trim()));
+
+            child.on('close', (code) => {
+                interaction.channel.send({ content: `✅ Proses Re-Run **${platform}** telah selesai dijalankan di server (Exit code: ${code}).` }).catch(console.error);
+            });
+            return;
+        }
+
         if (interaction.customId.startsWith('otp_btn_')) {
             const username = interaction.customId.replace('otp_btn_', '');
             
@@ -402,6 +437,82 @@ setInterval(async () => {
         console.error("⚠️ [MONITOR] Error in background OTP file monitoring:", error);
     }
 }, 5000);
+
+// --- Monitoring generic Error Notifications ---
+setInterval(async () => {
+    try {
+        const NOTIF_DIR = path.resolve(__dirname, '../src/data/discord_notifications');
+        if (!fs.existsSync(NOTIF_DIR)) return;
+
+        const files = fs.readdirSync(NOTIF_DIR);
+        const errorFiles = files.filter(f => f.startsWith('error_') && f.endsWith('.json'));
+
+        for (const file of errorFiles) {
+            const filePath = path.join(NOTIF_DIR, file);
+            let content;
+            try {
+                content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+            } catch (err) {
+                continue; // Skip if file is being written to
+            }
+
+            if (content.status === 'ERROR_NOTIF') {
+                if (!client.isReady()) continue;
+                
+                const channel = await getNotificationChannel();
+                if (channel) {
+                    console.log(`📡 [MONITOR] Background Error Request detected for ${content.merchant}. Sending Discord message...`);
+                    
+                    let embedColor = '#ff0000'; // Default red
+                    let embedIcon = '⚠️';
+                    
+                    if (content.error_type === 'OTP_TIMEOUT') {
+                        embedColor = '#ffaa00'; // Orange
+                        embedIcon = '⏳';
+                    } else if (content.error_type === 'WRONG_CREDENTIALS') {
+                        embedColor = '#ff0000'; // Red
+                        embedIcon = '🚫';
+                    } else if (content.error_type === 'BLOCKED_ACCOUNT') {
+                        embedColor = '#000000'; // Black
+                        embedIcon = '🛑';
+                    }
+
+                    const errorEmbed = new EmbedBuilder()
+                        .setTitle(`${embedIcon} Masalah Sinkronisasi: ${content.platform}`)
+                        .setDescription(`Sistem mendeteksi adanya kendala saat memproses data untuk outlet berikut:`)
+                        .addFields(
+                            { name: '🏢 Nama Merchant', value: `**${content.merchant}**`, inline: true },
+                            { name: '📱 Kontak / Akun', value: content.phone || '-', inline: true },
+                            { name: '📌 Detail Kendala', value: `\`${content.message}\``, inline: false }
+                        )
+                        .setColor(embedColor)
+                        .setFooter({ text: 'Notifikasi Otomatis - Auto Reporting System' })
+                        .setTimestamp();
+
+                    // Tambahkan Tombol Re-Run
+                    const rerunBtn = new ButtonBuilder()
+                        .setCustomId(`rerun_${content.platform}_${content.merchant.replace(/[^a-zA-Z0-9]/g, '_')}`)
+                        .setLabel(`🔄 Re-Run ${content.platform}`)
+                        .setStyle(ButtonStyle.Secondary);
+
+                    const row = new ActionRowBuilder().addComponents(rerunBtn);
+
+                    await channel.send({ embeds: [errorEmbed], components: [row] });
+                    
+                    // Hapus file setelah berhasil dikirim
+                    try {
+                        fs.unlinkSync(filePath);
+                        console.log(`🗑️ Berhasil menghapus notifikasi: ${file}`);
+                    } catch (e) {
+                        console.error(`Gagal menghapus file ${file}:`, e);
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.error("⚠️ [MONITOR] Error in background Error Notification monitoring:", error);
+    }
+}, 3000);
 
 if (!process.env.DISCORD_TOKEN) {
     console.error("❌ Error: DISCORD_TOKEN tidak ditemukan di file .env");

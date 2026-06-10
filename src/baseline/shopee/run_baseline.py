@@ -10,6 +10,14 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import requests
 
+from pathlib import Path
+try:
+    sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+    from discord_notifier import send_discord_error
+except:
+    def send_discord_error(*args, **kwargs): pass
+
+
 from core.browser import get_session, return_to_selector, refresh_tokens, auto_switch_merchant
 from core.client import ShopeeClient
 from core.logger import get_logger
@@ -39,7 +47,9 @@ def robust_read_csv(path_or_url, expected_cols=None, **kwargs):
     content = ""
     try:
         if isinstance(path_or_url, str) and (path_or_url.startswith("http://") or path_or_url.startswith("https://")):
-            resp = requests.get(path_or_url, timeout=30)
+            import time
+            cache_buster = f"&t={int(time.time())}" if "?" in path_or_url else f"?t={int(time.time())}"
+            resp = requests.get(path_or_url + cache_buster, timeout=30)
             resp.raise_for_status()
             content = resp.text
         else:
@@ -239,6 +249,12 @@ def download_file(url, filename, cookies=None, max_retries=3):
                 time.sleep(5)
             else:
                 log.error(f"❌ Failed to download {filename} after {max_retries} attempts: {e}")
+                send_discord_error(
+                    platform="Shopee", 
+                    merchant=filename.split("/")[-1], 
+                    error_type="DOWNLOAD_FAILED", 
+                    message=f"Gagal mengunduh file laporan Excel dari Shopee Partner setelah {max_retries} percobaan: {e}"
+                )
     return False
 
 
@@ -601,6 +617,12 @@ def run_pipeline():
 
     if not target_merchants:
         log.error("❌ No merchants to process. Aborting.")
+        send_discord_error(
+            platform="Shopee", 
+            merchant="Global", 
+            error_type="NO_DATA", 
+            message="Gagal memproses data outlet. Master data Google Sheet kosong atau koneksi API Database gagal terhubung."
+        )
         return
 
     if args.skip_download:
@@ -693,13 +715,33 @@ def run_pipeline():
                     s = str(val).strip()
                     if not s or s == '-': return 0
                     
+                    import re
+                    s = re.sub(r'[^\d\.\,\-]', '', s)
+                    if not s or s == '-': return 0
+
                     has_dot = '.' in s
+                    has_comma = ',' in s
                     try:
-                        num = float(s.replace(',', '.'))
-                        if has_dot:
-                            return int(round(num * 1000))
+                        if has_dot and has_comma:
+                            if s.rfind(',') > s.rfind('.'):
+                                s = s.split(',')[0].replace('.', '')
+                            else:
+                                s = s.split('.')[0].replace(',', '')
+                            return int(s)
+                        elif has_dot:
+                            parts = s.split('.')
+                            if len(parts[-1]) == 3:
+                                return int(s.replace('.', ''))
+                            else:
+                                return int(float(s))
+                        elif has_comma:
+                            parts = s.split(',')
+                            if len(parts[-1]) == 3:
+                                return int(s.replace(',', ''))
+                            else:
+                                return int(float(s.replace(',', '.')))
                         else:
-                            return int(num)
+                            return int(s)
                     except:
                         return 0
 
@@ -898,6 +940,49 @@ def run_pipeline():
 
         # Skip push
         log.info("⏭️ [SKIP] Push ke Google Sheets dan database dimatikan secara global untuk mode Baseline.")
+
+        # === UNGGAH KE GOOGLE DRIVE ===
+        DRIVE_PARENT_FOLDER_ID = "1kHkd1N3uPRaVYaQKTotEIELaT-_nzCCS"
+        subfolder_name = os.path.basename(report_dir)
+        
+        webhook_url = os.getenv("SHOPEE_DRIVE_UPLOAD_WEBHOOK_URL")
+        if webhook_url:
+            log.info("\n" + "="*60)
+            log.info("  MENGUNGGAH HASIL KE GOOGLE DRIVE (SHOPEE)")
+            log.info("="*60)
+            
+            import base64
+            import requests
+            import glob
+            
+            def _upload_file(filepath):
+                try:
+                    with open(filepath, "rb") as f:
+                        encoded = base64.b64encode(f.read()).decode("utf-8")
+                    payload = {
+                        "parentFolderId": DRIVE_PARENT_FOLDER_ID,
+                        "subFolderName": subfolder_name,
+                        "fileName": os.path.basename(filepath),
+                        "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        "fileData": encoded
+                    }
+                    log.info(f"  Mengunggah: {os.path.basename(filepath)} ...")
+                    res = requests.post(webhook_url, json=payload, timeout=60)
+                    if res.status_code == 200 and res.json().get("status") == "success":
+                        log.info(f"  ✓ Berhasil: {res.json().get('url')}")
+                    else:
+                        log.error(f"  ✗ Gagal: {res.text}")
+                except Exception as e:
+                    log.error(f"  ✗ Error mengunggah {os.path.basename(filepath)}: {e}")
+
+            all_excels = glob.glob(os.path.join(report_dir, "*.xlsx"))
+            for file_path in all_excels:
+                if os.path.exists(file_path):
+                    _upload_file(file_path)
+                    
+            log.info("="*60)
+        else:
+            log.info("\n⏭️ [SKIP] SHOPEE_DRIVE_UPLOAD_WEBHOOK_URL tidak ditemukan di .env. Lewati proses unggah otomatis ke Google Drive.")
 
     # Driver cleanup handled in finally block of download phase
     pass

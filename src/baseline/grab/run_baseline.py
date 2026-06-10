@@ -72,7 +72,9 @@ def robust_read_csv(path_or_url, expected_cols=None, **kwargs):
     content = ""
     try:
         if isinstance(path_or_url, str) and (path_or_url.startswith("http://") or path_or_url.startswith("https://")):
-            resp = requests.get(path_or_url, timeout=30)
+            import time
+            cache_buster = f"&t={int(time.time())}" if "?" in path_or_url else f"?t={int(time.time())}"
+            resp = requests.get(path_or_url + cache_buster, timeout=30)
             resp.raise_for_status()
             content = resp.text
         else:
@@ -259,7 +261,7 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
         semaphore = asyncio.Semaphore(concurrency_limit)
         failures = []
 
-        async def process_user(username, info):
+        async def process_user(username, info, is_retry=False):
             password = info["pwd"]
             related_portals = info["portals"]
             first_outlet = related_portals[0]["outlet"]
@@ -271,7 +273,8 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                         username, password, 
                         start_date=date_start, 
                         end_date=date_end,
-                        browser=browser
+                        browser=browser,
+                        is_retry=is_retry
                     )
 
                     if not downloaded_file:
@@ -327,7 +330,7 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                 username = f["user"]
                 info = unique_users[username]
                 log.info(f"\n  [RETRY ACCOUNT] Re-running sequentially for: {username}")
-                await process_user(username, info)
+                await process_user(username, info, is_retry=True)
                 
         await browser.close()
 
@@ -396,6 +399,10 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     # Preprocess columns for both Old format and New S3 Insights format
     if "Date" in working.columns and "Updated On" not in working.columns:
         working["Updated On"] = pd.to_datetime(working["Date"], errors="coerce", format="%d/%m/%Y")
+    elif "Created On" in working.columns and "Updated On" not in working.columns:
+        working["Updated On"] = pd.to_datetime(working["Created On"], errors="coerce", format="%d %b %Y %I:%M %p")
+    elif "Update Time" in working.columns and "Updated On" not in working.columns:
+        working["Updated On"] = pd.to_datetime(working["Update Time"], errors="coerce", format="%d %b %Y %I:%M %p")
     elif "Updated On" in working.columns:
         working["Updated On"] = pd.to_datetime(working["Updated On"], errors="coerce", format="%d %b %Y %I:%M %p")
         
@@ -404,6 +411,8 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
         
     if "Grab Service" in working.columns and "Category" not in working.columns:
         working["Category"] = working["Grab Service"].fillna("").astype(str).str.strip().str.casefold()
+    elif "Main Category" in working.columns and "Category" not in working.columns:
+        working["Category"] = working["Main Category"].fillna("").astype(str).str.strip().str.casefold()
     elif "Category" in working.columns:
         working["Category"] = working["Category"].fillna("").astype(str).str.strip().str.casefold()
         
@@ -516,6 +525,53 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
 
     # Matikan push ke GSheets dan PostgreSQL
     log.info("⏭️ [SKIP] Push ke Google Sheets dan database dimatikan secara global untuk mode Baseline.")
+
+    # === UNGGAH KE GOOGLE DRIVE ===
+    DRIVE_PARENT_FOLDER_ID = "13Fg6prqaP2Xzfxsd_Qut-4cjrtxm9FMS"
+    # Nama subfolder diambil dari nama laporan_dir (misal: "2026-03-01_to_2026-05-31")
+    subfolder_name = laporan_dir.name 
+    
+    webhook_url = os.getenv("GRAB_DRIVE_UPLOAD_WEBHOOK_URL")
+    if webhook_url:
+        log.info("\n" + "="*60)
+        log.info("  MENGUNGGAH HASIL KE GOOGLE DRIVE")
+        log.info("="*60)
+        
+        import base64
+        import requests
+        
+        def _upload_file(filepath):
+            try:
+                with open(filepath, "rb") as f:
+                    encoded = base64.b64encode(f.read()).decode("utf-8")
+                payload = {
+                    "parentFolderId": DRIVE_PARENT_FOLDER_ID,
+                    "subFolderName": subfolder_name,
+                    "fileName": filepath.name,
+                    "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "fileData": encoded
+                }
+                log.info(f"  Mengunggah: {filepath.name} ...")
+                res = requests.post(webhook_url, json=payload, timeout=60)
+                if res.status_code == 200 and res.json().get("status") == "success":
+                    log.info(f"  ✓ Berhasil: {res.json().get('url')}")
+                else:
+                    log.error(f"  ✗ Gagal: {res.text}")
+            except Exception as e:
+                log.error(f"  ✗ Error mengunggah {filepath.name}: {e}")
+
+        # Unggah master baseline
+        if master_xlsx.exists():
+            _upload_file(master_xlsx)
+        
+        # Unggah file raw per-portal
+        for xlsx_path in xlsx_files:
+            if xlsx_path.exists():
+                _upload_file(xlsx_path)
+                
+        log.info("="*60)
+    else:
+        log.info("\n⏭️ [SKIP] GRAB_DRIVE_UPLOAD_WEBHOOK_URL tidak ditemukan di .env. Lewati proses unggah otomatis ke Google Drive.")
 
 
 if __name__ == "__main__":

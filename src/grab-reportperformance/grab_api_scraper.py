@@ -7,6 +7,12 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 from playwright.async_api import async_playwright
 from dotenv import load_dotenv
+
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+from discord_notifier import send_discord_error
+
 try:
     from filelock import FileLock
 except ImportError:
@@ -23,6 +29,12 @@ except ImportError:
 load_dotenv(override=True)
 
 import logging
+import sys
+try:
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+    from discord_notifier import send_discord_error
+except ImportError:
+    def send_discord_error(*args, **kwargs): pass
 
 logger = logging.getLogger("GrabAuto")
 
@@ -386,7 +398,7 @@ class GrabAPI:
                 
         return None, "S3 Polling timeout after 40 attempts."
 
-async def perform_login(page, user, pwd):
+async def perform_login(page, user, pwd, is_retry=False):
     """Robust login steps — clears cookies on mismatch and handles sticky 'Welcome back' pages."""
     CLEAN_LOGIN_URL = (
         "https://weblogin.grab.com/merchant/login"
@@ -413,6 +425,13 @@ async def perform_login(page, user, pwd):
                     ss_path = f"logs/account_blocked_{user}.png"
                     await page.screenshot(path=ss_path)
                     logger.error(f"  ✗ [Login] Account blocked screen detected for {user}. Screenshot saved to {ss_path}.")
+                    if is_retry:
+                        send_discord_error(
+                            platform="Grab", 
+                            merchant=user, 
+                            error_type="BLOCKED_ACCOUNT", 
+                            message="Akun ditangguhkan (suspended) sementara oleh sistem Grab karena terlalu banyak percobaan salah."
+                        )
                     raise IncorrectCredentialsError(f"Account is temporarily blocked due to multiple invalid login attempts.")
 
             # Check for Incorrect Credentials Error on screen
@@ -421,7 +440,24 @@ async def perform_login(page, user, pwd):
                 "attempts left",
                 "Pastikan nama pengguna dan kata sandi",
                 "kesempatan tersisa",
-                "salah memasukkan password"
+                "salah memasukkan password",
+                "Kredensial tidak valid",
+                "Username atau kata sandi",
+                "We didn't recognize that",
+                "Invalid credentials",
+                "Wrong credentials",
+                "Incorrect password",
+                "Kata sandi salah",
+                "Alamat email atau nomor telepon salah",
+                "Please check your login details",
+                "akun tidak ditemukan",
+                "tidak dapat menemukan akun",
+                "couldn't find an account",
+                "account not found",
+                "email tidak terdaftar",
+                "detail tidak dikenali",
+                "akun tidak dikenali",
+                "not recognize that"
             ]
             for text in error_texts:
                 if text.lower() in page_content.lower():
@@ -430,6 +466,13 @@ async def perform_login(page, user, pwd):
                     ss_path = f"logs/incorrect_credentials_{user}.png"
                     await page.screenshot(path=ss_path)
                     logger.error(f"  ✗ [Login] Wrong credentials error screen detected for {user}. Screenshot saved to {ss_path}.")
+                    if is_retry:
+                        send_discord_error(
+                            platform="Grab", 
+                            merchant=user, 
+                            error_type="WRONG_CREDENTIALS", 
+                            message="Gagal login. Kombinasi Email/Username dan Kata Sandi tidak cocok, atau halaman mengindikasikan kredensial salah."
+                        )
                     raise IncorrectCredentialsError(f"Incorrect username or password. Remaining attempts warning shown on page.")
 
         print(f"  [Login] Navigating to login page for {user}...")
@@ -455,6 +498,8 @@ async def perform_login(page, user, pwd):
         if "Attention Required" in await page.title() or "cloudflare" in content.lower() or "distil" in content.lower():
             logger.error(f"  ✗ [BLOCK] Detected anti-bot page for {user}.")
             await page.screenshot(path=f"blocked_{user}.png")
+            if is_retry:
+                send_discord_error("Grab", user, "BLOCKED_ACCOUNT", "Browser dihadang oleh proteksi keamanan Grab (Cloudflare/Anti-Bot). Tidak bisa melanjutkan login.", "")
             return False
 
         # --- Handle Sticky "Welcome back" / Saved Accounts page ---
@@ -587,11 +632,18 @@ async def perform_login(page, user, pwd):
         return False
 
 
-async def run_api_download_for_portal(user, pwd, start_date: str = None, end_date: str = None, browser=None):
+async def run_api_download_for_portal(user, pwd, start_date: str = None, end_date: str = None, browser=None, is_retry=False):
     # Proactively validate credentials before proceeding to run session
     is_valid, err_msg = validate_credentials(user, pwd)
     if not is_valid:
         logger.error(f"  ✗ [Validation] Invalid credentials for {user}: {err_msg}")
+        if is_retry:
+            send_discord_error(
+                platform="Grab", 
+                merchant=user, 
+                error_type="WRONG_CREDENTIALS", 
+                message=f"Validasi ditolak sebelum masuk browser. Kredensial tidak logis/kosong: {err_msg}"
+            )
         return None, f"Invalid credentials: {err_msg}"
 
     session_dir = "sessions"
@@ -662,7 +714,7 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
     
                 if not mgid or is_on_login_page:
                     logger.info(f"  [Session] Not active or redirected to login. Logging in...")
-                    if await perform_login(page, user, pwd):
+                    if await perform_login(page, user, pwd, is_retry):
                         # Setelah login sukses, pastikan kita berada di merchant page sebelum ambil API
                         try:
                             await page.goto("https://merchant.grab.com/dashboard", wait_until="domcontentloaded", timeout=30000)
@@ -679,6 +731,8 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
                             logger.error(f"  ✗ [Session] Login success but failed to get MGID for {user}.")
                             os.makedirs("logs", exist_ok=True)
                             await page.screenshot(path=f"logs/auth_fail_mgid_{user}.png")
+                            if is_retry:
+                                send_discord_error("Grab", user, "SYSTEM_ERROR", "Login berhasil, tetapi sistem gagal mengidentifikasi Merchant Group ID (MGID). Kemungkinan akun tidak memiliki akses ke portal toko.", "")
                     else:
                         logger.error(f"  ✗ [Session] Login failed for {user}.")
                         os.makedirs("logs", exist_ok=True)
@@ -699,6 +753,8 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
                         await managed_browser.close()
                     if p:
                         await p.stop()
+                    if is_retry:
+                        send_discord_error("Grab", user, "LOGIN_FAILED", "Gagal login ke portal Grab. Tidak ada keterangan spesifik pada halaman (bisa jadi OTP/Timeout).", "")
                     return None, "Auth failed after 2 attempts"
     
             except IncorrectCredentialsError as ice:
@@ -729,36 +785,26 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
                 await p.stop()
             return None, "Auth failed"
 
-        # --- Fast API Extraction (V1+V2) as PRIMARY METHOD ---
-        logger.info(f"  [Action] Executing Fast API Extraction (V1+V2) as primary method for {user}...")
-        fast_filename, fast_err = await api.execute_fallback(mgid, report_start, report_end)
+        # --- Native Grab CSV Export as PRIMARY METHOD ---
+        logger.info(f"  [Action] Executing Native S3 Download as PRIMARY method for {user}...")
+        s3_filename = None
+        last_dl_err = ""
         
-        if fast_filename:
-            logger.info(f"  [Action] Fast API Extraction Success! Returning generated CSV.")
-            if context: await context.close()
-            if managed_browser: await managed_browser.close()
-            if p: await p.stop()
-            return fast_filename, None
-            
-        logger.warning(f"  [Action] Fast API Extraction failed for {user}: {fast_err}. Falling back to native CSV export...")
-        
-        # --- Native Grab CSV Export as FALLBACK METHOD ---
-        download_success = False
-        last_dl_err = f"Fast API Err: {fast_err}"
-        
-        for dl_attempt in range(1):
+        for dl_attempt in range(2):
             try:
                 ref_id, err = await api.start_async_download(mgid, report_start, report_end)
                 if not ref_id:
                     logger.warning(f"  [Download] start_async_download failed for {user}: {err}")
-                    last_dl_err += f" | Req err: {err}"
-                    break
+                    last_dl_err = f"Req err: {err}"
+                    await asyncio.sleep(3)
+                    continue
 
                 download_url, err = await api.poll_for_download(mgid, ref_id)
                 if not download_url:
                     logger.warning(f"  [Download] Polling failed for {user}: {err}")
-                    last_dl_err += f" | Poll err: {err}"
-                    break
+                    last_dl_err = f"Poll err: {err}"
+                    await asyncio.sleep(3)
+                    continue
 
                 job_id = uuid.uuid4().hex[:8]
                 filename = f"downloads/grab_transactions_{user}_{job_id}.csv"
@@ -768,25 +814,49 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
                     os.makedirs("logs", exist_ok=True)
                     await page.screenshot(path=f"logs/download_fail_{user}.png")
                     logger.warning(f"  [Download] CSV download failed for {user}: {err}")
-                    last_dl_err += f" | DL err: {err}"
-                    break
+                    last_dl_err = f"DL err: {err}"
+                    await asyncio.sleep(3)
+                    continue
 
                 # Success!
-                await context.close()
-                if managed_browser:
-                    await managed_browser.close()
-                if p:
-                    await p.stop()
-                return (filename, None)
+                s3_filename = filename
+                break
 
             except SessionStuckError as se:
-                logger.warning(f"  [Action] SessionStuck on download for {user}: {se}")
-                last_dl_err += f" | Stuck: {se}"
+                logger.warning(f"  [Action] SessionStuck on S3 download for {user}: {se}")
+                last_dl_err = f"Stuck: {se}"
                 break
             except Exception as e:
-                logger.error(f"  [Error] Download attempt failed for {user}: {e}")
-                last_dl_err += f" | Ex: {e}"
+                logger.error(f"  [Error] S3 Download attempt failed for {user}: {e}")
+                last_dl_err = f"Ex: {e}"
                 break
+                
+        if s3_filename:
+            logger.info(f"  [Action] Native S3 Download Success! Returning generated CSV.")
+            if context: await context.close()
+            if managed_browser: await managed_browser.close()
+            if p: await p.stop()
+            return s3_filename, None
+            
+        logger.warning(f"  [Action] Primary S3 method failed for {user}: {last_dl_err}. Falling back to Fast API Extraction...")
+
+        # --- Fast API Extraction (V1+V2) as FALLBACK METHOD ---
+        logger.info(f"  [Action] Executing Fast API Extraction (V1+V2) as fallback method for {user}...")
+        fast_filename, fast_err = await api.execute_fallback(mgid, report_start, report_end)
+        
+        if fast_filename:
+            logger.info(f"  [Action] Fast API Extraction Fallback Success! Returning generated CSV.")
+            if context: await context.close()
+            if managed_browser: await managed_browser.close()
+            if p: await p.stop()
+            return fast_filename, None
+            
+        # If fallback also fails, log error, send discord err (on last run_attempt), and retry whole session
+        logger.warning(f"  [Action] Fallback Fast API Extraction failed for {user}: {fast_err}.")
+        last_dl_err += f" | Fallback Err: {fast_err}"
+        
+        if run_attempt >= 1 and is_retry:
+            send_discord_error("Grab", user, "DOWNLOAD_FAILED", f"Gagal mengunduh laporan S3 maupun Fallback API: {last_dl_err[:200]}", "")
             
         # If fallback also fails, then proceed to clean up and retry whole session if possible
         if context:

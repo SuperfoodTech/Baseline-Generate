@@ -677,7 +677,28 @@ def interactive_mode():
             except ValueError: pass
             print(f"  {RED}Pilihan tidak valid.{RESET}")
 
-        platform = "all"
+        print(f"\n  {BOLD}Pilih Platform untuk ditarik Baseline-nya:{RESET}")
+        print(f"    {GREEN}[1]{RESET} GrabFood")
+        print(f"    {GREEN}[2]{RESET} ShopeeFood")
+        print(f"    {GREEN}[3]{RESET} GoFood")
+        print(f"    {GREEN}[4]{RESET} Semua (Grab + Shopee + GoFood)")
+        print()
+        while True:
+            plat_choice = input(f"  {BOLD}Pilihan (1/2/3/4):{RESET} ").strip()
+            if plat_choice == "1":
+                platform = "grab"
+                break
+            elif plat_choice == "2":
+                platform = "shopee"
+                break
+            elif plat_choice == "3":
+                platform = "gofood"
+                break
+            elif plat_choice == "4":
+                platform = "all"
+                break
+            print(f"  {RED}Input tidak valid.{RESET}")
+
         scope_choice = "2"
         outlet = unified_outlet
         branch = None
@@ -1265,6 +1286,17 @@ Examples:
 
             # Find GoFood Baseline output
             gofood_paths_to_check = []
+            
+            o_str_go = "|".join(outlet) if outlet else None
+            outlet_safe_go = str(o_str_go or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
+            if outlet_safe_go:
+                gofood_paths_to_check.append(os.path.join(base_dir, "laporan", "gofood_baseline", date_folder, f"BASELINE_CUSTOM_GOFOOD_{outlet_safe_go}_{start_date}_to_{end_date}.xlsx"))
+                import glob
+                glob_pattern_gf = os.path.join(base_dir, "laporan", "gofood_baseline", date_folder, f"BASELINE_CUSTOM_GOFOOD_{outlet_safe_go}*.xlsx")
+                for gp in glob.glob(glob_pattern_gf):
+                    if gp not in gofood_paths_to_check:
+                        gofood_paths_to_check.append(gp)
+
             gofood_paths_to_check.append(os.path.join(base_dir, "laporan", "gofood_baseline", date_folder, f"BASELINE_GOFOOD_{start_date}_to_{end_date}.xlsx"))
             
             gofood_path = None
@@ -1276,7 +1308,10 @@ Examples:
             if gofood_path:
                 print(f"  [INFO] Menemukan file GoFood baseline: {gofood_path}")
                 gf_df = pd.read_excel(gofood_path)
-                if outlet:
+                
+                # Only filter if it's the general MASTER file.
+                # If it's the custom one, it's already pre-filtered.
+                if outlet and "BASELINE_CUSTOM" not in os.path.basename(gofood_path):
                     o_lower = [str(o).strip().lower() for o in outlet]
                     gf_df = gf_df[gf_df['Merchant'].astype(str).str.strip().str.lower().isin(o_lower)]
                 if not gf_df.empty:
