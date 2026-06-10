@@ -123,8 +123,8 @@ def fetch_gofood_accounts_from_sheet(task="2"):
         # Parsing format sheet Baseline
         idx_aplikasi   = col_idx(['aplikasi'])
         idx_outlet     = col_idx(['nama outlet'])
-        idx_email_duck = col_idx(['email duck'])
-        idx_email_fm   = col_idx(['email foodmaster'])
+        idx_email_fm1 = col_idx(['email foodmaster1'])
+        idx_email_fm2 = col_idx(['email foodmaster2'])
 
         for row in reader_rows[1:]:
             if idx_aplikasi is None or len(row) <= idx_aplikasi:
@@ -135,21 +135,21 @@ def fetch_gofood_accounts_from_sheet(task="2"):
 
             nama = str(row[idx_outlet]).strip() if idx_outlet is not None and len(row) > idx_outlet else ''
             
-            # Ambil Email Duck sebagai prioritas utama
-            email_fm = ""
-            if idx_email_fm is not None and len(row) > idx_email_fm:
-                email_fm = str(row[idx_email_fm]).strip()
+            # Ambil Email FoodMaster2 sebagai sekunder
+            email_fm2 = ""
+            if idx_email_fm2 is not None and len(row) > idx_email_fm2:
+                email_fm2 = str(row[idx_email_fm2]).strip()
             
-            # Email FoodMaster sebagai sekunder
-            email_duck = ""
-            if idx_email_duck is not None and len(row) > idx_email_duck:
-                email_duck = str(row[idx_email_duck]).strip()
+            # Email FoodMaster1 sebagai prioritas utama
+            email_fm1 = ""
+            if idx_email_fm1 is not None and len(row) > idx_email_fm1:
+                email_fm1 = str(row[idx_email_fm1]).strip()
 
             emails = []
-            if email_duck and email_duck != "-":
-                emails.append(email_duck)
-            if email_fm and email_fm != "-" and email_fm != email_duck:
-                emails.append(email_fm)
+            if email_fm1 and email_fm1 != "-":
+                emails.append(email_fm1)
+            if email_fm2 and email_fm2 != "-" and email_fm2 != email_fm1:
+                emails.append(email_fm2)
                 
             primary_email = emails[0] if emails else ""
 
