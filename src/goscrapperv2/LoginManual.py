@@ -16,11 +16,7 @@ env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
 load_dotenv(env_path)
 
 # Master credential Google Sheet — sama dengan yang dipakai Grab & Shopee
-MASTER_SHEET_URL = (
-    "https://docs.google.com/spreadsheets/d/e/"
-    "2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4"
-    "/pub?gid=0&single=true&output=csv"
-)
+MASTER_SHEET_URL = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=0"
 
 
 def normalisasi_nomor_hp(nomor_hp):
@@ -50,7 +46,9 @@ def fetch_gofood_outlets():
       }
     """
     try:
-        resp = requests.get(MASTER_SHEET_URL, timeout=30)
+        import time
+        cache_buster_url = MASTER_SHEET_URL + f"&t={int(time.time())}"
+        resp = requests.get(cache_buster_url, timeout=30)
         resp.raise_for_status()
         reader_rows = list(csv.reader(resp.text.splitlines()))
     except Exception as e:

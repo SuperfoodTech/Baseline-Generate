@@ -5,12 +5,13 @@ from sqlalchemy import create_engine, text
 import os
 
 # Configuration
-GSHEET_MASTER_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv"
+GSHEET_MASTER_URL = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=0"
 DB_URL = "postgresql://superfood_admin:superfood_password@localhost:5433/srs_db"
 
 def sync_merchants():
+    import time
     print("📥 Fetching Merchant Master from Google Sheets...")
-    response = requests.get(GSHEET_MASTER_URL)
+    response = requests.get(GSHEET_MASTER_URL + f"&t={int(time.time())}")
     if response.status_code != 200:
         print(f"❌ Failed to fetch data: {response.status_code}")
         return
