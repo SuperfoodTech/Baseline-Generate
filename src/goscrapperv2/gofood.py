@@ -135,14 +135,23 @@ def fetch_gofood_accounts_from_sheet(task="2"):
 
             nama = str(row[idx_outlet]).strip() if idx_outlet is not None and len(row) > idx_outlet else ''
             
-            # Ambil Email Duck sebagai prioritas utama
-            email = ""
-            if idx_email_duck is not None and len(row) > idx_email_duck:
-                email = str(row[idx_email_duck]).strip()
+            # Ambil Email FoodMaster sebagai prioritas utama
+            email_fm = ""
+            if idx_email_fm is not None and len(row) > idx_email_fm:
+                email_fm = str(row[idx_email_fm]).strip()
             
-            # Jika Email Duck kosong, fallback ke Email FoodMaster
-            if (not email or email == "-") and idx_email_fm is not None and len(row) > idx_email_fm:
-                email = str(row[idx_email_fm]).strip()
+            # Email Duck sebagai sekunder
+            email_duck = ""
+            if idx_email_duck is not None and len(row) > idx_email_duck:
+                email_duck = str(row[idx_email_duck]).strip()
+
+            emails = []
+            if email_fm and email_fm != "-":
+                emails.append(email_fm)
+            if email_duck and email_duck != "-" and email_duck != email_fm:
+                emails.append(email_duck)
+                
+            primary_email = emails[0] if emails else ""
 
             phone  = "-"
             cabang = ""
@@ -150,7 +159,8 @@ def fetch_gofood_accounts_from_sheet(task="2"):
 
             accounts.append({
                 'phone'      : phone,
-                'email'      : email,
+                'email'      : primary_email,
+                'emails'     : emails,
                 'nama_outlet': nama,
                 'cabang'     : cabang,
                 'store_id'   : store_id,
@@ -188,6 +198,7 @@ def fetch_gofood_accounts_from_sheet(task="2"):
             accounts.append({
                 'phone'      : phone,
                 'email'      : email,
+                'emails'     : [email] if email and email != "-" else [],
                 'nama_outlet': nama,
                 'cabang'     : cabang,
                 'store_id'   : store_id,
@@ -473,14 +484,20 @@ def login_outlet_gofood_flow(outlet_info):
     """
     nama = outlet_info['nama_outlet']
     cabang = outlet_info.get('cabang', '')
-    email = outlet_info.get('email', '')
+    emails_to_try = outlet_info.get('emails', [])
+    if not emails_to_try:
+        # Fallback to single email
+        single_email = outlet_info.get('email', '')
+        if single_email:
+            emails_to_try = [single_email]
+            
     phone = outlet_info.get('phone_raw', '') or outlet_info.get('phone', '')
 
     label = f"{nama} - {cabang}" if cabang and cabang != 'Tanpa Cabang' else nama
 
     console.print(f"\n[bold yellow]🔄 Membuka browser untuk login otomatis ke: {label}[/bold yellow]")
-    if email:
-        console.print(f"   📧 Email: {email}")
+    if emails_to_try:
+        console.print(f"   📧 Emails: {', '.join(emails_to_try)}")
     if phone:
         console.print(f"   📱 Phone: {phone}")
 
@@ -532,148 +549,173 @@ def login_outlet_gofood_flow(outlet_info):
         import random
         
         access_token = None
-        max_login_attempts = 2
 
-        for attempt in range(max_login_attempts):
+        for email_idx, current_email in enumerate(emails_to_try):
             if access_token:
                 break
                 
-            page = context.new_page()
-            if email:
-                console.print(f"   ➡️ Membuka halaman login email langsung... (Percobaan {attempt + 1}/{max_login_attempts})")
-                page.goto("https://portal.gofoodmerchant.co.id/auth/login/email", wait_until="load")
-            else:
-                console.print(f"   ➡️ Membuka halaman login... (Percobaan {attempt + 1}/{max_login_attempts})")
-                page.goto("https://portal.gofoodmerchant.co.id/auth/login", wait_until="load")
-
-            # Langsung input ke email field, abaikan cookie & pop-up
-            time.sleep(1.0)
+            max_login_attempts = 2
             
-            otp_failed_timeout = False
+            for attempt in range(max_login_attempts):
+                if access_token:
+                    break
+                    
+                page = context.new_page()
+                if current_email:
+                    console.print(f"\n   ➡️ [Email: {current_email}] Membuka halaman login email langsung... (Percobaan {attempt + 1}/{max_login_attempts})")
+                    page.goto("https://portal.gofoodmerchant.co.id/auth/login/email", wait_until="load")
+                else:
+                    console.print(f"\n   ➡️ Membuka halaman login... (Percobaan {attempt + 1}/{max_login_attempts})")
+                    page.goto("https://portal.gofoodmerchant.co.id/auth/login", wait_until="load")
 
-            # --- STEP 4: Ketik email secara human-like ---
-            if email:
-                try:
-                    email_input = page.wait_for_selector(
-                        'input[type="email"], input[name="email"], input[placeholder*="email" i], input[placeholder*="Email" i], input[type="text"]',
-                        timeout=15000
-                    )
-                    if email_input:
-                        email_input.click()
-                        time.sleep(0.3)
-                        email_input.focus()
-                        time.sleep(0.3)
-                        for char in email:
-                            email_input.type(char, delay=0)
-                            time.sleep(random.uniform(0.05, 0.15))
-                        time.sleep(0.5)
+                # Langsung input ke email field, abaikan cookie & pop-up
+                time.sleep(1.0)
+                
+                otp_failed_timeout = False
 
-                        submit_btn = page.locator('button:has-text("Lanjut"), button:has-text("Submit"), button:has-text("Masuk"), button[type="submit"]')
-                        if submit_btn.count() > 0:
-                            submit_btn.first.click()
-                        else:
-                            email_input.press("Enter")
-                        time.sleep(3)
+                # --- STEP 4: Ketik email secara human-like ---
+                if current_email:
+                    try:
+                        email_input = page.wait_for_selector(
+                            'input[type="email"], input[name="email"], input[placeholder*="email" i], input[placeholder*="Email" i], input[type="text"]',
+                            timeout=15000
+                        )
+                        if email_input:
+                            email_input.click()
+                            time.sleep(0.3)
+                            email_input.focus()
+                            time.sleep(0.3)
+                            for char in current_email:
+                                email_input.type(char, delay=0)
+                                time.sleep(random.uniform(0.05, 0.15))
+                            time.sleep(0.5)
 
-                        # --- Pre-snapshot OTP sebelum tombol OTP diklik ---
-                        # Ini penting: snapshot diambil SEBELUM OTP dikirim agar nilai baru terdeteksi
-                        otp_endpoint = os.getenv("OTP_ENDPOINT_URL")
-                        label_email_cfg = os.getenv("GMAIL_OTP_LABEL", "OTP-GO")
-                        action_type = "getOtpEmail" if email else "getOtp"
-                        otp_snapshot_awal = ""
-                        if otp_endpoint:
+                            submit_btn = page.locator('button:has-text("Lanjut"), button:has-text("Submit"), button:has-text("Masuk"), button[type="submit"]')
+                            if submit_btn.count() > 0:
+                                submit_btn.first.click()
+                            else:
+                                email_input.press("Enter")
+                            time.sleep(3)
+
+                            # --- Pre-snapshot OTP sebelum tombol OTP diklik ---
+                            # Ini penting: snapshot diambil SEBELUM OTP dikirim agar nilai baru terdeteksi
+                            otp_endpoint = os.getenv("OTP_ENDPOINT_URL")
+                            label_email_cfg = os.getenv("GMAIL_OTP_LABEL", "OTP-GO")
+                            action_type = "getOtpEmail" if current_email else "getOtp"
+                            otp_snapshot_awal = ""
+                            if otp_endpoint:
+                                try:
+                                    otp_snapshot_awal = ambil_otp_dari_endpoint(otp_endpoint, action=action_type, label_email=label_email_cfg)
+                                    console.print(f"   [info]📸 Snapshot OTP awal: '{otp_snapshot_awal or '(kosong)'}' (sebelum OTP dikirim)[/info]")
+                                except Exception:
+                                    otp_snapshot_awal = ""
+
+                            # Jika ada halaman pilihan login (password/OTP)
                             try:
-                                otp_snapshot_awal = ambil_otp_dari_endpoint(otp_endpoint, action=action_type, label_email=label_email_cfg)
-                                console.print(f"   [info]📸 Snapshot OTP awal: '{otp_snapshot_awal or '(kosong)'}' (sebelum OTP dikirim)[/info]")
+                                btn_otp = page.locator('button:has-text("Masuk dengan OTP"), a:has-text("Masuk dengan OTP")').first
+                                if btn_otp.count() > 0 and btn_otp.is_visible():
+                                    btn_otp.click()
+                                    console.print("   [info]✅ Tombol 'Masuk dengan OTP' diklik. OTP sedang dikirim...[/info]")
+                                    time.sleep(2)
                             except Exception:
-                                otp_snapshot_awal = ""
+                                pass
 
-                        # Jika ada halaman pilihan login (password/OTP)
-                        try:
-                            btn_otp = page.locator('button:has-text("Masuk dengan OTP"), a:has-text("Masuk dengan OTP")').first
-                            if btn_otp.count() > 0 and btn_otp.is_visible():
-                                btn_otp.click()
-                                console.print("   [info]✅ Tombol 'Masuk dengan OTP' diklik. OTP sedang dikirim...[/info]")
-                                time.sleep(2)
-                        except Exception:
-                            pass
+                            # --- STEP 5: Automated OTP Polling & Fill ---
+                            is_banned = False
+                            if otp_endpoint:
+                                # 1. Tunggu field OTP muncul
+                                try:
+                                    console.print("   [info]🤖 Menunggu field OTP muncul...[/info]")
+                                    otp_input_selector = 'input[autocomplete="one-time-code"], input[aria-label*="digit" i], div[class*="otp" i] input:not([type="checkbox"]):not([type="radio"]), input[name*="otp" i]:not([type="checkbox"]):not([type="radio"]), input[maxlength="1"]:not([type="checkbox"]):not([type="radio"])'
+                                    page.locator(otp_input_selector).first.wait_for(state="visible", timeout=15000)
+                                    time.sleep(1)
+                                except Exception as e:
+                                    console.print(f"   [warning]⚠️ Timeout 15000ms: Field OTP tidak muncul. Indikasi limit/banned 15 menit untuk email {current_email}. Menghentikan percobaan dan rotasi akun.[/warning]")
+                                    is_banned = True
+                                    try:
+                                        page.close()
+                                    except Exception:
+                                        pass
+                                    break  # Keluar dari loop attempt, langsung rotasi ke email berikutnya
 
-                        # --- STEP 5: Automated OTP Polling & Fill ---
-                        if otp_endpoint:
-                            try:
-                                console.print("   [info]🤖 Menunggu field OTP muncul...[/info]")
-                                otp_input_selector = 'input[autocomplete="one-time-code"], input[aria-label*="digit" i], div[class*="otp" i] input:not([type="checkbox"]):not([type="radio"]), input[name*="otp" i]:not([type="checkbox"]):not([type="radio"]), input[maxlength="1"]:not([type="checkbox"]):not([type="radio"])'
-                                page.locator(otp_input_selector).first.wait_for(state="visible", timeout=15000)
-                                time.sleep(1)
-                                
-                                console.print("   [info]🤖 Polling OTP dari Gmail (snapshot awal sudah diambil sebelumnya)...[/info]")
-                                label_email = label_email_cfg
-                                
-                                otp_code = tunggu_otp_terbaru(otp_endpoint, action=action_type, label_email=label_email, timeout_detik=30, interval_detik=3, otp_awal_override=otp_snapshot_awal)
-                                
-                                if otp_code and not (otp_code.isdigit() and len(otp_code) in (4, 6)):
-                                    console.print(f"   [warning]⚠️ OTP dari endpoint bukan format angka valid: {otp_code[:50]}...[/warning]")
-                                    otp_code = None
-                                    
-                                if otp_code:
-                                    console.print(f"   [info]🤖 OTP didapat: {otp_code}. Memasukkan OTP...[/info]")
-                                    otp_fields = page.locator(otp_input_selector).all()
-                                    if len(otp_fields) > 0:
-                                        otp_fields[0].focus()
-                                        time.sleep(0.5)
-                                        otp_fields[0].type(otp_code, delay=300)
-                                        console.print("   [success]✅ OTP berhasil diisi otomatis.[/success]")
+                                # 2. Lakukan polling OTP
+                                if not is_banned:
+                                    try:
+                                        console.print("   [info]🤖 Polling OTP dari Gmail (snapshot awal sudah diambil sebelumnya)...[/info]")
+                                        label_email = label_email_cfg
                                         
-                                        # Coba klik tombol submit/konfirmasi/masuk OTP
-                                        time.sleep(1)
-                                        submit_otp_btn = page.locator('button:has-text("Masuk"), button:has-text("Konfirmasi"), button:has-text("Verifikasi"), button:has-text("Lanjut"), button[type="submit"]')
-                                        clicked = False
-                                        for i in range(submit_otp_btn.count()):
-                                            btn = submit_otp_btn.nth(i)
-                                            if btn.is_visible() and btn.is_enabled():
-                                                console.print(f"   [info]🤖 Mengklik tombol OTP: '{btn.text_content().strip()}'[/info]")
-                                                btn.click()
-                                                clicked = True
-                                                break
-                                        if not clicked:
-                                            console.print("   [info]🤖 Mengirim Enter sebagai fallback...[/info]")
-                                            page.keyboard.press("Enter")
-                                        time.sleep(2)
-                                else:
-                                    console.print("   [warning]⚠️ Gagal mendapatkan OTP dalam 30 detik.[/warning]")
-                                    send_discord_error(
-                                        platform="GoFood", 
-                                        merchant=nama_outlet, 
-                                        error_type="OTP_TIMEOUT", 
-                                        message="Gagal masuk akun. OTP tidak kunjung diterima dalam batas waktu 30 detik.",
-                                        phone=phone
-                                    )
-                                    otp_failed_timeout = True
-                            except Exception as e:
-                                console.print(f"   [warning]⚠️ Gagal melakukan automasi OTP: {e}.[/warning]")
-                                send_discord_error(
-                                        platform="GoFood", 
-                                        merchant=nama_outlet, 
-                                        error_type="SYSTEM_ERROR", 
-                                        message=f"Gagal melakukan automasi input OTP: {str(e)[:100]}.",
-                                        phone=phone
-                                )
-                                otp_failed_timeout = True
+                                        otp_code = tunggu_otp_terbaru(otp_endpoint, action=action_type, label_email=label_email, timeout_detik=30, interval_detik=3, otp_awal_override=otp_snapshot_awal)
+                                        
+                                        if otp_code and not (otp_code.isdigit() and len(otp_code) in (4, 6)):
+                                            console.print(f"   [warning]⚠️ OTP dari endpoint bukan format angka valid: {otp_code[:50]}...[/warning]")
+                                            otp_code = None
+                                            
+                                        if otp_code:
+                                            console.print(f"   [info]🤖 OTP didapat: {otp_code}. Memasukkan OTP...[/info]")
+                                            otp_fields = page.locator(otp_input_selector).all()
+                                            if len(otp_fields) > 0:
+                                                otp_fields[0].focus()
+                                                time.sleep(0.5)
+                                                otp_fields[0].type(otp_code, delay=300)
+                                                console.print("   [success]✅ OTP berhasil diisi otomatis.[/success]")
+                                                
+                                                # Coba klik tombol submit/konfirmasi/masuk OTP
+                                                time.sleep(1)
+                                                submit_otp_btn = page.locator('button:has-text("Masuk"), button:has-text("Konfirmasi"), button:has-text("Verifikasi"), button:has-text("Lanjut"), button[type="submit"]')
+                                                clicked = False
+                                                for i in range(submit_otp_btn.count()):
+                                                    btn = submit_otp_btn.nth(i)
+                                                    if btn.is_visible() and btn.is_enabled():
+                                                        console.print(f"   [info]🤖 Mengklik tombol OTP: '{btn.text_content().strip()}'[/info]")
+                                                        btn.click()
+                                                        clicked = True
+                                                        break
+                                                if not clicked:
+                                                    console.print("   [info]🤖 Mengirim Enter sebagai fallback...[/info]")
+                                                    page.keyboard.press("Enter")
+                                                time.sleep(2)
+                                        else:
+                                            console.print("   [warning]⚠️ Gagal mendapatkan OTP dalam 30 detik.[/warning]")
+                                            send_discord_error(
+                                                platform="GoFood", 
+                                                merchant=nama, 
+                                                error_type="OTP_TIMEOUT", 
+                                                message=f"Gagal masuk akun ({current_email}). OTP tidak kunjung diterima dalam batas waktu 30 detik.",
+                                                phone=phone
+                                            )
+                                            otp_failed_timeout = True
+                                    except Exception as e:
+                                        console.print(f"   [warning]⚠️ Gagal melakukan automasi OTP: {e}.[/warning]")
+                                        send_discord_error(
+                                                platform="GoFood", 
+                                                merchant=nama, 
+                                                error_type="SYSTEM_ERROR", 
+                                                message=f"Gagal melakukan automasi input OTP ({current_email}): {str(e)[:100]}.",
+                                                phone=phone
+                                        )
+                                        otp_failed_timeout = True
                         else:
                             console.print("   [info]👉 Silakan isi kode OTP secara MANUAL di browser.[/info]")
-                except Exception as e:
-                    console.print(f"   [error]⚠️ Gagal ketik email: {e}[/error]")
+                    except Exception as e:
+                        console.print(f"   [error]⚠️ Gagal ketik email: {e}[/error]")
 
 
-            # Jika OTP gagal/timeout, tutup page dan ulang
-            if otp_failed_timeout and attempt < max_login_attempts - 1:
-                console.print("   [warning]⚠️ Menutup halaman dan mengulang proses login...[/warning]")
-                try:
-                    page.close()
-                except Exception:
-                    pass
-                time.sleep(2)
-                continue
+                if otp_failed_timeout:
+                    if attempt < max_login_attempts - 1:
+                        console.print("   [warning]⚠️ Menutup halaman dan menunggu 30 detik sebelum mengulang login (attempt ke-2)...[/warning]")
+                        try:
+                            page.close()
+                        except Exception:
+                            pass
+                        time.sleep(30)
+                        continue
+                    else:
+                        console.print(f"   [warning]⚠️ Melewati batas percobaan login untuk {current_email}. rotasi email/gagal.[/warning]")
+                        try:
+                            page.close()
+                        except Exception:
+                            pass
+                        continue
 
             try:
                 # Wait up to 30 seconds for the access token to appear
@@ -708,14 +750,21 @@ def login_outlet_gofood_flow(outlet_info):
             except Exception as e:
                 console.print(f"[error]❌ Error: {e}[/error]")
                 
-            # Jika token tidak didapat dan kita bukan di attempt terakhir
-            if not access_token and attempt < max_login_attempts - 1:
-                console.print("   [warning]⚠️ Token tidak ditemukan, mengulang proses login...[/warning]")
-                try:
-                    page.close()
-                except Exception:
-                    pass
-                time.sleep(2)
+                # Jika token tidak didapat
+                if not access_token:
+                    if attempt < max_login_attempts - 1:
+                        console.print("   [warning]⚠️ Token tidak ditemukan, menunggu 30 detik sebelum mengulang login...[/warning]")
+                        try:
+                            page.close()
+                        except Exception:
+                            pass
+                        time.sleep(30)
+                    else:
+                        console.print(f"   [warning]⚠️ Token tidak ditemukan setelah 2 percobaan untuk email {current_email}.[/warning]")
+                        try:
+                            page.close()
+                        except Exception:
+                            pass
 
         try:
             browser.close()
