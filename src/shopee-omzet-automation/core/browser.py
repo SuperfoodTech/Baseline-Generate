@@ -1022,101 +1022,128 @@ def auto_switch_merchant(driver, target_name, is_retry=False):
             driver.get(PARTNER_DASHBOARD)
             time.sleep(2)
         
-        # PHASE 2: Dashboard Switch Logic
-        if "/food/dashboard" not in driver.current_url:
-            driver.get(PARTNER_DASHBOARD)
-            time.sleep(2)
-        
-        # Use ActionChains to hover Profile then "Pilih Merchant Lain"
-        try:
-            actions = ActionChains(driver)
-            # 1. Hover/Click merchantName (Profile)
-            profile_menu = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, ".merchantName")))
-            actions.move_to_element(profile_menu).click().perform()
-            time.sleep(1)
-            
-            # 2. Hover "Pilih Merchant Lain"
+        for switch_attempt in range(3):
+            # Use ActionChains to hover Profile then "Pilih Merchant Lain"
             try:
-                switch_trigger = wait.until(EC.presence_of_element_located((By.XPATH, "//span[contains(text(), 'Pilih Merchant Lain') or contains(text(), 'Switch Merchant')]")))
-                actions.move_to_element(switch_trigger).perform()
+                actions = ActionChains(driver)
+                # 1. Hover/Click merchantName (Profile)
+                profile_menu = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, ".merchantName")))
+                actions.move_to_element(profile_menu).click().perform()
                 time.sleep(1)
-            except:
-                # If hover fails, try JS click as fallback
-                driver.execute_script("""
-                    var spans = document.querySelectorAll('span, p, div');
-                    for (var s of spans) {
-                        if (s.innerText.includes('Pilih Merchant Lain') || s.innerText.includes('Switch Merchant')) {
-                            s.click();
-                            break;
+                
+                # 2. Hover "Pilih Merchant Lain"
+                try:
+                    switch_trigger = wait.until(EC.presence_of_element_located((By.XPATH, "//span[contains(text(), 'Pilih Merchant Lain') or contains(text(), 'Switch Merchant')]")))
+                    actions.move_to_element(switch_trigger).perform()
+                    time.sleep(1)
+                except:
+                    # If hover fails, try JS click as fallback
+                    driver.execute_script("""
+                        var spans = document.querySelectorAll('span, p, div');
+                        for (var s of spans) {
+                            if (s.innerText.includes('Pilih Merchant Lain') || s.innerText.includes('Switch Merchant')) {
+                                s.click();
+                                break;
+                            }
                         }
-                    }
-                """)
-                time.sleep(1)
-        except Exception as e:
-            log.warning(f"  ⚠️ Failed to trigger merchant menu: {e}")
-            return False
-
-        # Use JS to click the target merchant in the revealed list
-        js_switch_script = """
-            var targetName = arguments[0].toLowerCase().trim();
-            var items = document.querySelectorAll('li.ant-menu-item, li[role="menuitem"], .ant-dropdown-menu-item, [class*="menu-item"]');
-            for (var i = 0; i < items.length; i++) {
-                var text = (items[i].innerText || "").toLowerCase().trim();
-                if (text === targetName || text.includes(targetName)) {
-                    items[i].click();
-                    return true;
-                }
-            }
-            return false;
-        """
-        
-        if driver.execute_script(js_switch_script, target_name):
-            log.debug(f"  ✅ Clicked {target_name} in menu.")
-        else:
-            log.warning(f"  ⚠️ Could not find {target_name} in the list. Will retry...")
-            if is_retry:
-                send_discord_error(
-                    platform="Shopee", 
-                    merchant=target_name, 
-                    error_type="SYSTEM_ERROR", 
-                    message=f"Gagal memilih outlet. Nama outlet '{target_name}' tidak terdaftar atau tidak dapat ditemukan di akun Shopee Partner ini."
-                )
-            return False
-
-        # Wait to see if we redirect to onboarding
-        time.sleep(3)
-        current_url = driver.current_url.lower()
-        if "onboarding" in current_url:
-            log.info("📍 [MERCHANT] Onboarding page detected. Accepting invitation...")
-            try:
-                # Wait for "Gabung dengan Merchant" button
-                btn_xpath = "//button[contains(., 'Gabung dengan Merchant')]"
-                onboard_btn = WebDriverWait(driver, 15).until(
-                    EC.element_to_be_clickable((By.XPATH, btn_xpath))
-                )
-                onboard_btn.click()
-                log.info("  👉 Clicked 'Gabung dengan Merchant' button.")
-                time.sleep(5)
+                    """)
+                    time.sleep(1)
             except Exception as e:
-                log.error(f"❌ Failed to accept onboarding invitation: {e}")
-                return False
+                log.warning(f"  ⚠️ Failed to trigger merchant menu: {e}")
+                if switch_attempt == 2:
+                    return False
+                continue
 
-        # Wait for the merchant name in the header to actually update
-        try:
-            wait.until(lambda d: "/food/dashboard" in d.current_url)
-            wait.until(lambda d: target_name.lower() in d.find_element(By.CSS_SELECTOR, ".merchantName").text.lower())
-            log.info(f"✅ [MERCHANT] Switched to: {target_name}")
-            return True
-        except:
-            log.warning(f"❌ [MERCHANT] UI name did not update to {target_name} in 15s.")
-            if is_retry:
-                send_discord_error(
-                    platform="Shopee", 
-                    merchant=target_name, 
-                    error_type="SYSTEM_ERROR", 
-                    message=f"Dashboard tidak memuat profil outlet '{target_name}' meskipun sudah dipilih."
-                )
-            return False
+            # Use JS to click the target merchant in the revealed list
+            js_switch_script = """
+                var targetName = arguments[0].toLowerCase().trim();
+                var items = document.querySelectorAll('li.ant-menu-item, li[role="menuitem"], .ant-dropdown-menu-item, [class*="menu-item"]');
+                for (var i = 0; i < items.length; i++) {
+                    var text = (items[i].innerText || "").toLowerCase().trim();
+                    if (text === targetName || text.includes(targetName)) {
+                        items[i].scrollIntoView({block: 'center'});
+                        items[i].click();
+                        return true;
+                    }
+                }
+                return false;
+            """
+            
+            found_target = False
+            # Polling selama 5 detik dengan SCROLL untuk memastikan seluruh daftar termuat (Lazy Load)
+            for _ in range(5):
+                if driver.execute_script(js_switch_script, target_name):
+                    found_target = True
+                    break
+                # Scroll ke bawah di dalam elemen dropdown/list untuk memuat sisa merchant
+                try:
+                    driver.execute_script("document.querySelectorAll('.ant-dropdown-menu, ul[role=\"menu\"], .ant-popover-inner-content').forEach(el => el.scrollTop += 600);")
+                except: pass
+                time.sleep(1)
+                
+            if found_target:
+                log.debug(f"  ✅ Clicked {target_name} in menu.")
+            else:
+                log.warning(f"  ⚠️ Nama outlet '{target_name}' tidak ditemukan di dropdown (Attempt {switch_attempt+1}/3).")
+                if switch_attempt == 2:
+                    msg = f"Nama outlet '{target_name}' tidak terdaftar atau belum ditambahkan (invite) di akun Shopee ini."
+                    log.error(f"❌ {msg}")
+                    # Mengirimkan error ke Discord HANYA di final attempt
+                    send_discord_error(
+                        platform="Shopee", 
+                        merchant=target_name, 
+                        error_type="SYSTEM_ERROR", 
+                        message=msg
+                    )
+                    # Lempar error spesifik agar pipeline terluar menangkapnya
+                    raise ValueError(f"MERCHANT_NOT_FOUND: {target_name}")
+                continue # Ulangi proses klik profil dan buka dropdown dari awal
+
+            # Wait to see if we redirect to onboarding
+            time.sleep(3)
+            current_url = driver.current_url.lower()
+            if "onboarding" in current_url:
+                log.info("📍 [MERCHANT] Onboarding page detected. Accepting invitation...")
+                try:
+                    # Wait for "Gabung dengan Merchant" button
+                    btn_xpath = "//button[contains(., 'Gabung dengan Merchant')]"
+                    onboard_btn = WebDriverWait(driver, 15).until(
+                        EC.element_to_be_clickable((By.XPATH, btn_xpath))
+                    )
+                    onboard_btn.click()
+                    log.info("  👉 Clicked 'Gabung dengan Merchant' button.")
+                    time.sleep(5)
+                except Exception as e:
+                    log.error(f"❌ Failed to accept onboarding invitation: {e}")
+                    if switch_attempt == 2:
+                        return False
+                    continue
+
+            # Cek apakah nama merchant di UI berubah dalam 5 detik (Sesuai instruksi User)
+            try:
+                log.info(f"  ⏳ Menunggu 5 detik melihat pembaruan nama menjadi {target_name} (Attempt {switch_attempt+1}/3)...")
+                def is_name_updated(d):
+                    try:
+                        return target_name.lower() in d.find_element(By.CSS_SELECTOR, ".merchantName").text.lower()
+                    except:
+                        return False
+                        
+                WebDriverWait(driver, 5).until(is_name_updated)
+                log.info(f"✅ [MERCHANT] Switched to: {target_name}")
+                return True
+            except:
+                log.warning(f"⚠️ [MERCHANT] UI name belum berubah ke {target_name}.")
+                if switch_attempt == 2:
+                    log.warning(f"❌ [MERCHANT] Gagal melakukan switch ke {target_name} setelah 3x percobaan klik.")
+                    if is_retry:
+                        send_discord_error(
+                            platform="Shopee", 
+                            merchant=target_name, 
+                            error_type="SYSTEM_ERROR", 
+                            message=f"Dashboard tidak memuat profil outlet '{target_name}' meskipun sudah 3x dipilih di menu."
+                        )
+                    return False
+                # Jika belum attempt terakhir, loop akan berputar dan mengulang klik dari awal
     except Exception as e:
         log.error(f"❌ Auto-switch failed: {e}")
         return False
@@ -1579,15 +1606,15 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
             # ── Step 4.5: Fallback to UI Name Matching ──
             if not active_id or active_id == "None":
                 try:
-                    ui_name = ""
-                    for _ in range(5):
+                    log.debug("  ⏳ Menunggu sinkronisasi UI merchant (Maks 10 detik)...")
+                    def get_ui_name(d):
                         try:
-                            el = driver.find_element(By.CLASS_NAME, "merchantName")
-                            if el.text.strip():
-                                ui_name = el.text.strip()
-                                break
-                        except: pass
-                        time.sleep(1)
+                            t = d.find_element(By.CLASS_NAME, "merchantName").text.strip()
+                            return t if t else False
+                        except:
+                            return False
+                            
+                    ui_name = WebDriverWait(driver, 10).until(get_ui_name)
                     if ui_name:
                         active_name = ui_name
                         api_response_path = Path(__file__).resolve().parent.parent / "API" / "response.json"
@@ -1596,9 +1623,10 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
                             for m in m_data.get("data", {}).get("selectMerchant", {}).get("merchantList", []):
                                 if m["merchantName"].lower() == ui_name.lower():
                                     active_id = str(m["merchantId"])
-                                    log.info(f"📍 [MERCHANT] Detected: {active_name} (ID: {active_id})")
+                                    log.info(f"📍 [MERCHANT] Detected UI: {active_name} (ID: {active_id})")
                                     break
-                except: pass
+                except Exception as e:
+                    pass
 
             if not active_id:
                 _, active_id = extract_tokens_from_driver(driver)
@@ -1616,7 +1644,7 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
                     log.info(f"📍 [MERCHANT] Current: {active_name} (ID: {active_id})")
                     do_switch = False
                 else:
-                    log.info("📍 [MERCHANT] No active merchant detected. Redirecting...")
+                    log.info("📍 [MERCHANT] No active merchant detected (UI Kosong/Corrupt). Redirecting...")
                     do_switch = True
 
             if do_switch:
@@ -1679,7 +1707,12 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
             return res
 
         except Exception as e:
-            log.error(f"Browser session error on attempt {attempt+1}: {e}")
+            err_msg = str(e)
+            log.error(f"Browser session error on attempt {attempt+1}: {err_msg}")
+            # Jika errornya adalah merchant tidak ditemukan, tidak ada gunanya login ulang 3x. Langsung abort.
+            if "MERCHANT_NOT_FOUND" in err_msg:
+                log.error("❌ Fatal Error: Merchant belum ditambahkan. Membatalkan antrean tanpa login ulang.")
+                raise e
         finally:
             if (close_browser or not session_success) and driver is not None:
                 try: driver.quit()
