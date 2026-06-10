@@ -199,9 +199,79 @@ client.on('interactionCreate', async interaction => {
             pipeline.promise.then(async (result) => {
                 activeReRuns.delete(taskId);
                 if (result.success) {
+                    let embeds = [];
+                    let components = [];
+                    
+                    if (result.notifData) {
+                        const { outlet, start_date, end_date, aplikator, pdf_name, omzet_gr, omzet_sf, order_gr, order_sf, omzet_go, order_go } = result.notifData;
+                        const embed = new EmbedBuilder()
+                            .setTitle('✅ Re-Run Selesai')
+                            .setColor(0x00FF00)
+                            .setFooter({ text: 'Sistem Re-Run Performance' });
+
+                        const omzetLines = [];
+                        const orderLines = [];
+                        const lowerApp = aplikator.toLowerCase();
+
+                        if (lowerApp.includes('gofood') || lowerApp.includes('all')) {
+                            omzetLines.push(`GoFood: **${omzet_go || 'Rp 0'}**`);
+                            orderLines.push(`GoFood: **${order_go || '0'}**`);
+                        }
+                        if (lowerApp.includes('grab') || lowerApp.includes('all')) {
+                            omzetLines.push(`GrabFood: **${omzet_gr || 'Rp 0'}**`);
+                            orderLines.push(`GrabFood: **${order_gr || '0'}**`);
+                        }
+                        if (lowerApp.includes('shopee') || lowerApp.includes('all')) {
+                            omzetLines.push(`ShopeeFood: **${omzet_sf || 'Rp 0'}**`);
+                            orderLines.push(`ShopeeFood: **${order_sf || '0'}**`);
+                        }
+
+                        const omzetStr = omzetLines.join('\n') || '-';
+                        const orderStr = orderLines.join('\n') || '-';
+                        
+                        const pdfUrl = result.notifData.pdf_url || (result.output.replace(/\x1B\[[0-9;]*m/g, '').match(/URL:\s*(https:\/\/drive\.google\.com\/file\/d\/[^\s\r\n]+)/) || [])[1];
+                        
+                        let desc = `Laporan untuk **${outlet}** telah diperbarui melalui Re-Run.\n\n`;
+                        if (pdfUrl) {
+                            desc += `🔗 **[Klik di sini untuk membuka PDF Laporan](${pdfUrl})**`;
+                            const actionRow = new ActionRowBuilder().addComponents(
+                                new ButtonBuilder()
+                                    .setLabel('📄 Buka PDF Laporan')
+                                    .setStyle(ButtonStyle.Link)
+                                    .setURL(pdfUrl)
+                            );
+                            components.push(actionRow);
+                        }
+
+                        embed.setDescription(desc);
+                        embed.addFields(
+                            { name: '📍 Outlet', value: outlet, inline: true },
+                            { name: '📱 Aplikator', value: aplikator, inline: true },
+                            { name: '📅 Rentang Tanggal', value: `\`${start_date}\` → \`${end_date}\``, inline: false },
+                            { name: '📊 Rata-rata Omzet / Bulan', value: omzetStr, inline: true },
+                            { name: '🛒 Rata-rata Order / Bulan', value: orderStr, inline: true },
+                            { name: '📁 Nama File', value: `\`${pdf_name}\``, inline: false }
+                        );
+
+                        embeds.push(embed);
+                        
+                        if (result.failedPlatforms && result.failedPlatforms.length > 0) {
+                            const warningEmbed = new EmbedBuilder()
+                                .setTitle('⚠️ MASIH ADA DATA KOSONG')
+                                .setDescription(`Setelah Re-Run, data transaksi untuk **${result.failedPlatforms.join(', ')}** masih gagal didapatkan (Terbaca Rp 0).`)
+                                .setColor(0xFF0000);
+                            embeds.push(warningEmbed);
+                        }
+                    }
+
                     await statusMsg.edit({
-                        content: `✅ **Re-Run Selesai!** Laporan untuk **${formData.aplikator}** berhasil diproses.`,
-                        embeds: [], components: []
+                        content: ``,
+                        embeds: embeds.length ? embeds : [{
+                            title: '✅ Re-Run Selesai!',
+                            description: `Laporan untuk **${formData.aplikator}** berhasil diproses, namun tidak ada ringkasan data yang bisa ditampilkan.`,
+                            color: 0x00FF00
+                        }],
+                        components: components
                     });
                 } else {
                     await statusMsg.edit({
