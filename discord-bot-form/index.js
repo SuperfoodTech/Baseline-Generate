@@ -77,7 +77,7 @@ client.on('interactionCreate', async interaction => {
                 command.clearCache();
                 await interaction.reply({
                     content: '🔄 **Cache berhasil dihapus!** Mengambil data terbaru dari Google Sheets pada pengisian formulir berikutnya.',
-                    flags: 64 // ephemeral (only the clicker sees it)
+                    flags: ['Ephemeral'] // ephemeral (only the clicker sees it)
                 });
             }
         } else if (interaction.customId.startsWith('cancel_pipeline_')) {
@@ -107,9 +107,14 @@ client.on('interactionCreate', async interaction => {
             else if (platform === 'gofood') formData.aplikator = 'GoFood';
             else formData.aplikator = platform;
 
+            // Force clear all local CSV caches to guarantee fresh data download
+            const { execSync } = require('child_process');
+            try {
+                execSync('find . -type f -name "*cache*.csv" -delete', { cwd: path.join(__dirname, '..') });
+            } catch (e) {}
+
             await interaction.reply({ 
-                content: `🔄 Sedang mengantre proses **Re-Run** untuk **${formData.aplikator}** (Outlet: ${formData.outlet})... Pantau *progress* di bawah ini.`, 
-                ephemeral: false 
+                content: `🔄 Sedang mengantre proses **Re-Run** untuk **${formData.aplikator}** (Outlet: ${formData.outlet})... Caches telah dihapus. Pantau *progress* di bawah ini.`
             });
 
             // Re-bind error poller to this channel
