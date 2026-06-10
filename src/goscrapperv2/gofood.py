@@ -509,7 +509,6 @@ def get_all_merchants_from_api(token):
 def login_outlet_gofood_flow(outlet_info):
     """
     Membuka browser Chromium untuk login otomatis 1 outlet.
-    Jika GOFOOD_OTP_URL dikonfigurasi di .env, OTP akan diisi secara otomatis.
     Menangkap token, menyimpannya di .env, dan mengembalikannya.
     """
     nama = outlet_info['nama_outlet']
@@ -519,19 +518,11 @@ def login_outlet_gofood_flow(outlet_info):
 
     label = f"{nama} - {cabang}" if cabang and cabang != 'Tanpa Cabang' else nama
 
-    # URL endpoint OTP otomatis (Google Sheets CSV atau Google Apps Script)
-    otp_url = os.getenv("GOFOOD_OTP_URL", "").strip()
-    auto_otp_mode = bool(otp_url and email)
-
     console.print(f"\n[bold yellow]🔄 Membuka browser untuk login otomatis ke: {label}[/bold yellow]")
     if email:
         console.print(f"   📧 Email: {email}")
     if phone:
         console.print(f"   📱 Phone: {phone}")
-    if auto_otp_mode:
-        console.print("   [success]🤖 Mode OTP Otomatis AKTIF[/success]")
-    else:
-        console.print("   [warning]👤 Mode Manual (GOFOOD_OTP_URL tidak diset)[/warning]")
 
     use_proxy = os.getenv("USE_PROXY", "false").lower() in ("true", "1", "yes")
     proxy_server = os.getenv("PROXY_SERVER")
@@ -563,12 +554,6 @@ def login_outlet_gofood_flow(outlet_info):
         except Exception:
             pass
 
-    # Paksa headful jika mode auto OTP agar bisa di-debug jika ada masalah.
-    # Jika running di server headless dan GOFOOD_OTP_HEADLESS=true, izinkan headless.
-    if auto_otp_mode and not headless_mode:
-        force_headless = os.getenv("GOFOOD_OTP_HEADLESS", "false").lower() in ("true", "1", "yes")
-        headless_mode = force_headless
-
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=headless_mode,
@@ -585,115 +570,35 @@ def login_outlet_gofood_flow(outlet_info):
         )
 
         page = context.new_page()
-        console.print("   ➡️ Membuka halaman login email...")
-        page.goto("https://portal.gofoodmerchant.co.id/auth/login/email", wait_until="load")
+        if email:
+            console.print("   ➡️ Membuka halaman login email langsung...")
+            page.goto("https://portal.gofoodmerchant.co.id/auth/login/email", wait_until="load")
+        else:
+            console.print("   ➡️ Membuka halaman login...")
+            page.goto("https://portal.gofoodmerchant.co.id/auth/login", wait_until="load")
 
         import random
-        time.sleep(1.5)
+
+        # Langsung input ke email field, abaikan cookie & pop-up
+        time.sleep(1.0)
+
+        # --- STEP 4 & 5: Manual Login ---
+        if email:
+            try:
+                page.wait_for_selector(
+                    'input[type="email"], input[name="email"], input[placeholder*="email" i], input[placeholder*="Email" i], input[type="text"]',
+                    timeout=15000
+                )
+                console.print("   [info]👉 Silakan ketik EMAIL dan OTP secara MANUAL di browser.[/info]")
+                console.print(f"   [info]🔑 Email yang seharusnya dipakai: {email}[/info]")
+            except Exception as e:
+                console.print(f"   [error]⚠️ Gagal memuat halaman login email: {e}[/error]")
+        else:
+            console.print("   [info]👉 Silakan login secara MANUAL di browser.[/info]")
 
         access_token = None
+        start_time = time.time()
 
-        # ── AUTO OTP FLOW ─────────────────────────────────────────────────────
-        if auto_otp_mode:
-            try:
-                # Step 1: Isi kolom email
-                email_selector = 'input[type="email"], input[name="email"], input[placeholder*="email" i], input[type="text"]'
-                page.wait_for_selector(email_selector, timeout=15000)
-                email_field = page.locator(email_selector).first
-                email_field.click()
-                email_field.fill("")
-                time.sleep(0.3)
-                for ch in email:
-                    email_field.type(ch, delay=random.randint(40, 100))
-                console.print(f"   ✅ Email diisi: {email}")
-
-                # Ambil OTP awal sebagai snapshot (sebelum OTP baru dikirim)
-                try:
-                    otp_snapshot = ambil_otp_dari_endpoint(otp_url, label_email=email)
-                except Exception:
-                    otp_snapshot = ""
-
-                # Step 2: Klik tombol "Kirim OTP" / "Lanjutkan"
-                time.sleep(0.8)
-                btn_selector = (
-                    'button[type="submit"], '
-                    'button:has-text("Kirim"), '
-                    'button:has-text("Lanjut"), '
-                    'button:has-text("Send"), '
-                    'button:has-text("Continue"), '
-                    'button:has-text("Login"), '
-                    'button:has-text("Masuk")'
-                )
-                try:
-                    page.wait_for_selector(btn_selector, timeout=8000)
-                    page.locator(btn_selector).first.click()
-                    console.print("   ✅ Tombol kirim OTP diklik.")
-                except Exception:
-                    # Coba tekan Enter sebagai fallback
-                    email_field.press("Enter")
-                    console.print("   ✅ Enter ditekan sebagai fallback.")
-
-                # Step 3: Tunggu OTP terbaru dari endpoint
-                console.print(f"   🕐 Menunggu OTP baru untuk {email}...")
-                otp_code = tunggu_otp_terbaru(
-                    otp_url,
-                    label_email=email,
-                    timeout_detik=120,
-                    interval_detik=3,
-                    otp_awal_override=otp_snapshot
-                )
-
-                if not otp_code:
-                    console.print("   [warning]⚠️ OTP tidak diterima dalam 120 detik. Beralih ke mode manual.[/warning]")
-                    auto_otp_mode = False
-                else:
-                    console.print(f"   ✅ OTP diterima: [bold]{otp_code}[/bold]")
-
-                    # Step 4: Isi kolom OTP
-                    otp_selector = (
-                        'input[type="number"], '
-                        'input[inputmode="numeric"], '
-                        'input[placeholder*="OTP" i], '
-                        'input[placeholder*="kode" i], '
-                        'input[placeholder*="code" i], '
-                        'input[maxlength="6"], '
-                        'input[maxlength="4"]'
-                    )
-                    try:
-                        page.wait_for_selector(otp_selector, timeout=15000)
-                        otp_field = page.locator(otp_selector).first
-                        otp_field.click()
-                        otp_field.fill("")
-                        time.sleep(0.3)
-                        for ch in str(otp_code):
-                            otp_field.type(ch, delay=random.randint(80, 150))
-                        console.print(f"   ✅ OTP [{otp_code}] berhasil diisi.")
-
-                        # Step 5: Submit form OTP
-                        time.sleep(0.5)
-                        try:
-                            page.locator(btn_selector).first.click()
-                        except Exception:
-                            otp_field.press("Enter")
-                        console.print("   ✅ Form OTP disubmit. Menunggu redirect...")
-
-                    except Exception as e:
-                        console.print(f"   [warning]⚠️ Gagal mengisi kolom OTP otomatis: {e}. Beralih ke manual.[/warning]")
-                        auto_otp_mode = False
-
-            except Exception as e:
-                console.print(f"   [error]❌ Error pada alur OTP otomatis: {e}. Beralih ke mode manual.[/error]")
-                auto_otp_mode = False
-
-        # ── FALLBACK: Mode Manual ────────────────────────────────────────────
-        if not auto_otp_mode:
-            if email:
-                console.print(f"   [info]👉 Silakan ketik EMAIL dan OTP secara MANUAL di browser.[/info]")
-                console.print(f"   [info]🔑 Email: {email}[/info]")
-            else:
-                console.print("   [info]👉 Silakan login secara MANUAL di browser.[/info]")
-
-        # ── Tunggu access_token muncul di cookies ────────────────────────────
         try:
             while True:
                 if page.is_closed():
@@ -707,7 +612,6 @@ def login_outlet_gofood_flow(outlet_info):
                         break
 
                 if access_token:
-                    console.print("   [success]✅ Token berhasil ditangkap dari cookie![/success]")
                     break
 
                 time.sleep(1.0)
