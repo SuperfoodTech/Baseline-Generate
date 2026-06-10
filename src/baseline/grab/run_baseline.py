@@ -399,6 +399,10 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     # Preprocess columns for both Old format and New S3 Insights format
     if "Date" in working.columns and "Updated On" not in working.columns:
         working["Updated On"] = pd.to_datetime(working["Date"], errors="coerce", format="%d/%m/%Y")
+    elif "Created On" in working.columns and "Updated On" not in working.columns:
+        working["Updated On"] = pd.to_datetime(working["Created On"], errors="coerce", format="%d %b %Y %I:%M %p")
+    elif "Update Time" in working.columns and "Updated On" not in working.columns:
+        working["Updated On"] = pd.to_datetime(working["Update Time"], errors="coerce", format="%d %b %Y %I:%M %p")
     elif "Updated On" in working.columns:
         working["Updated On"] = pd.to_datetime(working["Updated On"], errors="coerce", format="%d %b %Y %I:%M %p")
         
@@ -407,6 +411,8 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
         
     if "Grab Service" in working.columns and "Category" not in working.columns:
         working["Category"] = working["Grab Service"].fillna("").astype(str).str.strip().str.casefold()
+    elif "Main Category" in working.columns and "Category" not in working.columns:
+        working["Category"] = working["Main Category"].fillna("").astype(str).str.strip().str.casefold()
     elif "Category" in working.columns:
         working["Category"] = working["Category"].fillna("").astype(str).str.strip().str.casefold()
         
