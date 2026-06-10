@@ -49,11 +49,7 @@ console = Console(theme=custom_theme)
 START_TIME_TOTAL = time.time()
 
 # Master credential Google Sheet — source of truth for ALL scrapers
-SHEET_PUBLISHED_URL = (
-    "https://docs.google.com/spreadsheets/d/e/"
-    "2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4"
-    "/pub?gid=0&single=true&output=csv"
-)
+SHEET_PUBLISHED_URL = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=0"
 
 
 def to_csv_url(url):
@@ -93,7 +89,9 @@ def fetch_gofood_accounts_from_sheet(task="2"):
     """
     url = SHEET_PUBLISHED_URL
     if task == "1":
-        url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=880434015&single=true&output=csv"
+        url = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=880434015"
+    
+    url += f"&t={int(time.time())}"
 
     try:
         import io
@@ -577,8 +575,12 @@ def login_outlet_gofood_flow(outlet_info):
                 break
                 
             max_login_attempts = 2
+            attempts_made = 0
             
-            for attempt in range(max_login_attempts):
+            while attempts_made < max_login_attempts:
+                attempt = attempts_made
+                attempts_made += 1
+
                 if access_token:
                     break
                     
@@ -646,14 +648,39 @@ def login_outlet_gofood_flow(outlet_info):
 
                             # --- STEP 5: Automated OTP Polling & Fill ---
                             if otp_endpoint:
-                                # 1. Tunggu field OTP muncul — Jika timeout, berarti akun kena banned 15 menit
+                                # 1. Tunggu field OTP muncul — Jika timeout/error, berarti akun kena banned 15 menit
                                 try:
                                     console.print("   [info]🤖 Menunggu field OTP muncul...[/info]")
                                     otp_input_selector = 'input[autocomplete="one-time-code"], input[aria-label*="digit" i], div[class*="otp" i] input:not([type="checkbox"]):not([type="radio"]), input[name*="otp" i]:not([type="checkbox"]):not([type="radio"]), input[maxlength="1"]:not([type="checkbox"]):not([type="radio"])'
-                                    page.locator(otp_input_selector).first.wait_for(state="visible", timeout=15000)
+                                    
+                                    otp_appeared = False
+                                    start_wait_otp = time.time()
+                                    while time.time() - start_wait_otp < 15:
+                                        if page.locator(otp_input_selector).count() > 0 and page.locator(otp_input_selector).first.is_visible():
+                                            otp_appeared = True
+                                            break
+                                        
+                                        # Fast-fail deteksi Limit/Banned
+                                        try:
+                                            ban_msg1 = page.locator('text=/terlalu banyak/i')
+                                            ban_msg2 = page.locator('text=/coba lagi/i')
+                                            ban_msg3 = page.locator('text=/15 menit/i')
+                                            if (ban_msg1.count() > 0 and ban_msg1.first.is_visible()) or \
+                                               (ban_msg2.count() > 0 and ban_msg2.first.is_visible()) or \
+                                               (ban_msg3.count() > 0 and ban_msg3.first.is_visible()):
+                                                console.print("   [warning]⚠️ Terdeteksi teks peringatan Limit/Banned. Membatalkan tunggu OTP...[/warning]")
+                                                break
+                                        except Exception:
+                                            pass
+                                            
+                                        time.sleep(1.0)
+                                        
+                                    if not otp_appeared:
+                                        raise Exception("OTP Field timeout atau akun terindikasi banned")
+                                        
                                     time.sleep(1)
-                                except Exception:
-                                    console.print(f"   [warning]⚠️ Timeout 15000ms: Field OTP tidak muncul. Indikasi limit/banned 15 menit untuk email {current_email}. Menghentikan percobaan dan rotasi akun.[/warning]")
+                                except Exception as e:
+                                    console.print(f"   [warning]⚠️ {e}: Field OTP tidak muncul. Indikasi limit/banned 15 menit untuk email {current_email}. Menghentikan percobaan dan rotasi akun.[/warning]")
                                     is_banned = True
                                     try:
                                         page.close()
@@ -763,7 +790,58 @@ def login_outlet_gofood_flow(outlet_info):
                             access_token = attempt_token
                             break
 
+                        # Deteksi akun baru yang butuh verifikasi email
+                        try:
+                            error_msg1 = page.locator('text=/Email belum diverifikasi/i')
+                            error_msg2 = page.locator('text=/silahkan login ulang/i')
+                            if (error_msg1.count() > 0 and error_msg1.first.is_visible()) or \
+                               (error_msg2.count() > 0 and error_msg2.first.is_visible()):
+                                console.print("   [warning]⚠️ Terdeteksi akun baru: 'Email belum diverifikasi'. Mempercepat percobaan ulang...[/warning]")
+                                max_login_attempts = 3
+                                time.sleep(2.0)
+                                break
+                        except Exception:
+                            pass
+
+                        # Deteksi OTP Salah / Kadaluarsa
+                        try:
+                            otp_err1 = page.locator('text=/kode salah/i')
+                            otp_err2 = page.locator('text=/tidak valid/i')
+                            otp_err3 = page.locator('text=/kadaluarsa/i')
+                            if (otp_err1.count() > 0 and otp_err1.first.is_visible()) or \
+                               (otp_err2.count() > 0 and otp_err2.first.is_visible()) or \
+                               (otp_err3.count() > 0 and otp_err3.first.is_visible()):
+                                console.print("   [warning]⚠️ Terdeteksi pesan 'OTP Salah/Tidak Valid'. Mempercepat percobaan ulang...[/warning]")
+                                break
+                        except Exception:
+                            pass
+
+                        # Deteksi Ban 15 Menit setelah submit OTP
+                        try:
+                            ban_err1 = page.locator('text=/terlalu banyak/i')
+                            ban_err2 = page.locator('text=/coba lagi/i')
+                            ban_err3 = page.locator('text=/15 menit/i')
+                            if (ban_err1.count() > 0 and ban_err1.first.is_visible()) or \
+                               (ban_err2.count() > 0 and ban_err2.first.is_visible()) or \
+                               (ban_err3.count() > 0 and ban_err3.first.is_visible()):
+                                console.print("   [warning]⚠️ Terdeteksi teks Limit/Banned. Membatalkan tunggu token...[/warning]")
+                                is_banned = True
+                                break
+                        except Exception:
+                            pass
+
                         time.sleep(1.0)
+
+                        if time.time() - start_time > 5:
+                            # Fallback URL Check: Jika setelah 5 detik masih stuck di URL login, anggap butuh retry/verifikasi
+                            try:
+                                if "/auth/login" in page.url:
+                                    console.print("   [warning]⚠️ (Fallback) Timeout 5 detik: URL masih stuck di halaman login. Mempercepat percobaan ulang...[/warning]")
+                                    # Menambah kompensasi karena bisa jadi ini peringatan verifikasi yang terlewat dari deteksi teks
+                                    max_login_attempts = 3
+                                    break
+                            except Exception:
+                                pass
 
                         if time.time() - start_time > 15:
                             console.print("[warning]⚠️ Timeout 15 detik menunggu access_token.[/warning]")
@@ -780,13 +858,18 @@ def login_outlet_gofood_flow(outlet_info):
                         page.close()
                     except Exception:
                         pass
+
+                    if is_banned:
+                        console.print(f"   [warning]⚠️ Akun {current_email} terindikasi Limit/Banned. Langsung rotasi ke email berikutnya.[/warning]")
+                        break  # Keluar dari loop attempt, pindah ke email berikutnya
+
                     if attempt < max_login_attempts - 1:
                         # Percobaan 1 gagal → ulangi login dengan email yang sama
                         console.print(f"   [warning]⚠️ Token tidak ditemukan. Kembali ke login page dengan email yang sama ({current_email})...[/warning]")
                         continue
                     else:
                         # Percobaan ke-2 habis → rotasi ke email berikutnya
-                        console.print(f"   [warning]⚠️ Token tidak ditemukan setelah 2 percobaan untuk {current_email}. Rotasi ke email berikutnya...[/warning]")
+                        console.print(f"   [warning]⚠️ Token tidak ditemukan setelah {max_login_attempts} percobaan untuk {current_email}. Rotasi ke email berikutnya...[/warning]")
 
         try:
             browser.close()
