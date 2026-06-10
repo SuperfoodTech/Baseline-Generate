@@ -572,6 +572,7 @@ def login_outlet_gofood_flow(outlet_info):
                 time.sleep(1.0)
                 
                 otp_failed_timeout = False
+                is_banned = False
 
                 # --- STEP 4: Ketik email secara human-like ---
                 if current_email:
@@ -598,7 +599,6 @@ def login_outlet_gofood_flow(outlet_info):
                             time.sleep(3)
 
                             # --- Pre-snapshot OTP sebelum tombol OTP diklik ---
-                            # Ini penting: snapshot diambil SEBELUM OTP dikirim agar nilai baru terdeteksi
                             otp_endpoint = os.getenv("OTP_ENDPOINT_URL")
                             label_email_cfg = os.getenv("GMAIL_OTP_LABEL", "OTP-GO")
                             action_type = "getOtpEmail" if current_email else "getOtp"
@@ -621,15 +621,14 @@ def login_outlet_gofood_flow(outlet_info):
                                 pass
 
                             # --- STEP 5: Automated OTP Polling & Fill ---
-                            is_banned = False
                             if otp_endpoint:
-                                # 1. Tunggu field OTP muncul
+                                # 1. Tunggu field OTP muncul — Jika timeout, berarti akun kena banned 15 menit
                                 try:
                                     console.print("   [info]🤖 Menunggu field OTP muncul...[/info]")
                                     otp_input_selector = 'input[autocomplete="one-time-code"], input[aria-label*="digit" i], div[class*="otp" i] input:not([type="checkbox"]):not([type="radio"]), input[name*="otp" i]:not([type="checkbox"]):not([type="radio"]), input[maxlength="1"]:not([type="checkbox"]):not([type="radio"])'
                                     page.locator(otp_input_selector).first.wait_for(state="visible", timeout=15000)
                                     time.sleep(1)
-                                except Exception as e:
+                                except Exception:
                                     console.print(f"   [warning]⚠️ Timeout 15000ms: Field OTP tidak muncul. Indikasi limit/banned 15 menit untuk email {current_email}. Menghentikan percobaan dan rotasi akun.[/warning]")
                                     is_banned = True
                                     try:
@@ -638,13 +637,12 @@ def login_outlet_gofood_flow(outlet_info):
                                         pass
                                     break  # Keluar dari loop attempt, langsung rotasi ke email berikutnya
 
-                                # 2. Lakukan polling OTP
+                                # 2. Lakukan polling dan input OTP
                                 if not is_banned:
                                     try:
                                         console.print("   [info]🤖 Polling OTP dari Gmail (snapshot awal sudah diambil sebelumnya)...[/info]")
-                                        label_email = label_email_cfg
                                         
-                                        otp_code = tunggu_otp_terbaru(otp_endpoint, action=action_type, label_email=label_email, timeout_detik=30, interval_detik=3, otp_awal_override=otp_snapshot_awal)
+                                        otp_code = tunggu_otp_terbaru(otp_endpoint, action=action_type, label_email=label_email_cfg, timeout_detik=90, interval_detik=3, otp_awal_override=otp_snapshot_awal)
                                         
                                         if otp_code and not (otp_code.isdigit() and len(otp_code) in (4, 6)):
                                             console.print(f"   [warning]⚠️ OTP dari endpoint bukan format angka valid: {otp_code[:50]}...[/warning]")
@@ -675,12 +673,12 @@ def login_outlet_gofood_flow(outlet_info):
                                                     page.keyboard.press("Enter")
                                                 time.sleep(2)
                                         else:
-                                            console.print("   [warning]⚠️ Gagal mendapatkan OTP dalam 30 detik.[/warning]")
+                                            console.print("   [warning]⚠️ Gagal mendapatkan OTP dalam 90 detik.[/warning]")
                                             send_discord_error(
                                                 platform="GoFood", 
                                                 merchant=nama, 
                                                 error_type="OTP_TIMEOUT", 
-                                                message=f"Gagal masuk akun ({current_email}). OTP tidak kunjung diterima dalam batas waktu 30 detik.",
+                                                message=f"Gagal masuk akun ({current_email}). OTP tidak kunjung diterima dalam batas waktu 90 detik.",
                                                 phone=phone
                                             )
                                             otp_failed_timeout = True
@@ -694,12 +692,16 @@ def login_outlet_gofood_flow(outlet_info):
                                                 phone=phone
                                         )
                                         otp_failed_timeout = True
-                        else:
-                            console.print("   [info]👉 Silakan isi kode OTP secara MANUAL di browser.[/info]")
+                            else:
+                                console.print("   [info]👉 Silakan isi kode OTP secara MANUAL di browser.[/info]")
                     except Exception as e:
                         console.print(f"   [error]⚠️ Gagal ketik email: {e}[/error]")
 
+                # Jika banned (field OTP tidak muncul), sudah di-break di atas, skip token wait
+                if is_banned:
+                    continue
 
+                # Jika OTP gagal timeout, tunggu 30 detik lalu retry attempt berikutnya
                 if otp_failed_timeout:
                     if attempt < max_login_attempts - 1:
                         console.print("   [warning]⚠️ Menutup halaman dan menunggu 30 detik sebelum mengulang login (attempt ke-2)...[/warning]")
@@ -710,23 +712,18 @@ def login_outlet_gofood_flow(outlet_info):
                         time.sleep(30)
                         continue
                     else:
-                        console.print(f"   [warning]⚠️ Melewati batas percobaan login untuk {current_email}. rotasi email/gagal.[/warning]")
+                        console.print(f"   [warning]⚠️ Melewati batas percobaan login untuk {current_email}. Rotasi ke email berikutnya/gagal.[/warning]")
                         try:
                             page.close()
                         except Exception:
                             pass
                         continue
 
+                # --- Tunggu access_token muncul di cookies (max 10 menit) ---
+                attempt_token = None
+                start_time = time.time()
                 try:
-                    # Wait up to 30 seconds for the access token to appear
-                    wait_time = 0
-                    max_wait = 30
-                    
-                    # Jika manual OTP (tanpa endpoint), biarkan tanpa batas waktu (atau waktu yang lebih lama)
-                    if not otp_endpoint:
-                        max_wait = 180
-                        
-                    while wait_time < max_wait:
+                    while True:
                         if page.is_closed():
                             console.print("[warning]⚠️ Browser ditutup sebelum login selesai.[/warning]")
                             send_discord_error("GoFood", phone, "SYSTEM_ERROR", "Proses login terganggu karena browser tertutup secara tiba-tiba atau kehilangan koneksi di tengah jalan.", "")
@@ -735,25 +732,28 @@ def login_outlet_gofood_flow(outlet_info):
                         cookies = context.cookies()
                         for cookie in cookies:
                             if cookie['name'] == 'access_token':
-                                access_token = cookie['value']
+                                attempt_token = cookie['value']
                                 break
 
-                        if access_token:
+                        if attempt_token:
+                            access_token = attempt_token
                             break
 
                         time.sleep(1.0)
-                        wait_time += 1
-                        
+
+                        if time.time() - start_time > 600:
+                            console.print("[error]❌ Timeout 10 menit menunggu access_token.[/error]")
+                            break
+
                 except KeyboardInterrupt:
                     console.print("\n[warning]⚠️ Dibatalkan oleh pengguna.[/warning]")
                     break
                 except Exception as e:
                     console.print(f"[error]❌ Error: {e}[/error]")
-                    
-                # Jika token tidak didapat
+
                 if not access_token:
                     if attempt < max_login_attempts - 1:
-                        console.print("   [warning]⚠️ Token tidak ditemukan, menunggu 30 detik sebelum mengulang login...[/warning]")
+                        console.print(f"   [warning]⚠️ Token tidak ditemukan setelah menunggu, menunggu 30 detik sebelum mengulang login...[/warning]")
                         try:
                             page.close()
                         except Exception:
