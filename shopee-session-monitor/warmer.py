@@ -30,6 +30,7 @@ import logging
 import requests
 from pathlib import Path
 from datetime import datetime
+import threading
 
 # ── Path Setup ─────────────────────────────────────────────────────────────────
 # Allow importing from src/shopee-omzet-automation/core
@@ -64,6 +65,12 @@ ACCOUNT_DELAY_SECONDS = int(os.getenv("ACCOUNT_DELAY_SECONDS", "15"))
 _accounts_env        = os.getenv("ACCOUNTS", "")
 TARGET_ACCOUNTS      = [a.strip() for a in _accounts_env.split(",") if a.strip()] if _accounts_env else []
 DISCORD_WEBHOOK_URL  = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
+UPTIME_KUMA_PUSH_URL = os.getenv("UPTIME_KUMA_PUSH_URL", "").strip()
+
+# ── Watchdog & Heartbeat Config ───────────────────────────────────────────────
+LAST_ACTIVE = time.time()
+HEARTBEAT_INTERVAL_SECONDS = 60   # 1 minute (check more often, ping kuma more often)
+STUCK_THRESHOLD_SECONDS = 180     # 3 minutes without activity is considered stuck
 
 # ── Logger ─────────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -103,6 +110,30 @@ def send_discord_alert(message: str):
         )
     except Exception as exc:
         log.warning(f"⚠️  Discord alert failed: {exc}")
+
+def heartbeat_and_watchdog():
+    """Background thread to send heartbeats and check if the main loop is stuck."""
+    global LAST_ACTIVE
+    while True:
+        time.sleep(HEARTBEAT_INTERVAL_SECONDS)
+        now = time.time()
+        time_since_active = now - LAST_ACTIVE
+        
+        # 1. Stuck Detection
+        if time_since_active > STUCK_THRESHOLD_SECONDS:
+            log.error(f"💀 Warmer terdeteksi STUCK (tidak ada aktivitas selama {time_since_active:.0f}s). Restarting...")
+            send_discord_alert(f"💀 **[Session Warmer]** Terdeteksi STUCK selama {time_since_active:.0f}s. Melakukan restart otomatis...")
+            
+            # Restart the process
+            os.execv(sys.executable, ['python'] + sys.argv)
+            
+
+        # 3. Heartbeat to Uptime Kuma
+        if UPTIME_KUMA_PUSH_URL:
+            try:
+                requests.get(UPTIME_KUMA_PUSH_URL, timeout=10)
+            except Exception as e:
+                log.warning(f"⚠️  Uptime Kuma push gagal: {e}")
 
 
 def load_credentials() -> list[dict]:
@@ -285,9 +316,25 @@ def warm_account(acc: dict) -> bool:
         return True
 
     except Exception as exc:
-        log.error(f"  │  [{username}] ❌ Exception: {exc}")
+        exc_str = str(exc)
+        log.error(f"  │  [{username}] ❌ Exception: {exc_str}")
+        
+        # Buat pesan error yang lebih mudah dipahami untuk Discord
+        friendly_error = "Terjadi kesalahan sistem yang tidak terduga saat memproses halaman."
+        if "Chrome failed to start" in exc_str or "Chrome instance exited" in exc_str or "DevToolsActivePort" in exc_str:
+            friendly_error = "Browser Google Chrome gagal terbuka atau tertutup otomatis (biasanya karena masalah memori server atau ChromeDriver crash)."
+        elif "Timeout" in exc_str or "timeout" in exc_str.lower():
+            friendly_error = "Koneksi lambat atau halaman memakan waktu terlalu lama untuk dimuat (Timeout)."
+        elif "NoSuchElement" in exc_str or "intercepted" in exc_str:
+            friendly_error = "Ada masalah pada tampilan halaman web Shopee (elemen tombol tidak ditemukan atau tertutup popup lain)."
+        elif "session not created" in exc_str:
+            friendly_error = "Gagal membuat sesi browser baru (Kecocokan versi Chrome dan ChromeDriver bermasalah)."
+        elif "ERR_INTERNET_DISCONNECTED" in exc_str or "ERR_CONNECTION" in exc_str:
+            friendly_error = "Koneksi internet server terputus."
+
         send_discord_alert(
-            f"🔴 **[Session Warmer]** Exception saat memproses akun `{username}`: `{exc}`"
+            f"🔴 **[Session Warmer]** Gagal memproses akun `{username}`.\n"
+            f"**Alasan:** {friendly_error}"
         )
         log.info(f"  └─ [{username}] ERROR\n")
         return False
@@ -312,6 +359,8 @@ def main():
     log.info(f"  Target accounts : {', '.join(TARGET_ACCOUNTS) if TARGET_ACCOUNTS else '(semua)'}")
     log.info("=" * 65 + "\n")
 
+    send_discord_alert("🚀 **[Session Warmer]** Service started successfully. Monitoring active.")
+
     cycle = 0
     while True:
         cycle += 1
@@ -320,12 +369,17 @@ def main():
         log.info("=" * 65)
         log.info(f"  🔁 SIKLUS #{cycle} — {cycle_start.strftime('%Y-%m-%d %H:%M:%S')}")
         log.info("=" * 65 + "\n")
+        
+        global LAST_ACTIVE
+        LAST_ACTIVE = time.time()
 
         # Load (and potentially refresh) credential list each cycle
         accounts = load_credentials()
         if not accounts:
             log.error("❌ Tidak ada akun untuk diproses. Menunggu 60 detik...")
-            time.sleep(60)
+            for _ in range(60):
+                LAST_ACTIVE = time.time()
+                time.sleep(1)
             continue
 
         total    = len(accounts)
@@ -333,6 +387,7 @@ def main():
         failed   = 0
 
         for idx, acc in enumerate(accounts, start=1):
+            LAST_ACTIVE = time.time()  # Update activity timestamp
             log.info(f"  [{idx}/{total}] Akun: {acc['username']}")
             ok = warm_account(acc)
             if ok:
@@ -343,7 +398,9 @@ def main():
             # Delay between accounts (skip after the last one)
             if idx < total:
                 log.info(f"  ⏳ Menunggu {ACCOUNT_DELAY_SECONDS}s sebelum akun berikutnya...\n")
-                time.sleep(ACCOUNT_DELAY_SECONDS)
+                for _ in range(ACCOUNT_DELAY_SECONDS):
+                    LAST_ACTIVE = time.time()
+                    time.sleep(1)
 
         # ── Cycle Summary ──────────────────────────────────────────────────
         elapsed = (datetime.now() - cycle_start).seconds
@@ -353,19 +410,25 @@ def main():
         log.info(f"     Gagal    : {failed}/{total}")
         log.info("=" * 65 + "\n")
 
-        if DISCORD_WEBHOOK_URL:
-            status_icon = "✅" if failed == 0 else "⚠️"
+        if DISCORD_WEBHOOK_URL and failed > 0:
             send_discord_alert(
-                f"{status_icon} **[Session Warmer]** Siklus #{cycle} selesai. "
+                f"⚠️ **[Session Warmer]** Siklus #{cycle} selesai dengan KEGAGALAN. "
                 f"Berhasil: **{success}/{total}** | Gagal: **{failed}/{total}**. "
                 f"Siklus berikutnya dalam {LOOP_DELAY_SECONDS // 60} menit."
             )
 
         log.info(f"  😴 Tidur {LOOP_DELAY_SECONDS}s ({LOOP_DELAY_SECONDS // 60} menit) sebelum siklus berikutnya...\n")
-        time.sleep(LOOP_DELAY_SECONDS)
+        # Sleep in small chunks to keep watchdog happy
+        for _ in range(LOOP_DELAY_SECONDS):
+            LAST_ACTIVE = time.time()
+            time.sleep(1)
 
 
 if __name__ == "__main__":
+    # Start heartbeat watchdog thread
+    watchdog_thread = threading.Thread(target=heartbeat_and_watchdog, daemon=True)
+    watchdog_thread.start()
+
     try:
         main()
     except KeyboardInterrupt:
