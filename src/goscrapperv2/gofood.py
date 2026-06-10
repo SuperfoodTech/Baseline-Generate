@@ -98,7 +98,7 @@ def fetch_gofood_accounts_from_sheet(task="2"):
     try:
         import io
         import requests as _req
-        resp = _req.get(url, timeout=30)
+        resp = _req.get(url, timeout=15)
         resp.raise_for_status()
         reader_rows = list(csv.reader(resp.text.splitlines()))
     except Exception as e:
@@ -135,21 +135,21 @@ def fetch_gofood_accounts_from_sheet(task="2"):
 
             nama = str(row[idx_outlet]).strip() if idx_outlet is not None and len(row) > idx_outlet else ''
             
-            # Ambil Email FoodMaster sebagai prioritas utama
+            # Ambil Email Duck sebagai prioritas utama
             email_fm = ""
             if idx_email_fm is not None and len(row) > idx_email_fm:
                 email_fm = str(row[idx_email_fm]).strip()
             
-            # Email Duck sebagai sekunder
+            # Email FoodMaster sebagai sekunder
             email_duck = ""
             if idx_email_duck is not None and len(row) > idx_email_duck:
                 email_duck = str(row[idx_email_duck]).strip()
 
             emails = []
-            if email_fm and email_fm != "-":
-                emails.append(email_fm)
-            if email_duck and email_duck != "-" and email_duck != email_fm:
+            if email_duck and email_duck != "-":
                 emails.append(email_duck)
+            if email_fm and email_fm != "-" and email_fm != email_duck:
+                emails.append(email_fm)
                 
             primary_email = emails[0] if emails else ""
 
@@ -173,6 +173,8 @@ def fetch_gofood_accounts_from_sheet(task="2"):
         idx_cabang    = col_idx(['cabang'])
         idx_store     = col_idx(['store id', 'store_id', 'merchant id'])
         idx_phone     = 26  # Kolom AA (0-indexed)
+        idx_email_fm  = col_idx(['email foodmaster'])
+        idx_email_duck= col_idx(['email duck'])
 
         for row in reader_rows[1:]:
             if len(row) <= idx_phone:
@@ -186,19 +188,39 @@ def fetch_gofood_accounts_from_sheet(task="2"):
             if 'live' not in status:
                 continue
 
-            email     = str(row[24]).strip() if len(row) > 24 else ''
+            email_fm = ""
+            if idx_email_fm is not None and len(row) > idx_email_fm:
+                email_fm = str(row[idx_email_fm]).strip()
+            
+            email_duck = ""
+            if idx_email_duck is not None and len(row) > idx_email_duck:
+                email_duck = str(row[idx_email_duck]).strip()
+
+            emails = []
+            if email_duck and email_duck != "-":
+                emails.append(email_duck)
+            if email_fm and email_fm != "-" and email_fm != email_duck:
+                emails.append(email_fm)
+                
+            if not emails and len(row) > 24:
+                fallback_email = str(row[24]).strip()
+                if fallback_email and fallback_email != "-":
+                    emails.append(fallback_email)
+                    
+            primary_email = emails[0] if emails else ""
+
             phone     = str(row[idx_phone]).strip()
             nama      = str(row[idx_outlet]).strip()   if idx_outlet is not None and len(row) > idx_outlet else ''
             cabang    = str(row[idx_cabang]).strip()   if idx_cabang is not None and len(row) > idx_cabang else ''
             store_id  = str(row[idx_store]).strip()    if idx_store is not None  and len(row) > idx_store  else ''
 
-            if not phone and not email:
+            if not phone and not primary_email:
                 continue
 
             accounts.append({
                 'phone'      : phone,
-                'email'      : email,
-                'emails'     : [email] if email and email != "-" else [],
+                'email'      : primary_email,
+                'emails'     : emails,
                 'nama_outlet': nama,
                 'cabang'     : cabang,
                 'store_id'   : store_id,
@@ -412,7 +434,7 @@ def ambil_otp_dari_endpoint(url_dasar, action="getOtp", label_email=None):
     # Jika URL mengarah langsung ke Google Sheets CSV
     if "docs.google.com/spreadsheets" in url_dasar:
         try:
-            with urlopen(url_dasar, timeout=30) as response:
+            with urlopen(url_dasar, timeout=15) as response:
                 content = response.read().decode("utf-8").strip()
                 lines = content.splitlines()
                 if not lines or len(lines) < 2:
@@ -445,11 +467,11 @@ def ambil_otp_dari_endpoint(url_dasar, action="getOtp", label_email=None):
         query_params["label"] = label_email
     url_final = urlunparse(parsed._replace(query=urlencode(query_params)))
 
-    with urlopen(url_final, timeout=30) as response:
+    with urlopen(url_final, timeout=15) as response:
         return response.read().decode("utf-8").strip()
 
 
-def tunggu_otp_terbaru(url_dasar, action="getOtp", label_email=None, timeout_detik=90, interval_detik=3, otp_awal_override=None):
+def tunggu_otp_terbaru(url_dasar, action="getOtp", label_email=None, interval_detik=3, otp_awal_override=None, timeout_detik=15):
     """
     Menunggu OTP terbaru yang berbeda dari nilai awal agar tidak memakai OTP sebelumnya.
     otp_awal_override: Jika diisi, gunakan nilai ini sebagai baseline (snapshot sebelum OTP dikirim).
@@ -463,7 +485,7 @@ def tunggu_otp_terbaru(url_dasar, action="getOtp", label_email=None, timeout_det
             otp_awal = ""
     
     batas_waktu = time.time() + timeout_detik
-    console.print("   [info]🤖 Menunggu OTP baru masuk ke inbox...[/info]")
+    console.print(f"   [info]🤖 Menunggu OTP baru masuk ke inbox (maksimal {timeout_detik} detik)...[/info]")
 
     while time.time() < batas_waktu:
         time.sleep(interval_detik)
@@ -644,7 +666,7 @@ def login_outlet_gofood_flow(outlet_info):
                                     try:
                                         console.print("   [info]🤖 Polling OTP dari Gmail (snapshot awal sudah diambil sebelumnya)...[/info]")
                                         
-                                        otp_code = tunggu_otp_terbaru(otp_endpoint, action=action_type, label_email=label_email_cfg, timeout_detik=90, interval_detik=3, otp_awal_override=otp_snapshot_awal)
+                                        otp_code = tunggu_otp_terbaru(otp_endpoint, action=action_type, label_email=label_email_cfg, interval_detik=3, otp_awal_override=otp_snapshot_awal, timeout_detik=15)
                                         
                                         if otp_code and not (otp_code.isdigit() and len(otp_code) in (4, 6)):
                                             console.print(f"   [warning]⚠️ OTP dari endpoint bukan format angka valid: {otp_code[:50]}...[/warning]")
@@ -675,12 +697,12 @@ def login_outlet_gofood_flow(outlet_info):
                                                     page.keyboard.press("Enter")
                                                 time.sleep(2)
                                         else:
-                                            console.print("   [warning]⚠️ Gagal mendapatkan OTP dalam 90 detik.[/warning]")
+                                            console.print("   [warning]⚠️ Gagal mendapatkan OTP dalam 15 detik (atau format tidak valid).[/warning]")
                                             send_discord_error(
                                                 platform="GoFood", 
                                                 merchant=nama, 
                                                 error_type="OTP_TIMEOUT", 
-                                                message=f"Gagal masuk akun ({current_email}). OTP tidak kunjung diterima dalam batas waktu 90 detik.",
+                                                message=f"Gagal masuk akun ({current_email}). OTP tidak kunjung diterima dalam batas waktu 15 detik.",
                                                 phone=phone
                                             )
                                             otp_failed_timeout = True
@@ -703,15 +725,15 @@ def login_outlet_gofood_flow(outlet_info):
                 if is_banned:
                     continue
 
-                # Jika OTP gagal timeout, tunggu 30 detik lalu retry attempt berikutnya
+                # Jika OTP gagal timeout, tunggu 15 detik lalu retry attempt berikutnya
                 if otp_failed_timeout:
                     if attempt < max_login_attempts - 1:
-                        console.print("   [warning]⚠️ Menutup halaman dan menunggu 30 detik sebelum mengulang login (attempt ke-2)...[/warning]")
+                        console.print("   [warning]⚠️ Menutup halaman dan menunggu 15 detik sebelum mengulang login (attempt ke-2)...[/warning]")
                         try:
                             page.close()
                         except Exception:
                             pass
-                        time.sleep(30)
+                        time.sleep(15)
                         continue
                     else:
                         console.print(f"   [warning]⚠️ Melewati batas percobaan login untuk {current_email}. Rotasi ke email berikutnya/gagal.[/warning]")
@@ -721,7 +743,7 @@ def login_outlet_gofood_flow(outlet_info):
                             pass
                         continue
 
-                # --- Tunggu access_token muncul di cookies (max 30 detik) ---
+                # --- Tunggu access_token muncul di cookies (max 15 detik) ---
                 attempt_token = None
                 start_time = time.time()
                 try:
@@ -743,8 +765,8 @@ def login_outlet_gofood_flow(outlet_info):
 
                         time.sleep(1.0)
 
-                        if time.time() - start_time > 30:
-                            console.print("[warning]⚠️ Timeout 30 detik menunggu access_token.[/warning]")
+                        if time.time() - start_time > 15:
+                            console.print("[warning]⚠️ Timeout 15 detik menunggu access_token.[/warning]")
                             break
 
                 except KeyboardInterrupt:
@@ -987,9 +1009,9 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
 
     payload_orders = (
         f'{{"search_type":"query_then_fetch","ignore_unavailable":true,"index":{indices_json}}}\n'
-        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:>={range_from_ms} AND time:<={range_to_ms}{merchant_filter} AND NOT id:FP* AND _exists_:data.status AND data.status:COMPLETED"}}]}}}},"aggs":{{"2":{{"date_histogram":{{"field":"time","min_doc_count":0,"extended_bounds":{{"min":{range_from_ms},"max":{range_to_ms}}},"format":"epoch_millis","time_zone":"Asia/Jakarta","interval":"1d"}},"aggs":{{}}}}}}}}\n'
+        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:&gt;={range_from_ms} AND time:&lt;={range_to_ms}{merchant_filter} AND NOT id:FP* AND _exists_:data.status AND data.status:COMPLETED"}}]}}}},"aggs":{{"2":{{"date_histogram":{{"field":"time","min_doc_count":0,"extended_bounds":{{"min":{range_from_ms},"max":{range_to_ms}}},"format":"epoch_millis","time_zone":"Asia/Jakarta","interval":"1d"}},"aggs":{{}}}}}}}}\n'
         f'{{"search_type":"query_then_fetch","ignore_unavailable":true,"index":{indices_json}}}\n'
-        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:>={range_from_ms} AND time:<={range_to_ms}{merchant_filter} AND NOT id:FP*"}}]}}}},"aggs":{{"2":{{"date_histogram":{{"field":"time","min_doc_count":0,"extended_bounds":{{"min":{range_from_ms},"max":{range_to_ms}}},"format":"epoch_millis","time_zone":"Asia/Jakarta","interval":"1d"}},"aggs":{{}}}}}}}}\n'
+        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:&gt;={range_from_ms} AND time:&lt;={range_to_ms}{merchant_filter} AND NOT id:FP*"}}]}}}},"aggs":{{"2":{{"date_histogram":{{"field":"time","min_doc_count":0,"extended_bounds":{{"min":{range_from_ms},"max":{range_to_ms}}},"format":"epoch_millis","time_zone":"Asia/Jakarta","interval":"1d"}},"aggs":{{}}}}}}}}\n'
     )
 
     headers_orders = headers.copy()
@@ -1124,17 +1146,17 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
     # Reconstruct the full 6-query payload from the curl command
     payload_batal = (
         f'{{"search_type":"query_then_fetch","ignore_unavailable":true,"index":{indices_current_json}}}\n'
-        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:>={range_from_ms} AND time:<={range_to_ms}{merchant_filter} AND NOT id:FP* AND _exists_:data.restaurant_accepted_timestamp"}}}}]}}}}}}\n'
+        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:&gt;={range_from_ms} AND time:&lt;={range_to_ms}{merchant_filter} AND NOT id:FP* AND _exists_:data.restaurant_accepted_timestamp"}}}}]}}}}}}\n'
         f'{{"search_type":"query_then_fetch","ignore_unavailable":true,"index":{indices_current_json}}}\n'
-        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:>={range_from_ms} AND time:<={range_to_ms}{merchant_filter} AND NOT id:FP*"}}}}]}}}}}}\n'
+        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:&gt;={range_from_ms} AND time:&lt;={range_to_ms}{merchant_filter} AND NOT id:FP*"}}}}]}}}}}}\n'
         f'{{"search_type":"query_then_fetch","ignore_unavailable":true,"index":{indices_past_json}}}\n'
-        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:>={range_from_comp_ms} AND time:<={range_to_comp_ms}{merchant_filter} AND NOT id:FP* AND _exists_:data.restaurant_accepted_timestamp"}}}}]}}}}}}\n'
+        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:&gt;={range_from_comp_ms} AND time:&lt;={range_to_comp_ms}{merchant_filter} AND NOT id:FP* AND _exists_:data.restaurant_accepted_timestamp"}}}}]}}}}}}\n'
         f'{{"search_type":"query_then_fetch","ignore_unavailable":true,"index":{indices_past_json}}}\n'
-        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:>={range_from_comp_ms} AND time:<={range_to_comp_ms}{merchant_filter} AND NOT id:FP*"}}}}]}}}}}}\n'
+        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:&gt;={range_from_comp_ms} AND time:&lt;={range_to_comp_ms}{merchant_filter} AND NOT id:FP*"}}}}]}}}}}}\n'
         f'{{"search_type":"query_then_fetch","ignore_unavailable":true,"index":{indices_current_json}}}\n'
-        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:>={range_from_ms} AND time:<={range_to_ms}{merchant_filter} AND NOT id:FP* AND _exists_:data.cancel_reason_code AND data.cancel_reason_code:{cancel_reasons_query}"}}}}]}}}},"aggs":{{"2":{{"date_histogram":{{"field":"time","min_doc_count":0,"extended_bounds":{{"min":{range_from_ms},"max":{range_to_ms}}},"format":"epoch_millis","time_zone":"Asia/Jakarta","interval":"1d"}},"aggs":{{}}}}}}}}\n'
+        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:&gt;={range_from_ms} AND time:&lt;={range_to_ms}{merchant_filter} AND NOT id:FP* AND _exists_:data.cancel_reason_code AND data.cancel_reason_code:{cancel_reasons_query}"}}}}]}}}},"aggs":{{"2":{{"date_histogram":{{"field":"time","min_doc_count":0,"extended_bounds":{{"min":{range_from_ms},"max":{range_to_ms}}},"format":"epoch_millis","time_zone":"Asia/Jakarta","interval":"1d"}},"aggs":{{}}}}}}}}\n'
         f'{{"search_type":"query_then_fetch","ignore_unavailable":true,"index":{indices_past_json}}}\n'
-        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:>={range_from_comp_ms} AND time:<={range_to_comp_ms}{merchant_filter} AND NOT id:FP* AND _exists_:data.cancel_reason_code AND data.cancel_reason_code:{cancel_reasons_query}"}}}}]}}}}}}\n'
+        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:&gt;={range_from_comp_ms} AND time:&lt;={range_to_comp_ms}{merchant_filter} AND NOT id:FP* AND _exists_:data.cancel_reason_code AND data.cancel_reason_code:{cancel_reasons_query}"}}}}]}}}}}}\n'
     )
 
     headers_batal = headers.copy()
@@ -1153,7 +1175,7 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
             console.print(f"[warning]   ⚠️ WARNING: Merchant ID {active_store} not found in Order Batal payload![/warning]")
         
         with console.status("[bold cyan]Mengambil data Order Batal...", spinner="bouncingBar"):
-            response_batal = session.post(url_batal, headers=headers_batal, data=payload_batal, timeout=30)
+            response_batal = session.post(url_batal, headers=headers_batal, data=payload_batal, timeout=15)
             
         if response_batal.status_code == 200:
             data_batal = response_batal.json()
@@ -1886,7 +1908,7 @@ if __name__ == "__main__":
                 suffix = f"_{phone}_{sanitized_resto_name}"
                 os.environ['BEARER_TOKEN'] = token  # backward compat — proses ini sudah selesai auth
                 # Simpan ke .env dengan file lock agar tidak corrupt saat concurrent
-                env_lock = _FileLock(f"{env_path}.lock", timeout=30)
+                env_lock = _FileLock(f"{env_path}.lock", timeout=15)
                 with env_lock:
                     set_key(env_path, f"BEARER_TOKEN{suffix}", token)
                     set_key(env_path, f"NAMA_OUTLET{suffix}", str(nama_outlet))
