@@ -17,7 +17,7 @@ async function getNotificationChannel(client, channelIdOverride = null) {
         try {
             const channel = await client.channels.fetch(targetId);
             if (channel) return channel;
-        } catch {}
+        } catch { }
     }
     return null;
 }
@@ -38,31 +38,31 @@ function startErrorPoller(client) {
         try {
             if (!fs.existsSync(ERROR_DIR)) return;
             const files = fs.readdirSync(ERROR_DIR).filter(f => f.startsWith('error_') && f.endsWith('.json'));
-            
+
             for (const file of files) {
                 const filePath = path.join(ERROR_DIR, file);
                 const data = fs.readFileSync(filePath, 'utf8');
                 const content = JSON.parse(data);
-                
+
                 if (!client.isReady()) continue;
 
                 const cacheKey = `${content.platform}_${content.merchant}`;
                 const now = Date.now();
                 if (alertCache.has(cacheKey)) {
                     if (now - alertCache.get(cacheKey) < 5 * 60 * 1000) { // 5 minutes cooldown
-                        try { fs.unlinkSync(filePath); } catch (e) {}
+                        try { fs.unlinkSync(filePath); } catch (e) { }
                         continue; // Skip duplicate
                     }
                 }
-                
+
                 const channel = await getNotificationChannel(client, content.channel_id);
                 if (channel) {
                     alertCache.set(cacheKey, now);
                     console.log(`📡 [POLLER] Background Error Request detected for ${content.merchant} (Channel: ${content.channel_id || lastChannelId}). Sending Discord message...`);
-                    
+
                     let embedColor = '#ff0000'; // Default red
                     let embedIcon = '⚠️';
-                    
+
                     if (content.error_type === 'OTP_TIMEOUT') {
                         embedColor = '#ffaa00'; // Orange
                         embedIcon = '⏳';
@@ -82,7 +82,6 @@ function startErrorPoller(client) {
                         .setDescription(`Sistem mendeteksi adanya kendala saat memproses data untuk outlet berikut:`)
                         .addFields(
                             { name: '🏢 Nama Merchant', value: `**${content.merchant}**`, inline: true },
-                            { name: '📱 Kontak / Akun', value: content.phone || '-', inline: true },
                             { name: '📌 Detail Kendala', value: `\`${content.message}\``, inline: false }
                         )
                         .setColor(embedColor)
@@ -90,7 +89,7 @@ function startErrorPoller(client) {
                         .setTimestamp();
 
                     await channel.send({ embeds: [errorEmbed] });
-                    
+
                     // Hapus file setelah berhasil dikirim
                     try {
                         fs.unlinkSync(filePath);
