@@ -36,7 +36,7 @@ const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNX
 
 let cachedSheetData = null;
 let lastCacheTime = 0;
-const CACHE_DURATION = 5 * 60 * 1000; // 5 menit cache
+const CACHE_DURATION = 3 * 1000; // 3 detik cache
 
 // ── Job Lock — mencegah 2 user menjalankan pipeline yang sama secara bersamaan ──
 // Key: "<outlet>|<platform>|<startDate>|<endDate>"

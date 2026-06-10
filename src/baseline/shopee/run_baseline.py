@@ -47,7 +47,9 @@ def robust_read_csv(path_or_url, expected_cols=None, **kwargs):
     content = ""
     try:
         if isinstance(path_or_url, str) and (path_or_url.startswith("http://") or path_or_url.startswith("https://")):
-            resp = requests.get(path_or_url, timeout=30)
+            import time
+            cache_buster = f"&t={int(time.time())}" if "?" in path_or_url else f"?t={int(time.time())}"
+            resp = requests.get(path_or_url + cache_buster, timeout=30)
             resp.raise_for_status()
             content = resp.text
         else:
