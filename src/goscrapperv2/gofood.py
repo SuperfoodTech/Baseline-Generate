@@ -574,6 +574,12 @@ def login_outlet_gofood_flow(outlet_info):
                 otp_failed_timeout = False
                 is_banned = False
 
+                # Ambil konfigurasi OTP endpoint di awal setiap attempt
+                otp_endpoint = os.getenv("OTP_ENDPOINT_URL")
+                label_email_cfg = os.getenv("GMAIL_OTP_LABEL", "OTP-GO")
+                action_type = "getOtpEmail" if current_email else "getOtp"
+                otp_snapshot_awal = ""
+
                 # --- STEP 4: Ketik email secara human-like ---
                 if current_email:
                     try:
@@ -599,10 +605,6 @@ def login_outlet_gofood_flow(outlet_info):
                             time.sleep(3)
 
                             # --- Pre-snapshot OTP sebelum tombol OTP diklik ---
-                            otp_endpoint = os.getenv("OTP_ENDPOINT_URL")
-                            label_email_cfg = os.getenv("GMAIL_OTP_LABEL", "OTP-GO")
-                            action_type = "getOtpEmail" if current_email else "getOtp"
-                            otp_snapshot_awal = ""
                             if otp_endpoint:
                                 try:
                                     otp_snapshot_awal = ambil_otp_dari_endpoint(otp_endpoint, action=action_type, label_email=label_email_cfg)
