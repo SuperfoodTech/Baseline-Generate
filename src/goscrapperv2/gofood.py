@@ -721,7 +721,7 @@ def login_outlet_gofood_flow(outlet_info):
                             pass
                         continue
 
-                # --- Tunggu access_token muncul di cookies (max 10 menit) ---
+                # --- Tunggu access_token muncul di cookies (max 30 detik) ---
                 attempt_token = None
                 start_time = time.time()
                 try:
@@ -743,8 +743,8 @@ def login_outlet_gofood_flow(outlet_info):
 
                         time.sleep(1.0)
 
-                        if time.time() - start_time > 600:
-                            console.print("[error]❌ Timeout 10 menit menunggu access_token.[/error]")
+                        if time.time() - start_time > 30:
+                            console.print("[warning]⚠️ Timeout 30 detik menunggu access_token.[/warning]")
                             break
 
                 except KeyboardInterrupt:
@@ -754,19 +754,17 @@ def login_outlet_gofood_flow(outlet_info):
                     console.print(f"[error]❌ Error: {e}[/error]")
 
                 if not access_token:
+                    try:
+                        page.close()
+                    except Exception:
+                        pass
                     if attempt < max_login_attempts - 1:
-                        console.print(f"   [warning]⚠️ Token tidak ditemukan setelah menunggu, menunggu 30 detik sebelum mengulang login...[/warning]")
-                        try:
-                            page.close()
-                        except Exception:
-                            pass
-                        time.sleep(30)
+                        # Percobaan 1 gagal → ulangi login dengan email yang sama
+                        console.print(f"   [warning]⚠️ Token tidak ditemukan. Kembali ke login page dengan email yang sama ({current_email})...[/warning]")
+                        continue
                     else:
-                        console.print(f"   [warning]⚠️ Token tidak ditemukan setelah 2 percobaan untuk email {current_email}.[/warning]")
-                        try:
-                            page.close()
-                        except Exception:
-                            pass
+                        # Percobaan ke-2 habis → rotasi ke email berikutnya
+                        console.print(f"   [warning]⚠️ Token tidak ditemukan setelah 2 percobaan untuk {current_email}. Rotasi ke email berikutnya...[/warning]")
 
         try:
             browser.close()
