@@ -1347,7 +1347,7 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
     console.print(f"[info]⏱️ Waktu proses untuk store ini: [bold]{DURATION_STORE:.2f} detik[/bold][/info]\n")
     return return_obj
 
-def tulis_baseline_excel(all_results, start_date, end_date):
+def tulis_baseline_excel(all_results, start_date, end_date, outlet_filter=None):
     """
     Menulis file Excel baseline bergaya Shopee:
     1 baris per outlet, kolom per bulan (omzet bersih + order sukses), plus rata-rata.
@@ -1469,7 +1469,12 @@ def tulis_baseline_excel(all_results, start_date, end_date):
         output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'laporan_gofood')
         
     os.makedirs(output_dir, exist_ok=True)
-    filename = os.path.join(output_dir, f'BASELINE_GOFOOD_{start_str}_to_{end_str}.xlsx')
+    
+    if outlet_filter:
+        safe_o = str(outlet_filter).strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
+        filename = os.path.join(output_dir, f'BASELINE_CUSTOM_GOFOOD_{safe_o}_{start_str}_to_{end_str}.xlsx')
+    else:
+        filename = os.path.join(output_dir, f'BASELINE_GOFOOD_{start_str}_to_{end_str}.xlsx')
 
     wb.save(filename)
     wb.close()
@@ -1782,7 +1787,7 @@ if __name__ == "__main__":
         else:
             _start = custom_start_date
             _end = custom_end_date
-        tulis_baseline_excel(all_baseline_results, _start, _end)
+        tulis_baseline_excel(all_baseline_results, _start, _end, args_cli.outlet)
 
     console.print("\n[bold]" + "="*50 + "[/bold]")
     console.print("[success]✅ Semua proses selesai![/success]")
