@@ -259,6 +259,16 @@ function runPipeline(formData, onLog = () => { }) {
             // Urutan: unpause dulu, baru hapus lock — agar warmer yang baru resume
             // langsung melihat lock sudah hilang dan tidak masuk ke wait loop.
             await controlWarmer('unpause', onLog);
+            
+            // Clean up any remaining zombie chrome/chromedriver processes spawned by the pipeline
+            const { execSync } = require('child_process');
+            try {
+                onLog(`🧹 [CLEANUP] Cleaning up zombie Chrome & WebDriver processes...`);
+                execSync("pkill -9 -f 'chrome-headless-shell|chromedriver|chrome'");
+            } catch (e) {
+                // Ignore exit code 1 if no processes found
+            }
+
             releaseJobLock(onLog);
             resolve(data);
         };
