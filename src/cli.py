@@ -182,16 +182,14 @@ def _resolve_shopee_merchant(outlet_name: str, branch_name: str = None, task_cho
     base = os.path.dirname(os.path.abspath(__file__))
     if task_choice == "1":
         GSHEETS_URL = (
-            "https://docs.google.com/spreadsheets/d/e/"
-            "2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4"
-            "/pub?gid=880434015&single=true&output=csv"
+            "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0"
+            "/export?format=csv&gid=880434015"
         )
         cache_path = os.path.join(base, "baseline", "shopee", "data", "master_merchants_cache.csv")
     else:
         GSHEETS_URL = (
-            "https://docs.google.com/spreadsheets/d/e/"
-            "2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4"
-            "/pub?gid=0&single=true&output=csv"
+            "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0"
+            "/export?format=csv&gid=0"
         )
         cache_path = os.path.join(base, "shopee-omzet-automation", "data", "master_merchants_cache.csv")
 
