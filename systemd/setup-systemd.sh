@@ -8,7 +8,10 @@
 
 set -e
 
-REPO_DIR="$HOME/task-weekly"
+# Deteksi user asli meski dijalankan via sudo
+REAL_USER="${SUDO_USER:-$USER}"
+REAL_HOME=$(eval echo "~$REAL_USER")
+REPO_DIR="$REAL_HOME/task-weekly"
 SYSTEMD_DIR="/etc/systemd/system"
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
