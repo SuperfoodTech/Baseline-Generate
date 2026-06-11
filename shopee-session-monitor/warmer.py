@@ -69,8 +69,17 @@ UPTIME_KUMA_PUSH_URL = os.getenv("UPTIME_KUMA_PUSH_URL", "").strip()
 
 # ── Watchdog & Heartbeat Config ───────────────────────────────────────────────
 LAST_ACTIVE = time.time()
-HEARTBEAT_INTERVAL_SECONDS = 60   # 1 minute (check more often, ping kuma more often)
-STUCK_THRESHOLD_SECONDS = 180     # 3 minutes without activity is considered stuck
+HEARTBEAT_INTERVAL_SECONDS = 30   # Cek setiap 30 detik
+STUCK_THRESHOLD_SECONDS = 180     # 3 menit tanpa aktivitas = stuck
+
+# ── OFD Job Lock Config ───────────────────────────────────────────────────────
+# run_pipeline.js menulis file ini ke shared volume saat pipeline OFD dimulai,
+# dan menghapusnya saat pipeline selesai. Warmer membaca file ini untuk tahu
+# bahwa Docker pause bersifat intentional (bukan stuck).
+# Path harus sama dengan yang digunakan run_pipeline.js (shared volume).
+OFD_JOB_LOCK_FILE = Path(os.getenv("OFD_JOB_LOCK_FILE", "").strip() or "") or (
+    DATA_DIR / "ofd_job.lock"
+)
 
 # ── Logger ─────────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -98,6 +107,61 @@ BUSINESS_HOURS_URL = "https://partner.shopee.co.id/settings/shopee-food/business
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
+def is_ofd_job_locked() -> bool:
+    """
+    Cek apakah pipeline OFD sedang berjalan dengan membaca file lock.
+
+    run_pipeline.js (ofd_discord_bot) menulis file ini ke shared volume
+    saat pipeline dimulai dan menghapusnya saat selesai.
+    Jauh lebih reliable daripada pgrep karena:
+    - Tidak bergantung pada nama proses / PID
+    - Bekerja di dalam container Docker yang ter-isolasi
+    - Path-nya ada di shared volume yang bisa diakses kedua container
+    """
+    try:
+        return OFD_JOB_LOCK_FILE.exists()
+    except Exception:
+        return False
+
+
+def wait_for_ofd_job(caller_context: str = ""):
+    """
+    Mem-pause eksekusi selama file lock OFD masih ada.
+    Selama menunggu, LAST_ACTIVE tetap diupdate agar watchdog TIDAK
+    menganggap warmer sebagai stuck dan melakukan restart.
+
+    Catatan: Saat Docker container warmer di-pause oleh run_pipeline.js,
+    seluruh proses di-freeze — loop ini tidak jalan. Yang penting adalah
+    SETELAH di-unpause, watchdog tidak langsung restart karena LAST_ACTIVE
+    sudah stale. Watchdog harus cek lock file sebelum memutuskan restart.
+
+    Args:
+        caller_context: Label opsional untuk log (misal: nama akun).
+    """
+    global LAST_ACTIVE
+    if not is_ofd_job_locked():
+        return  # Tidak ada pipeline aktif, lanjut langsung
+
+    label = f"[{caller_context}] " if caller_context else ""
+    log.info(f"  ⏸️  {label}Job lock OFD terdeteksi ('{OFD_JOB_LOCK_FILE.name}') — warmer menunggu pipeline selesai.")
+    send_discord_alert(
+        f"⏸️ **[Session Warmer]** {label}Pause sementara — pipeline OFD sedang aktif (job lock ditemukan)."
+    )
+
+    waited = 0
+    while is_ofd_job_locked():
+        # ⚠️  KUNCI: Update LAST_ACTIVE saat menunggu agar watchdog tidak restart
+        LAST_ACTIVE = time.time()
+        time.sleep(10)
+        waited += 10
+        log.info(
+            f"  ⏸️  {label}Masih menunggu pipeline OFD selesai... (sudah {waited}s)"
+        )
+
+    log.info(f"  ▶️  {label}Job lock sudah hilang. Warmer RESUME.")
+    # Reset timestamp setelah resume agar watchdog mulai menghitung ulang bersih
+    LAST_ACTIVE = time.time()
+
 def send_discord_alert(message: str):
     """Posts a plain-text message to the Discord webhook (if configured)."""
     if not DISCORD_WEBHOOK_URL:
@@ -118,17 +182,30 @@ def heartbeat_and_watchdog():
         time.sleep(HEARTBEAT_INTERVAL_SECONDS)
         now = time.time()
         time_since_active = now - LAST_ACTIVE
-        
+
         # 1. Stuck Detection
         if time_since_active > STUCK_THRESHOLD_SECONDS:
-            log.error(f"💀 Warmer terdeteksi STUCK (tidak ada aktivitas selama {time_since_active:.0f}s). Restarting...")
-            send_discord_alert(f"💀 **[Session Warmer]** Terdeteksi STUCK selama {time_since_active:.0f}s. Melakukan restart otomatis...")
-            
-            # Restart the process
-            os.execv(sys.executable, ['python'] + sys.argv)
-            
+            # ⚠️  PENTING: Jangan restart jika warmer sedang di-pause oleh Docker
+            # karena pipeline OFD aktif (ditandai dengan job lock file).
+            # Saat Docker pause, seluruh proses di-freeze sehingga LAST_ACTIVE
+            # tidak bisa diupdate — ini bukan stuck, tapi intentional pause.
+            if is_ofd_job_locked():
+                log.info(
+                    f"⏸️  Watchdog: LAST_ACTIVE stale ({time_since_active:.0f}s) tapi "
+                    f"job lock OFD aktif — ini Docker pause, bukan stuck. Reset timer."
+                )
+                LAST_ACTIVE = time.time()  # Reset agar tidak loop terus
+            else:
+                log.error(
+                    f"💀 Warmer terdeteksi STUCK (tidak ada aktivitas selama {time_since_active:.0f}s). Restarting..."
+                )
+                send_discord_alert(
+                    f"💀 **[Session Warmer]** Terdeteksi STUCK selama {time_since_active:.0f}s. "
+                    "Melakukan restart otomatis..."
+                )
+                os.execv(sys.executable, ['python'] + sys.argv)
 
-        # 3. Heartbeat to Uptime Kuma
+        # 2. Heartbeat to Uptime Kuma
         if UPTIME_KUMA_PUSH_URL:
             try:
                 requests.get(UPTIME_KUMA_PUSH_URL, timeout=10)
@@ -388,6 +465,12 @@ def main():
 
         for idx, acc in enumerate(accounts, start=1):
             LAST_ACTIVE = time.time()  # Update activity timestamp
+
+            # ── Pause jika pipeline OFD sedang aktif (job lock file) ──────────
+            # wait_for_ofd_job() akan terus update LAST_ACTIVE saat menunggu,
+            # sehingga watchdog TIDAK akan salah mendeteksi ini sebagai stuck.
+            wait_for_ofd_job(caller_context=acc['username'])
+
             log.info(f"  [{idx}/{total}] Akun: {acc['username']}")
             ok = warm_account(acc)
             if ok:
