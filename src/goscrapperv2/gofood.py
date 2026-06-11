@@ -725,23 +725,25 @@ def login_outlet_gofood_flow(outlet_info):
                                                 time.sleep(2)
                                         else:
                                             console.print("   [warning]⚠️ Gagal mendapatkan OTP dalam 15 detik (atau format tidak valid).[/warning]")
-                                            send_discord_error(
-                                                platform="GoFood", 
-                                                merchant=nama, 
-                                                error_type="OTP_TIMEOUT", 
-                                                message=f"Gagal masuk akun ({current_email}). OTP tidak kunjung diterima dalam batas waktu 15 detik.",
-                                                phone=phone
-                                            )
+                                            if email_idx == len(emails_to_try) - 1 and attempt >= max_login_attempts - 1:
+                                                send_discord_error(
+                                                    platform="GoFood", 
+                                                    merchant=nama, 
+                                                    error_type="OTP_TIMEOUT", 
+                                                    message=f"Gagal masuk akun ({current_email}). OTP tidak kunjung diterima dalam batas waktu 15 detik.",
+                                                    phone=phone
+                                                )
                                             otp_failed_timeout = True
                                     except Exception as e:
                                         console.print(f"   [warning]⚠️ Gagal melakukan automasi OTP: {e}.[/warning]")
-                                        send_discord_error(
-                                                platform="GoFood", 
-                                                merchant=nama, 
-                                                error_type="SYSTEM_ERROR", 
-                                                message=f"Gagal melakukan automasi input OTP ({current_email}): {str(e)[:100]}.",
-                                                phone=phone
-                                        )
+                                        if email_idx == len(emails_to_try) - 1 and attempt >= max_login_attempts - 1:
+                                            send_discord_error(
+                                                    platform="GoFood", 
+                                                    merchant=nama, 
+                                                    error_type="SYSTEM_ERROR", 
+                                                    message=f"Gagal melakukan automasi input OTP ({current_email}): {str(e)[:100]}.",
+                                                    phone=phone
+                                            )
                                         otp_failed_timeout = True
                             else:
                                 console.print("   [info]👉 Silakan isi kode OTP secara MANUAL di browser.[/info]")
@@ -777,7 +779,8 @@ def login_outlet_gofood_flow(outlet_info):
                     while True:
                         if page.is_closed():
                             console.print("[warning]⚠️ Browser ditutup sebelum login selesai.[/warning]")
-                            send_discord_error("GoFood", phone, "SYSTEM_ERROR", "Proses login terganggu karena browser tertutup secara tiba-tiba atau kehilangan koneksi di tengah jalan.", "")
+                            if email_idx == len(emails_to_try) - 1 and attempt >= max_login_attempts - 1:
+                                send_discord_error("GoFood", nama, "SYSTEM_ERROR", "Proses login terganggu karena browser tertutup secara tiba-tiba atau kehilangan koneksi di tengah jalan.", phone)
                             break
 
                         cookies = context.cookies()
