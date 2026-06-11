@@ -213,15 +213,7 @@ def _deliberate_logout_and_relogin(
         url_now = driver.current_url.lower()
         if "login" in url_now or "authenticate" in url_now:
             log.info("  🛡️ Browser is already on the login/authenticate page. Skipping UI dropdown logout.")
-            try:
-                auth_cookies = ['SPC_ST', 'SPC_U', 'SPC_T_ID', 'SPC_T_IV']
-                for cookie_name in auth_cookies:
-                    try: driver.delete_cookie(cookie_name)
-                    except: pass
-                driver.execute_script("window.localStorage.clear(); window.sessionStorage.clear();")
-            except:
-                pass
-            log.info("  🌐 Attempting direct login...")
+            log.info("  🌐 Attempting direct login preserving all cookies/storage to leverage device trust...")
             if not (username and password) and not phone:
                 log.warning("  ⚠️ No credentials provided — cannot complete login.")
                 return False
@@ -468,33 +460,8 @@ def _deliberate_logout_and_relogin(
                 pass
             # ----------------------------------------
             
-            log.info("  🛡️ Mengaktifkan 'Soft Session Kill' Fallback (Hanya hapus Cookie Sesi)...")
-            try:
-                # Escape the modal just in case
-                driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
-            except Exception:
-                pass
-                
-            try:
-                # Hanya hapus cookie autentikasi utama yang menandakan status login
-                auth_cookies = ['SPC_ST', 'SPC_U', 'SPC_T_ID', 'SPC_T_IV']
-                for cookie_name in auth_cookies:
-                    try:
-                        driver.delete_cookie(cookie_name)
-                    except:
-                        pass
-                
-                # Bersihkan cache JWT / state auth dari LocalStorage
-                driver.execute_script("window.localStorage.clear(); window.sessionStorage.clear();")
-                
-                # JANGAN hapus SPC_F atau SPC_EC (Cookie Device Fingerprint) agar tidak trigger OTP!
-                
-                log.info("  ✅ Soft Session Kill dieksekusi. Sesi dibersihkan tanpa menghapus Device Fingerprint.")
-                driver.refresh()
-                time.sleep(3)
-            except Exception as e:
-                log.warning(f"  ⚠️ Soft Session Kill gagal: {e}")
-                return False
+            log.warning("  ⚠️ UI logout failed. Aborting recovery to prevent manual cookie deletion and OTP.")
+            return False
 
         log.info("  ✅ Logout confirmed. Waiting for login page...")
         time.sleep(3)
@@ -818,12 +785,12 @@ def _perform_login(driver, wait, username: str = None, password: str = None, pho
 
     log.debug("  ⏳ Waiting for post-login redirect or OTP...")
     start_wait = time.time()
-    otp_attempted = False
-    wa_otp_triggered = False
-    last_resend_time = time.time()
-    while time.time() - start_wait < 86400:
-        if "/authenticate/login" not in driver.current_url: break
+    while time.time() - start_wait < 30:
+        current_url = driver.current_url.lower()
+        if "authenticate" not in current_url and "verify" not in current_url and "login" not in current_url:
+            break
         try:
+            # Check for any OTP input
             otp_input = None
             for sel in ["input.shopee-otp-input__input", ".shopee-otp-input input", "input[maxlength='6']"]:
                 els = driver.find_elements(By.CSS_SELECTOR, sel)
@@ -831,128 +798,30 @@ def _perform_login(driver, wait, username: str = None, password: str = None, pho
                     if el.is_displayed(): otp_input = el; break
                 if otp_input: break
 
-            if otp_input:
-                if not wa_otp_triggered:
-                    log.warning(f"⚠️ [OTP REQUIRED] Akun '{username or phone}' memerlukan kode verifikasi OTP. Menunggu 1 menit sebelum beralih ke WhatsApp OTP...")
-                    time.sleep(60)
-                    log.info("🔍 Mencoba mengubah metode pengiriman OTP ke WhatsApp...")
-                    
-                    click_other_method_js = """
-                        var elements = Array.from(document.querySelectorAll('*'));
-                        var bestEl = null;
-                        var minLength = Infinity;
-                        for (var el of elements) {
-                            var text = (el.textContent || el.innerText || "").trim().toLowerCase();
-                            if (text.includes("metode verifikasi lain") || 
-                                text.includes("cara verifikasi lain") || 
-                                text.includes("other verification") || 
-                                text.includes("verification method") || 
-                                text.includes("metode lainnya") || 
-                                text.includes("cara lain")) {
-                                if (text.length < minLength) {
-                                    minLength = text.length;
-                                    bestEl = el;
-                                }
-                            }
-                        }
-                        if (bestEl) {
-                            bestEl.click();
-                            return true;
-                        }
-                        return false;
-                    """
-                    if driver.execute_script(click_other_method_js):
-                        log.info("👉 Berhasil mengklik 'Metode verifikasi lain'. Menunggu menu muncul...")
-                        
-                        click_whatsapp_js = """
-                            var elements = Array.from(document.querySelectorAll('*'));
-                            var bestEl = null;
-                            var minLength = Infinity;
-                            for (var el of elements) {
-                                var text = (el.textContent || el.innerText || "").trim().toLowerCase();
-                                if (text === 'whatsapp' || text === 'wa' || text.includes('whatsapp')) {
-                                    if (text.length < minLength) {
-                                        minLength = text.length;
-                                        bestEl = el;
-                                    }
-                                }
-                            }
-                            if (bestEl) {
-                                bestEl.click();
-                                return true;
-                            }
-                            return false;
-                        """
-                        
-                        wa_clicked = False
-                        for _ in range(20): # 20 * 0.5s = 10s max wait
-                            if driver.execute_script(click_whatsapp_js):
-                                wa_clicked = True
-                                break
-                            time.sleep(0.5)
-                            
-                        if wa_clicked:
-                            log.info("👉 Berhasil memilih metode WhatsApp. Menunggu pengiriman...")
-                            time.sleep(5)
-                            last_resend_time = time.time()  # Reset resend timer when WA OTP is triggered
-                        else:
-                            log.warning("⚠️ Opsi WhatsApp tidak ditemukan di menu.")
-                    else:
-                        log.warning("⚠️ Tombol 'Metode verifikasi lain' tidak ditemukan.")
-                    
-                    wa_otp_triggered = True
-                    start_wait = time.time()
-                    continue
+            # Or check for verification page elements/texts
+            is_verification_page = driver.execute_script("""
+                var texts = [
+                    "pilih cara verifikasi", "select verification method",
+                    "pilih metode verifikasi", "verify to log in",
+                    "verifikasi untuk masuk", "masukkan kode", "enter code",
+                    "kode verifikasi", "verification code"
+                ];
+                var bodyText = (document.body.innerText || "").toLowerCase();
+                return texts.some(function(t) { return bodyText.includes(t); });
+            """)
 
-                log.warning(f"⚠️ [OTP REQUIRED] Akun '{username or phone}' memerlukan kode verifikasi OTP.")
-                otp_code = get_otp_code(username or phone, phone)
-                if otp_code:
-                    log.info(f"⌨️  [AUTH] Menginput OTP: {otp_code}")
-                    try:
-                        otp_input.click()
-                        otp_input.send_keys(Keys.CONTROL + "a", Keys.BACKSPACE)
-                        human_like_typing(otp_input, otp_code)
-                        time.sleep(0.5)
-                        otp_input.send_keys(Keys.ENTER)
-                    except Exception as err:
-                        log.warning(f"⚠️ Gagal memasukkan OTP ke elemen browser: {err}")
-                    time.sleep(5)
-                    last_resend_time = time.time()  # Reset resend timer when OTP is successfully inputted
-                else:
-                    log.info("ℹ️ Menunggu 10 detik untuk input langsung di browser...")
-                    time.sleep(10)
-                otp_attempted = True
-                
-                # Check resend button if needed
-                if time.time() - last_resend_time > 65:
-                    try:
-                        btns = driver.find_elements(By.XPATH, "//button[contains(., 'Kirim ulang') or contains(., 'Resend')]")
-                        for b in btns:
-                            if b.is_displayed() and not any(c.isdigit() for c in b.text):
-                                b.click()
-                                last_resend_time = time.time()
-                                log.info("🔄 Mengirim ulang kode OTP...")
-                                break
-                    except: pass
+            if otp_input or is_verification_page:
+                log.error(f"❌ [AUTH] OTP or verification is required for '{username or phone}'. Aborting to prevent triggering OTP.")
+                return False
+        except Exception:
+            pass
+        time.sleep(1)
 
-            if otp_attempted or not otp_input:
-                for cs in [
-                    "//button[contains(., 'Lanjutkan')]",
-                    "//button[contains(., 'Confirm')]",
-                    "//button[contains(., 'Verifikasi')]",
-                    "//button[contains(., 'Konfirmasi')]",
-                    "//button[contains(., 'Selanjutnya')]",
-                    "//button[contains(., 'Masuk')]",
-                    "//button[contains(., 'Next')]",
-                    ".shopee-button--primary",
-                    "button.shopee-button"
-                ]:
-                    btns = driver.find_elements(By.XPATH, cs) if cs.startswith("//") else driver.find_elements(By.CSS_SELECTOR, cs)
-                    for b in btns:
-                        if b.is_displayed() and "ulang" not in b.text.lower():
-                            b.click(); time.sleep(1); break
-        except: pass
-        time.sleep(2)
+    # Re-verify that we successfully navigated away from login/authenticate pages
+    current_url = driver.current_url.lower()
+    if "authenticate" in current_url or "verify" in current_url or "login" in current_url:
+        log.error("❌ [AUTH] Login did not redirect to dashboard and is still on authentication page. Aborting.")
+        return False
 
     return True
 
