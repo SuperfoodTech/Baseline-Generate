@@ -21,9 +21,9 @@ Environment=PYTHONUNBUFFERED=1
 # Jalankan npm start
 ExecStart=/usr/bin/npm start
 
-# Batasi memory (penting di server 2GB)
-MemoryMax=500M
-MemoryHigh=400M
+# Batasi memory — bot spawn child proses Python+Chrome saat ada command
+MemoryMax=1200M
+MemoryHigh=1G
 
 # Restart otomatis jika crash
 Restart=always
