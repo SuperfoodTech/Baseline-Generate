@@ -23,6 +23,8 @@ git pull origin main
 
 echo ""
 echo -e "${YELLOW}[2/3] Restarting services...${NC}"
+# Bersihkan seluruh sisa zombie chrome/chromedriver di background
+sudo killall -q -9 chrome google-chrome chromedriver chrome-headless-shell || true
 sudo systemctl restart ofd-bot shopee-warmer
 
 echo ""
