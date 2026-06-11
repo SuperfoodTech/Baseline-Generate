@@ -184,9 +184,12 @@ client.on('interactionCreate', async interaction => {
                 const lower = logLine.toLowerCase();
                 let newPhase = null;
 
-                // DETEKSI KEGAGALAN DARI LOG
-                if (lower.includes('failed') || lower.includes('❌ gagal') || lower.includes('✗ [account]') || lower.includes('error')) {
-                    isTrulyFailed = true;
+                // DETEKSI KEGAGALAN DARI LOG (Grab, Shopee, GoFood)
+                if (lower.includes('failed') || lower.includes('error') || lower.includes('❌') || lower.includes('✗')) {
+                    // Filter false positives jika ada
+                    if (!lower.includes('0 errors') && !lower.includes('no error')) {
+                        isTrulyFailed = true;
+                    }
                 }
 
                 let matchedIndex = -1;
