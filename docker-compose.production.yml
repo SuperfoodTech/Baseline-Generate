@@ -1,0 +1,103 @@
+# =============================================================================
+# docker-compose.production.yml
+# Mode PRODUCTION — build sekali di server, tanpa Docker Hub.
+#
+# PERTAMA KALI (atau setelah Dockerfile/deps/package berubah):
+#   docker compose -f docker-compose.production.yml up -d --build
+#
+# DEPLOY RUTIN setelah git pull (kode, chrome profile, session diperbarui):
+#   ./deploy.sh
+#   — atau manual:
+#   git pull origin main && docker compose -f docker-compose.production.yml restart
+#
+# Volume strategy:
+#   - ./src                → di-mount penuh dari host (kode + chrome profile + session)
+#   - venv_data            → named volume (melindungi .venv dari overwrite host mount)
+#   - ./discord-bot-form   → di-mount dari host (kode bot)
+#   - node_modules_data    → named volume (melindungi node_modules)
+# =============================================================================
+
+version: '3.8'
+
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: task-weekly-bot:production
+    container_name: ofd_discord_bot
+    init: true
+    restart: unless-stopped
+    working_dir: /app/discord-bot-form
+    command: npm start
+    env_file:
+      - ./discord-bot-form/.env
+    volumes:
+      # ── Seluruh src dari host: kode Python, chrome profile, session JSON ─
+      - ./src:/app/src
+      # ── .venv di-protect pakai named volume (tidak di-overwrite host) ────
+      - venv_data:/app/src/.venv
+      # ── Kode Discord bot dari host ───────────────────────────────────────
+      - ./discord-bot-form:/app/discord-bot-form
+      # ── node_modules di-protect pakai named volume ───────────────────────
+      - node_modules_data:/app/discord-bot-form/node_modules
+      # ── Shopee session monitor dari host ─────────────────────────────────
+      - ./shopee-session-monitor:/app/shopee-session-monitor
+      # ── Data tambahan & Docker socket ────────────────────────────────────
+      - ./data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - db
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=superfood_admin
+      - DB_PASS=superfood_password
+      - DB_NAME=srs_db
+      - HEADLESS=true
+      - TZ=Asia/Jakarta
+
+  warmer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: task-weekly-warmer:production
+    container_name: shopee_session_warmer
+    init: true
+    restart: unless-stopped
+    working_dir: /app
+    command: uv run --project src shopee-session-monitor/warmer.py
+    env_file:
+      - ./shopee-session-monitor/.env
+    volumes:
+      # ── Seluruh src dari host: kode Python, chrome profile, session JSON ─
+      - ./src:/app/src
+      # ── .venv di-protect pakai named volume ──────────────────────────────
+      - venv_data:/app/src/.venv
+      # ── Shopee session monitor dari host ─────────────────────────────────
+      - ./shopee-session-monitor:/app/shopee-session-monitor
+    environment:
+      - PYTHONUNBUFFERED=1
+      - HEADLESS=true
+      - TZ=Asia/Jakarta
+      - OFD_DISCORD_MODE=1
+
+  db:
+    image: postgres:15
+    container_name: srs_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: superfood_admin
+      POSTGRES_PASSWORD: superfood_password
+      POSTGRES_DB: srs_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./src/database:/docker-entrypoint-initdb.d
+
+volumes:
+  postgres_data:
+  venv_data:          # melindungi Python .venv dari overwrite host mount
+  node_modules_data:  # melindungi node_modules dari overwrite host mount
