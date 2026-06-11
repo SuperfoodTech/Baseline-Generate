@@ -680,7 +680,13 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
                                 break
                     except Exception:
                         pass
-                    managed_browser = await p_inst.chromium.launch(headless=headless_env)
+                    managed_browser = await p_inst.chromium.launch(
+                        headless=headless_env,
+                        args=[
+                            "--disable-extensions",
+                            "--disable-component-update"
+                        ]
+                    )
                     browser = managed_browser
                     p = p_inst
     
