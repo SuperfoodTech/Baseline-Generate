@@ -1,0 +1,34 @@
+[Unit]
+Description=OFD Discord Bot
+After=network.target srs-postgres.service
+Requires=srs-postgres.service
+
+[Service]
+Type=simple
+User=akbar
+WorkingDirectory=/home/akbar/task-weekly/discord-bot-form
+EnvironmentFile=/home/akbar/task-weekly/discord-bot-form/.env
+Environment=NODE_ENV=production
+Environment=TZ=Asia/Jakarta
+Environment=DB_HOST=localhost
+Environment=DB_PORT=5432
+Environment=DB_USER=superfood_admin
+Environment=DB_PASS=superfood_password
+Environment=DB_NAME=srs_db
+Environment=HEADLESS=true
+Environment=PYTHONUNBUFFERED=1
+
+# Jalankan npm start
+ExecStart=/usr/bin/npm start
+
+# Restart otomatis jika crash
+Restart=always
+RestartSec=10
+
+# Log output
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ofd-bot
+
+[Install]
+WantedBy=multi-user.target
