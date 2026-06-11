@@ -1691,6 +1691,10 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
 
             # ── Step 6: Final Token Extraction ──
             t, eid = _trigger_and_extract_tokens(driver)
+            if not eid and active_id and active_id != "None":
+                log.info(f"⚠️ [SESSION] Token extraction returned empty entity_id. Using fallback active_id: {active_id}")
+                eid = active_id
+                
             if not t:
                 log.warning("⚠️ Token extraction failed.")
                 driver.quit()
