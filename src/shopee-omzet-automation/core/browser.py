@@ -1731,8 +1731,11 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
     log.error("❌ Max login retries reached.")
     return None
 
-def refresh_tokens(driver) -> dict:
+def refresh_tokens(driver, fallback_entity_id=None) -> dict:
     t, eid = _trigger_and_extract_tokens(driver)
+    if not eid and fallback_entity_id and fallback_entity_id != "None":
+        log.info(f"⚠️ [SESSION] refresh_tokens: Using fallback_entity_id: {fallback_entity_id}")
+        eid = fallback_entity_id
     all_c = get_all_cookies_dict(driver)
     save_session(t, eid or "", extra_cookies=all_c)
     return {"shopee_tob_token": t, "shopee_tob_entity_id": eid or "", "extra_cookies": all_c}

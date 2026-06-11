@@ -74,14 +74,7 @@ LAST_ACTIVE = time.time()
 HEARTBEAT_INTERVAL_SECONDS = 30   # Cek setiap 30 detik
 STUCK_THRESHOLD_SECONDS = 180     # 3 menit tanpa aktivitas = stuck
 
-# ── OFD Job Lock Config ───────────────────────────────────────────────────────
-# run_pipeline.js menulis file ini ke shared volume saat pipeline OFD dimulai,
-# dan menghapusnya saat pipeline selesai. Warmer membaca file ini untuk tahu
-# bahwa Docker pause bersifat intentional (bukan stuck).
-# Path harus sama dengan yang digunakan run_pipeline.js (shared volume).
-OFD_JOB_LOCK_FILE = Path(os.getenv("OFD_JOB_LOCK_FILE", "").strip() or "") or (
-    DATA_DIR / "ofd_job.lock"
-)
+
 
 # ── Logger ─────────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -96,6 +89,15 @@ log = logging.getLogger("warmer")
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 DATA_DIR          = OMZET_DIR / "data"   # Where session_*.json & chrome_profile_* live
+
+# ── OFD Job Lock Config ───────────────────────────────────────────────────────
+# run_pipeline.js menulis file ini ke shared volume saat pipeline OFD dimulai,
+# dan menghapusnya saat pipeline selesai. Warmer membaca file ini untuk tahu
+# bahwa Docker pause bersifat intentional (bukan stuck).
+# Path harus sama dengan yang digunakan run_pipeline.js (shared volume).
+_ofd_env = os.getenv("OFD_JOB_LOCK_FILE", "").strip()
+OFD_JOB_LOCK_FILE = Path(_ofd_env) if _ofd_env else (DATA_DIR / "ofd_job.lock")
+
 CREDS_CACHE_PATH  = PROJECT_ROOT / "data" / "shopee_credentials_cache.csv"
 CREDS_URL         = (
     "https://docs.google.com/spreadsheets/d/e/"
@@ -620,7 +622,10 @@ def warm_account(acc: dict) -> bool:
 
         # ── 2. Navigate to Business Hours — triggers fresh tob_token ───────
         log.info(f"  │  [{username}] 🔄 Navigasi ke Business Hours untuk refresh token...")
-        session_tokens = browser.refresh_tokens(driver)
+        
+        # Ekstrak valid entity_id dari session_data (jika ada) untuk fallback
+        valid_entity_id = session_data.get("shopee_tob_entity_id")
+        session_tokens = browser.refresh_tokens(driver, fallback_entity_id=valid_entity_id)
 
         tob_token  = session_tokens.get("shopee_tob_token", "")
         entity_id  = session_tokens.get("shopee_tob_entity_id", "")
