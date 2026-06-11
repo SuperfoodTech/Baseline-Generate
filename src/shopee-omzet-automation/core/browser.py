@@ -942,20 +942,20 @@ def auto_switch_merchant(driver, target_name, is_retry=False):
 
         js_selector_click = """
             var targetName = arguments[0].toLowerCase().trim();
-            var labels = document.querySelectorAll('.merchantInfo, .shop-name, .merchant-name, span, div, li, p');
+            // Ambil elemen wrapper terluar yang memiliki event onClick (seperti .listItem)
+            var listItems = document.querySelectorAll('.listItem, .merchant-item, li[class*="item"]');
             var firstMerchant = null;
             var foundTarget = false;
 
-            for (var i = 0; i < labels.length; i++) {
-                var el = labels[i];
-                var text = (el.innerText || "").toLowerCase().trim();
+            for (var i = 0; i < listItems.length; i++) {
+                var el = listItems[i];
+                var text = (el.innerText || el.textContent || "").toLowerCase().trim();
                 
-                // Track first clickable-looking merchant
-                if (!firstMerchant && (el.classList.contains('merchantInfo') || el.classList.contains('shop-name'))) {
+                if (!firstMerchant && text.length > 0) {
                     firstMerchant = el;
                 }
 
-                if (text === targetName || (text.includes(targetName) && el.children.length < 3)) {
+                if (text === targetName || text.includes(targetName)) {
                     el.scrollIntoView({block: 'center'});
                     el.click();
                     foundTarget = true;
@@ -963,28 +963,15 @@ def auto_switch_merchant(driver, target_name, is_retry=False):
                 }
             }
             
-            // Fallback: If target not found, click the first one to get to dashboard
+            // Fallback: Jika target tidak ditemukan, klik merchant pertama
+            // untuk setidaknya masuk ke dashboard agar bisa bypass halaman ini.
             if (!foundTarget && firstMerchant) {
                 firstMerchant.scrollIntoView({block: 'center'});
                 firstMerchant.click();
                 foundTarget = true;
             }
 
-            if (!foundTarget) return false;
-            
-            // 2. Click the confirmation button (Masuk / Konfirmasi)
-            setTimeout(() => {
-                var btns = document.querySelectorAll('button');
-                for (var b of btns) {
-                    var bText = (b.innerText || "").toLowerCase();
-                    if (bText.includes('masuk') || bText.includes('konfirmasi') || bText.includes('lanjutkan') || bText.includes('ok')) {
-                        b.click();
-                        break;
-                    }
-                }
-            }, 600);
-            
-            return true;
+            return foundTarget;
         """
 
         # PHASE 1: Handle initial merchant selector page right after login
@@ -997,7 +984,9 @@ def auto_switch_merchant(driver, target_name, is_retry=False):
                 if driver.execute_script(js_selector_click, target_name):
                     log.debug(f"  ✅ Triggered selection on selector page. Waiting for dashboard...")
                     try:
-                        wait.until(lambda d: "/food/dashboard" in d.current_url)
+                        # PENTING: Gunakan timeout 30 detik karena loading dashboard Shopee 
+                        # pertama kali bisa memakan waktu 10-20 detik.
+                        WebDriverWait(driver, 30).until(lambda d: "/food/dashboard" in d.current_url)
                         time.sleep(3)
                         # Re-check current name after landing on dashboard
                         try:
@@ -1037,7 +1026,8 @@ def auto_switch_merchant(driver, target_name, is_retry=False):
                 quick_wait = WebDriverWait(driver, 3)
                 try:
                     switch_trigger = quick_wait.until(EC.presence_of_element_located((By.XPATH, "//span[contains(text(), 'Pilih Merchant Lain') or contains(text(), 'Switch Merchant')]")))
-                    actions.move_to_element(switch_trigger).perform()
+                    # Harus di-click agar sub-menu daftar merchant muncul dengan benar (tidak sekadar hover)
+                    actions.move_to_element(switch_trigger).click().perform()
                     dropdown_opened = True
                     time.sleep(1)
                 except:
@@ -1103,15 +1093,13 @@ def auto_switch_merchant(driver, target_name, is_retry=False):
                 if switch_attempt == 2:
                     msg = f"Nama outlet '{target_name}' tidak terdaftar atau belum ditambahkan (invite) di akun Shopee ini."
                     log.error(f"❌ {msg}")
-                    # Mengirimkan error ke Discord HANYA setelah semua recovery habis (is_retry=True)
-                    # Ini mencegah notifikasi panik prematur saat pipeline masih bisa auto-recover.
-                    if is_retry:
-                        send_discord_error(
-                            platform="Shopee", 
-                            merchant=target_name, 
-                            error_type="SYSTEM_ERROR", 
-                            message=msg
-                        )
+                    # Mengirimkan error ke Discord secara langsung karena ini fatal dan kita akan langsung abort.
+                    send_discord_error(
+                        platform="Shopee", 
+                        merchant=target_name, 
+                        error_type="SYSTEM_ERROR", 
+                        message=msg
+                    )
                     # Lempar error spesifik agar pipeline terluar menangkapnya
                     raise ValueError(f"MERCHANT_NOT_FOUND: {target_name}")
                 continue # Ulangi proses klik profil dan buka dropdown dari awal
@@ -1162,9 +1150,8 @@ def auto_switch_merchant(driver, target_name, is_retry=False):
                     return False
                 # Jika belum attempt terakhir, loop akan berputar dan mengulang klik dari awal
     except Exception as e:
-        log.error(f"❌ Auto-switch failed: {e}")
-        return False
-    except Exception as e:
+        if "MERCHANT_NOT_FOUND" in str(e):
+            raise e
         log.error(f"❌ Auto-switch failed: {e}")
         return False
 
@@ -1516,19 +1503,12 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
                     bypass_js = """
                         var loaders = document.querySelectorAll('.ant-spin, [class*="loading"], .shopee-loading, .ant-spin-nested-loading');
                         loaders.forEach(el => el.remove());
-                        var target = document.querySelector('.merchantInfo, .ant-list-item, .shop-name');
+                        // Klik elemen wrapper .listItem (bukan inner .merchantInfo) 
+                        // karena event onClick menempel di wrapper terluar.
+                        var target = document.querySelector('.listItem, .merchant-item, .ant-list-item');
                         if (target) {
                             target.scrollIntoView({block: 'center'});
                             target.click();
-                            setTimeout(() => {
-                                var btns = document.querySelectorAll('button');
-                                for (var b of btns) {
-                                    var bText = (b.innerText || "").toLowerCase();
-                                    if (bText.includes('masuk') || bText.includes('konfirmasi') || bText.includes('lanjutkan') || bText.includes('ok') || bText.includes('gabung')) {
-                                        b.click();
-                                    }
-                                }
-                            }, 500);
                             return true;
                         }
                         return false;
