@@ -209,6 +209,32 @@ def _deliberate_logout_and_relogin(
     """
     log.info("🔄 [LOGOUT-RELOGIN] Initiating deliberate logout for clean session recovery...")
     try:
+        # Check if already on login/authenticate page (meaning we are redirected or logged out already)
+        url_now = driver.current_url.lower()
+        if "login" in url_now or "authenticate" in url_now:
+            log.info("  🛡️ Browser is already on the login/authenticate page. Skipping UI dropdown logout.")
+            try:
+                auth_cookies = ['SPC_ST', 'SPC_U', 'SPC_T_ID', 'SPC_T_IV']
+                for cookie_name in auth_cookies:
+                    try: driver.delete_cookie(cookie_name)
+                    except: pass
+                driver.execute_script("window.localStorage.clear(); window.sessionStorage.clear();")
+            except:
+                pass
+            log.info("  🌐 Attempting direct login...")
+            if not (username and password) and not phone:
+                log.warning("  ⚠️ No credentials provided — cannot complete login.")
+                return False
+            wait = WebDriverWait(driver, 30)
+            login_ok = _perform_login(driver, wait, username=username, password=password, phone=phone)
+            if login_ok:
+                time.sleep(3)
+                url_after = driver.current_url.lower()
+                if "dashboard" in url_after or "merchant-selector" in url_after or "onboarding" in url_after:
+                    log.info("  ✅ [LOGOUT-RELOGIN] Credential login succeeded directly from login page!")
+                    return True
+            return False
+
         # ── Step 1: Navigate to a page that has the profile dropdown ───
         if "/food/" not in driver.current_url and "/settings/" not in driver.current_url:
             driver.get(PARTNER_DASHBOARD)
@@ -1648,11 +1674,16 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
                 else:
                     log.info(f"✅ [MERCHANT] Already as target: {active_name}")
             else:
-                if active_id and active_id != "None":
+                is_invalid_name = (
+                    not active_name or
+                    active_name.lower().strip() == "unknown merchant" or
+                    active_name.lower().strip() == "admin"
+                )
+                if active_id and active_id != "None" and not is_invalid_name:
                     log.info(f"📍 [MERCHANT] Current: {active_name} (ID: {active_id})")
                     do_switch = False
                 else:
-                    log.info("📍 [MERCHANT] No active merchant detected (UI Kosong/Corrupt). Redirecting...")
+                    log.info(f"📍 [MERCHANT] Invalid active merchant detected (Name: {active_name}, ID: {active_id}). Redirecting/Switching...")
                     do_switch = True
 
             if do_switch:
@@ -1678,7 +1709,7 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
                     #   1. Click profile → select 'Log Out' from dropdown
                     #   2. Confirm logout
                     #   3. Chrome profile auto-logs back in (no OTP)
-                    log.info("🔄 [MERCHANT] Unknown merchant — initiating logout/relogin recovery...")
+                    log.info("🔄 [MERCHANT] Unknown/Admin/Missing merchant — initiating logout/relogin recovery...")
                     recovered = _deliberate_logout_and_relogin(
                         driver,
                         username=username,
