@@ -193,6 +193,18 @@ client.on('interactionCreate', async interaction => {
                     }
                 }
 
+                // DETEKSI RECOVERY / SUCCESS SEJATI (Membatalkan error sementara)
+                // Fitur ini sangat penting karena Shopee dan Grab memiliki sistem auto-retry di dalamnya.
+                // Jika script Python berhasil pulih (recover) dari error sebelumnya, kita harus mereset flag kegagalan.
+                if (
+                    lower.includes('[download] success') || 
+                    lower.includes('recovery successful') || 
+                    lower.includes('all accounts processed successfully') ||
+                    lower.includes('juga di-export ke excel raw per outlet')
+                ) {
+                    isTrulyFailed = false;
+                }
+
                 let matchedIndex = -1;
                 if (lower.includes(platform) && (lower.includes('pipeline') || lower.includes('automation') || lower.includes('fetching') || lower.includes('scrapperv2'))) {
                     matchedIndex = 0;
