@@ -15,9 +15,9 @@ Environment=OFD_DISCORD_MODE=1
 # Jalankan warmer langsung dengan uv
 ExecStart=/usr/local/bin/uv run --project src shopee-session-monitor/warmer.py
 
-# Batasi memory — Chrome bisa makan 400-600MB
-MemoryMax=800M
-MemoryHigh=700M
+# Batasi memory — Chrome bisa spike 400-800MB saat warming banyak akun
+MemoryMax=1G
+MemoryHigh=900M
 
 # Restart otomatis jika crash
 Restart=always
