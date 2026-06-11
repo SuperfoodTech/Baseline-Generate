@@ -1047,13 +1047,19 @@ def auto_switch_merchant(driver, target_name, is_retry=False):
                         dropdown_opened = True
                         time.sleep(1)
             except Exception as e:
-                log.warning(f"  ⚠️ Failed to trigger merchant menu: {e}")
+                err_str = str(e)
+                log.warning(f"  ⚠️ Failed to trigger merchant menu: {err_str}")
+                # Jika elemen .merchantName sama sekali tidak ditemukan (Timeout), 
+                # kemungkinan besar sesi sudah logout atau halaman corrupt. Fail fast!
+                if "TimeoutException" in err_str or "merchantName" not in driver.page_source:
+                    log.warning("  ⚠️ [STALE SESSION] Elemen profil (.merchantName) tidak ditemukan. Sesi kemungkinan kedaluwarsa.")
+                    return False
+                    
                 if switch_attempt == 2:
                     return False
                 continue
 
             # DETEKSI SESI STALE: Jika dropdown tidak terbuka, sesi sudah kedaluwarsa.
-            # Tidak ada gunanya mengulang klik yang sama 3x (hemat ~46 detik).
             # Langsung return False agar pipeline memicu recovery (logout + login ulang).
             if not dropdown_opened:
                 log.warning(f"  ⚠️ [STALE SESSION] Dropdown profil tidak terbuka setelah klik — sesi kemungkinan kedaluwarsa.")
@@ -1633,6 +1639,9 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
             if target_name:
                 if active_name.lower() != target_name.lower():
                     log.info(f"📍 [MERCHANT] Current: {active_name} | Target: {target_name}. Switching...")
+                    do_switch = True
+                elif not active_id or active_id == "None":
+                    log.info(f"⚠️ [MERCHANT] Target is {active_name}, but active_id is missing! Forcing switch to hydrate session cookies...")
                     do_switch = True
                 else:
                     log.info(f"✅ [MERCHANT] Already as target: {active_name}")
