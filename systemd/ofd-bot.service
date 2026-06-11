@@ -21,6 +21,10 @@ Environment=PYTHONUNBUFFERED=1
 # Jalankan npm start
 ExecStart=/usr/bin/npm start
 
+# Batasi memory (penting di server 2GB)
+MemoryMax=500M
+MemoryHigh=400M
+
 # Restart otomatis jika crash
 Restart=always
 RestartSec=10
