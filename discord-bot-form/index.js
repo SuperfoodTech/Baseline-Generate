@@ -212,7 +212,7 @@ client.on('interactionCreate', async interaction => {
             activeReRuns.set(taskId, pipeline.proc);
 
             pipeline.promise.then(async (result) => {
-                const isCancelled = pipeline.proc.cancelled;
+                const isCancelled = pipeline.proc ? pipeline.proc.cancelled : false;
                 activeReRuns.delete(taskId);
                 
                 modalCmd.releaseJob(jobKey);
@@ -221,7 +221,7 @@ client.on('interactionCreate', async interaction => {
                     return; // statusMsg sudah diupdate oleh handler cancel_rerun_
                 }
 
-                if (result.success && !isTrulyFailed) {
+                if (result.success) {
                     let embeds = [];
                     let components = [];
                     
@@ -281,24 +281,33 @@ client.on('interactionCreate', async interaction => {
                         }
                     }
 
-                    // Disable tombol Re-Run di pesan original karena sudah sukses
-                    if (interaction.message && interaction.message.components) {
-                        try {
-                            const newComponents = interaction.message.components.map(row => {
-                                const newRow = new ActionRowBuilder();
-                                row.components.forEach(btn => {
-                                    if (btn.customId === interaction.customId) {
-                                        newRow.addComponents(ButtonBuilder.from(btn).setDisabled(true).setLabel(`✅ Berhasil: ${platform.toUpperCase()}`));
-                                    } else {
-                                        newRow.addComponents(ButtonBuilder.from(btn));
-                                    }
+                    // Disable tombol Re-Run di pesan original karena sudah sukses HANYA JIKA TIDAK GAGAL
+                    if (!isTrulyFailed) {
+                        if (interaction.message && interaction.message.components) {
+                            try {
+                                const newComponents = interaction.message.components.map(row => {
+                                    const newRow = new ActionRowBuilder();
+                                    row.components.forEach(btn => {
+                                        if (btn.customId === interaction.customId) {
+                                            newRow.addComponents(ButtonBuilder.from(btn).setDisabled(true).setLabel(`✅ Berhasil: ${platform.toUpperCase()}`));
+                                        } else {
+                                            newRow.addComponents(ButtonBuilder.from(btn));
+                                        }
+                                    });
+                                    return newRow;
                                 });
-                                return newRow;
-                            });
-                            await interaction.message.edit({ components: newComponents });
-                        } catch (err) {
-                            console.error('Gagal update pesan original Re-Run:', err);
+                                await interaction.message.edit({ components: newComponents });
+                            } catch (err) {
+                                console.error('Gagal update pesan original Re-Run:', err);
+                            }
                         }
+                    } else {
+                        // Jika selesai tapi log menyatakan gagal, biarkan tombol aktif dan tambahkan info
+                        const warningEmbed = new EmbedBuilder()
+                            .setTitle('⚠️ ADA KEGAGALAN TERDETEKSI DI LOG')
+                            .setDescription(`Meskipun pipeline selesai, sistem mendeteksi adanya error/kegagalan spesifik di log aplikator. Tombol Re-Run pada pesan awal tetap dibiarkan aktif untuk dicoba lagi.`)
+                            .setColor(0xFFA500);
+                        embeds.push(warningEmbed);
                     }
 
                     await statusMsg.edit({
@@ -312,7 +321,7 @@ client.on('interactionCreate', async interaction => {
                     });
                 } else {
                     await statusMsg.edit({
-                        content: `❌ **Re-Run Gagal!** Proses **${formData.aplikator}** berhenti dengan error (Exit Code: ${result.exitCode}) atau log menyatakan kegagalan.`,
+                        content: `❌ **Re-Run Gagal!** Proses **${formData.aplikator}** berhenti dengan error (Exit Code: ${result.exitCode}).`,
                         embeds: [], components: []
                     });
                 }
