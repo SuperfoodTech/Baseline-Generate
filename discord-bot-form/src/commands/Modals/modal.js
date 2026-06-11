@@ -114,6 +114,11 @@ const makeProgressEmbed = (step, title, description, fields = []) => {
 };
 
 module.exports = {
+    activeJobs,
+    buildJobKey,
+    acquireJob,
+    releaseJob,
+
     data: new SlashCommandBuilder()
         .setName('start')
         .setDescription('Kirim formulir Laporan Baseline Performance'),

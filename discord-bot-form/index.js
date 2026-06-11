@@ -5,6 +5,7 @@ const { Client, Collection, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, B
 const { startErrorPoller, setLastChannelId } = require('./src/errorPoller');
 const { runPipeline } = require('./bridge/run_pipeline');
 const recentTasks = require('./src/taskCache');
+const modalCmd = require('./src/commands/Modals/modal.js');
 
 const activeReRuns = new Map();
 
@@ -107,6 +108,14 @@ client.on('interactionCreate', async interaction => {
             else if (platform === 'gofood') formData.aplikator = 'GoFood';
             else formData.aplikator = platform;
 
+            const jobKey = modalCmd.buildJobKey(formData.outlet, formData.aplikator, formData.tanggalMulai, formData.tanggalSelesai);
+            if (!modalCmd.acquireJob(jobKey, interaction.user.id, interaction.user.username)) {
+                return interaction.reply({
+                    content: `⚠️ **Sistem Sibuk!** Proses untuk **${formData.aplikator}** (Outlet: ${formData.outlet}) sedang berjalan. Harap tunggu hingga proses sebelumnya selesai.`,
+                    ephemeral: true
+                });
+            }
+
             // Force clear all local CSV caches to guarantee fresh data download
             const { execSync } = require('child_process');
             try {
@@ -168,11 +177,17 @@ client.on('interactionCreate', async interaction => {
             });
 
             let lastUpdate = Date.now();
+            let isTrulyFailed = false;
             
             // Run pipeline
             const pipeline = runPipeline(formData, async (logLine) => {
                 const lower = logLine.toLowerCase();
                 let newPhase = null;
+
+                // DETEKSI KEGAGALAN DARI LOG
+                if (lower.includes('failed') || lower.includes('❌ gagal') || lower.includes('✗ [account]') || lower.includes('error')) {
+                    isTrulyFailed = true;
+                }
 
                 let matchedIndex = -1;
                 if (lower.includes(platform) && (lower.includes('pipeline') || lower.includes('automation') || lower.includes('fetching') || lower.includes('scrapperv2'))) {
@@ -197,8 +212,16 @@ client.on('interactionCreate', async interaction => {
             activeReRuns.set(taskId, pipeline.proc);
 
             pipeline.promise.then(async (result) => {
+                const isCancelled = pipeline.proc.cancelled;
                 activeReRuns.delete(taskId);
-                if (result.success) {
+                
+                modalCmd.releaseJob(jobKey);
+
+                if (isCancelled) {
+                    return; // statusMsg sudah diupdate oleh handler cancel_rerun_
+                }
+
+                if (result.success && !isTrulyFailed) {
                     let embeds = [];
                     let components = [];
                     
@@ -258,6 +281,26 @@ client.on('interactionCreate', async interaction => {
                         }
                     }
 
+                    // Disable tombol Re-Run di pesan original karena sudah sukses
+                    if (interaction.message && interaction.message.components) {
+                        try {
+                            const newComponents = interaction.message.components.map(row => {
+                                const newRow = new ActionRowBuilder();
+                                row.components.forEach(btn => {
+                                    if (btn.customId === interaction.customId) {
+                                        newRow.addComponents(ButtonBuilder.from(btn).setDisabled(true).setLabel(`✅ Berhasil: ${platform.toUpperCase()}`));
+                                    } else {
+                                        newRow.addComponents(ButtonBuilder.from(btn));
+                                    }
+                                });
+                                return newRow;
+                            });
+                            await interaction.message.edit({ components: newComponents });
+                        } catch (err) {
+                            console.error('Gagal update pesan original Re-Run:', err);
+                        }
+                    }
+
                     await statusMsg.edit({
                         content: ``,
                         embeds: embeds.length ? embeds : [{
@@ -269,12 +312,13 @@ client.on('interactionCreate', async interaction => {
                     });
                 } else {
                     await statusMsg.edit({
-                        content: `❌ **Re-Run Gagal!** Proses **${formData.aplikator}** berhenti dengan error (Exit Code: ${result.exitCode}).`,
+                        content: `❌ **Re-Run Gagal!** Proses **${formData.aplikator}** berhenti dengan error (Exit Code: ${result.exitCode}) atau log menyatakan kegagalan.`,
                         embeds: [], components: []
                     });
                 }
             }).catch(async (err) => {
                 activeReRuns.delete(taskId);
+                modalCmd.releaseJob(jobKey);
                 await statusMsg.edit({
                     content: `❌ **Re-Run Error Tidak Terduga:** ${err.message}`,
                     embeds: [], components: []
@@ -285,16 +329,18 @@ client.on('interactionCreate', async interaction => {
             const proc = activeReRuns.get(taskId);
             
             if (proc && !proc.killed) {
+                proc.cancelled = true;
                 try {
-                    process.kill(-proc.pid, 'SIGINT'); // Kill process group
+                    process.kill(-proc.pid, 'SIGKILL'); // Kill process group forcefully
                 } catch (e) {
-                    try { proc.kill('SIGINT'); } catch (err) {}
+                    try { proc.kill('SIGKILL'); } catch (err) {}
                 }
                 activeReRuns.delete(taskId);
                 
-                await interaction.reply({
-                    content: '⏹️ **Sinyal pembatalan dikirim.** Proses Re-Run akan segera dihentikan.',
-                    ephemeral: true
+                await interaction.update({
+                    content: '⏹️ **Proses Re-Run dibatalkan secara paksa.**',
+                    embeds: [],
+                    components: []
                 });
             } else {
                 await interaction.reply({
