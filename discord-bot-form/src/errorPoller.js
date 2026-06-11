@@ -11,6 +11,10 @@ function setLastChannelId(id) {
     lastChannelId = id;
 }
 
+function clearAlertCache() {
+    alertCache.clear();
+}
+
 async function getNotificationChannel(client, channelIdOverride = null) {
     const targetId = channelIdOverride || lastChannelId;
     if (targetId) {
@@ -105,4 +109,4 @@ function startErrorPoller(client) {
     }, 3000);
 }
 
-module.exports = { startErrorPoller, getNotificationChannel, setLastChannelId };
+module.exports = { startErrorPoller, getNotificationChannel, setLastChannelId, clearAlertCache };

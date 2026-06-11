@@ -2,7 +2,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { Client, Collection, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const { startErrorPoller, setLastChannelId } = require('./src/errorPoller');
+const { startErrorPoller, setLastChannelId, clearAlertCache } = require('./src/errorPoller');
 const { runPipeline } = require('./bridge/run_pipeline');
 const recentTasks = require('./src/taskCache');
 const modalCmd = require('./src/commands/Modals/modal.js');
@@ -126,8 +126,9 @@ client.on('interactionCreate', async interaction => {
                 content: `🔄 Sedang mengantre proses **Re-Run** untuk **${formData.aplikator}** (Outlet: ${formData.outlet})... Caches telah dihapus. Pantau *progress* di bawah ini.`
             });
 
-            // Re-bind error poller to this channel
+            // Re-bind error poller to this channel and reset spam protection cache
             setLastChannelId(interaction.channelId);
+            clearAlertCache();
 
             const bdDisplay = formData.bd ? formData.bd.split('|').join(', ') : 'Semua BD';
             const steps = [
