@@ -134,39 +134,27 @@ function firstValue(str) {
  */
 function controlWarmer(action, onLog = console.log) {
     return new Promise((resolve) => {
-        const options = {
-            socketPath: '/var/run/docker.sock',
-            path: `/v1.41/containers/shopee_session_warmer/${action}`,
-            method: 'POST',
-            headers: {
-                'Host': 'localhost',
-                'Content-Length': 0
-            }
+        const { exec } = require('child_process');
+        const cmdMap = {
+            'pause': 'sudo systemctl stop shopee-warmer',
+            'unpause': 'sudo systemctl start shopee-warmer'
         };
+        const cmd = cmdMap[action];
+        if (!cmd) {
+            onLog(`⚠️ [WARMER] Action tidak dikenal: ${action}`);
+            return resolve(false);
+        }
 
-        const req = http.request(options, (res) => {
-            let data = '';
-            res.on('data', (chunk) => data += chunk);
-            res.on('end', () => {
-                if (res.statusCode === 204 || res.statusCode === 304) {
-                    onLog(`🐳 [DOCKER] Warmer container successfully ${action}d.`);
-                    resolve(true);
-                } else if (res.statusCode === 409) {
-                    onLog(`🐳 [DOCKER] Warmer container is already ${action}d.`);
-                    resolve(true);
-                } else {
-                    onLog(`⚠️ [DOCKER] Failed to ${action} warmer container: HTTP ${res.statusCode}`);
-                    resolve(false);
-                }
-            });
+        onLog(`🔌 [WARMER] Executing: ${cmd}...`);
+        exec(cmd, (err, stdout, stderr) => {
+            if (err) {
+                onLog(`⚠️ [WARMER] Gagal melakukan ${action} pada shopee-warmer.service: ${err.message}`);
+                resolve(false);
+            } else {
+                onLog(`✅ [WARMER] Service shopee-warmer berhasil di-${action === 'pause' ? 'hentikan' : 'aktifkan kembali'}.`);
+                resolve(true);
+            }
         });
-
-        req.on('error', (err) => {
-            // Graceful fallback if not running in Docker or socket not mounted
-            resolve(false);
-        });
-
-        req.end();
     });
 }
 
@@ -260,13 +248,14 @@ function runPipeline(formData, onLog = () => { }) {
             // langsung melihat lock sudah hilang dan tidak masuk ke wait loop.
             await controlWarmer('unpause', onLog);
             
-            // Clean up any remaining zombie chrome/chromedriver processes spawned by the pipeline
-            const { execSync } = require('child_process');
-            try {
-                onLog(`🧹 [CLEANUP] Cleaning up zombie Chrome & WebDriver processes...`);
-                execSync("pkill -9 -f 'chrome-headless-shell|chromedriver|chrome'");
-            } catch (e) {
-                // Ignore exit code 1 if no processes found
+            // Clean up only the processes belonging to the pipeline's process group
+            if (proc && proc.pid) {
+                try {
+                    onLog(`🧹 [CLEANUP] Cleaning up process group ${proc.pid}...`);
+                    process.kill(-proc.pid, 'SIGKILL');
+                } catch (e) {
+                    // Ignore if group already cleaned up
+                }
             }
 
             releaseJobLock(onLog);
