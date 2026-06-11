@@ -694,17 +694,23 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
                 if auth_attempt > 0:
                     logger.info(f"  [Action] Re-opening session for {user} (Auth attempt {auth_attempt + 1})...")
     
-                logger.info(f"  [Isolation] Checking session for {user}...")
-                try:
-                    await page.goto("https://merchant.grab.com/dashboard", wait_until="domcontentloaded", timeout=30000)
-                    # Beri jeda sejenak untuk membiarkan Grab melakukan redirect jika session UI expired
-                    await page.wait_for_timeout(3000)
-                except:
-                    pass
+                is_on_login_page = True
+                if storage_state is not None:
+                    logger.info(f"  [Isolation] Checking session for {user}...")
+                    try:
+                        # Gunakan timeout yang lebih pendek (15 detik) agar tidak menggantung terlalu lama saat redirect
+                        await page.goto("https://merchant.grab.com/dashboard", wait_until="domcontentloaded", timeout=15000)
+                        await page.wait_for_timeout(1000)
+                        
+                        # Cek apakah sukses masuk ke dashboard / portal utama
+                        current_url = page.url.lower()
+                        if ("dashboard" in current_url or "portal" in current_url) and "login" not in current_url and "saved-accounts" not in current_url:
+                            is_on_login_page = False
+                    except Exception as e:
+                        logger.warning(f"  [Isolation] Session check timed out or failed: {e}")
+                else:
+                    logger.info(f"  [Isolation] No saved session state found for {user}. Going straight to login...")
     
-                # Cek URL secara fisik. Jika Grab melempar kita ke login page, anggap session mati
-                is_on_login_page = "login" in page.url.lower() or "saved-accounts" in page.url.lower()
-                
                 api = GrabAPI(page, user, pwd)
                 mgid = None
                 
