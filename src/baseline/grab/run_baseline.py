@@ -72,7 +72,9 @@ def robust_read_csv(path_or_url, expected_cols=None, **kwargs):
     content = ""
     try:
         if isinstance(path_or_url, str) and (path_or_url.startswith("http://") or path_or_url.startswith("https://")):
-            resp = requests.get(path_or_url, timeout=30)
+            import time
+            cache_buster = f"&t={int(time.time())}" if "?" in path_or_url else f"?t={int(time.time())}"
+            resp = requests.get(path_or_url + cache_buster, timeout=30)
             resp.raise_for_status()
             content = resp.text
         else:
@@ -125,7 +127,7 @@ def robust_read_csv(path_or_url, expected_cols=None, **kwargs):
             log.error(f"Fallback robust parsing failed: {fallback_err}")
             raise parse_err
 
-CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=880434015&single=true&output=csv"
+CSV_URL = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=880434015"
 
 async def run_all(date_start: str = None, date_end: str = None, output_dir: str = None, user_filter: str = None, outlet_filter: str = None, branch_filter: str = None):
     # Reload env just in case
@@ -259,7 +261,7 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
         semaphore = asyncio.Semaphore(concurrency_limit)
         failures = []
 
-        async def process_user(username, info):
+        async def process_user(username, info, is_retry=False):
             password = info["pwd"]
             related_portals = info["portals"]
             first_outlet = related_portals[0]["outlet"]
@@ -271,7 +273,8 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                         username, password, 
                         start_date=date_start, 
                         end_date=date_end,
-                        browser=browser
+                        browser=browser,
+                        is_retry=is_retry
                     )
 
                     if not downloaded_file:
@@ -327,7 +330,7 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                 username = f["user"]
                 info = unique_users[username]
                 log.info(f"\n  [RETRY ACCOUNT] Re-running sequentially for: {username}")
-                await process_user(username, info)
+                await process_user(username, info, is_retry=True)
                 
         await browser.close()
 
@@ -396,6 +399,10 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     # Preprocess columns for both Old format and New S3 Insights format
     if "Date" in working.columns and "Updated On" not in working.columns:
         working["Updated On"] = pd.to_datetime(working["Date"], errors="coerce", format="%d/%m/%Y")
+    elif "Created On" in working.columns and "Updated On" not in working.columns:
+        working["Updated On"] = pd.to_datetime(working["Created On"], errors="coerce", format="%d %b %Y %I:%M %p")
+    elif "Update Time" in working.columns and "Updated On" not in working.columns:
+        working["Updated On"] = pd.to_datetime(working["Update Time"], errors="coerce", format="%d %b %Y %I:%M %p")
     elif "Updated On" in working.columns:
         working["Updated On"] = pd.to_datetime(working["Updated On"], errors="coerce", format="%d %b %Y %I:%M %p")
         
@@ -404,6 +411,8 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
         
     if "Grab Service" in working.columns and "Category" not in working.columns:
         working["Category"] = working["Grab Service"].fillna("").astype(str).str.strip().str.casefold()
+    elif "Main Category" in working.columns and "Category" not in working.columns:
+        working["Category"] = working["Main Category"].fillna("").astype(str).str.strip().str.casefold()
     elif "Category" in working.columns:
         working["Category"] = working["Category"].fillna("").astype(str).str.strip().str.casefold()
         

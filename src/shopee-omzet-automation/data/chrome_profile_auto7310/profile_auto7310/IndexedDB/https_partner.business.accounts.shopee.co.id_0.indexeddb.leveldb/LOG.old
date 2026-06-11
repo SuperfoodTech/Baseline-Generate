@@ -1,0 +1,25 @@
+2026/06/10-13:36:31.210 15d1e Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7310/profile_auto7310/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/MANIFEST-000001
+2026/06/10-13:36:31.211 15d1e Recovering log #89
+2026/06/10-13:36:31.212 15d1e Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7310/profile_auto7310/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/000089.log 
+2026/06/10-13:36:31.212 15d1e Delete type=2 #88
+2026/06/10-13:36:31.230 15d21 Level-0 table #94: started
+2026/06/10-13:36:31.233 15d21 Level-0 table #94: 7109 bytes OK
+2026/06/10-13:36:31.238 15d21 Delete type=0 #89
+2026/06/10-13:36:31.240 15d1e Manual compaction at level-0 from '\x00\x1c\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x1d\x00\x00\x00' @ 0 : 0; will stop at '\x00\x1c\x00\x00\x05' @ 5870 : 1
+2026/06/10-13:36:31.241 15d1e Compacting 1@0 + 1@1 files
+2026/06/10-13:36:31.245 15d1e Generated table #95@0: 553 keys, 8016 bytes
+2026/06/10-13:36:31.245 15d1e Compacted 1@0 + 1@1 files => 8016 bytes
+2026/06/10-13:36:31.248 15d1e compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/06/10-13:36:31.248 15d1e Delete type=2 #94
+2026/06/10-13:36:31.249 15d21 Manual compaction at level-0 from '\x00\x1c\x00\x00\x05' @ 5870 : 1 .. '\x00\x1d\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/06/10-13:36:33.565 15d21 Level-0 table #97: started
+2026/06/10-13:36:33.574 15d21 Level-0 table #97: 7082 bytes OK
+2026/06/10-13:36:33.576 15d21 Delete type=0 #93
+2026/06/10-13:36:33.576 15d21 Delete type=2 #91
+2026/06/10-13:36:33.576 15d1f Manual compaction at level-0 from '\x00\x1d\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x1e\x00\x00\x00' @ 0 : 0; will stop at '\x00\x1d\x00\x00\x05' @ 6098 : 1
+2026/06/10-13:36:33.577 15d1f Compacting 1@0 + 1@1 files
+2026/06/10-13:36:33.582 15d1f Generated table #98@0: 550 keys, 7082 bytes
+2026/06/10-13:36:33.582 15d1f Compacted 1@0 + 1@1 files => 7082 bytes
+2026/06/10-13:36:33.584 15d1f compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/06/10-13:36:33.584 15d1f Delete type=2 #97
+2026/06/10-13:36:33.588 15d1f Manual compaction at level-0 from '\x00\x1d\x00\x00\x05' @ 6098 : 1 .. '\x00\x1e\x00\x00\x00' @ 0 : 0; will stop at (end)

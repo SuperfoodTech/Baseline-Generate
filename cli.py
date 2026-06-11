@@ -17,6 +17,8 @@ import asyncio
 import sys
 import os
 from datetime import datetime, timedelta
+from src.upload_csv_to_drive_and_git import process_csv_pipeline
+from src.upload_csv_to_drive_and_git import process_csv_pipeline
 
 
 # ── Colour helpers (ANSI) ──────────────────────────────────────────────
@@ -492,7 +494,7 @@ def interactive_mode():
         import io
 
         print(f"\n  {CYAN}[INFO] Mengunduh daftar outlet terbaru dari Google Sheets...{RESET}")
-        CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv"
+        CSV_URL = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=0"
         try:
             resp = requests.get(CSV_URL, timeout=30)
             resp.raise_for_status()
@@ -591,7 +593,7 @@ def interactive_mode():
             import io
 
             print(f"\n  {CYAN}[INFO] Mengunduh daftar merchant terbaru dari Google Sheets...{RESET}")
-            CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv"
+            CSV_URL = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=0"
             try:
                 resp = requests.get(CSV_URL, timeout=30)
                 resp.raise_for_status()
@@ -927,7 +929,7 @@ Examples:
                         print(f"  {DIM}Silakan deploy apps_script_pdf.js dan masukkan URL-nya ke variabel webhook_url di cli.py{RESET}")
                     else:
                         # 1. Fetch Owner from Credentials CSV
-                        CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv"
+                        CSV_URL = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=0"
                         owner_name = "-"
                         try:
                             resp = requests.get(CSV_URL, timeout=10)
@@ -1032,6 +1034,13 @@ Examples:
         print(f"  {'':10s}   {DIM}→ {out_path}{RESET}")
     print(f"\n{CYAN}{'═'*58}{RESET}\n")
 
+    # --- UPLOAD DAN PUSH OTOMATIS ---
+    print(f"\n{CYAN}[INFO] Mencoba mengunggah hasil CSV/Laporan ke Google Drive...{RESET}")
+    # Masukkan ID Folder Google Drive Anda di bawah ini
+    # (ID Folder adalah kode acak di URL Drive Anda, contoh: 1AbCdEfGhIjKlMnOpQrStUvWxYz)
+    ID_FOLDER_GDRIVE = "1lmKw_rwPOCghrofH3Ah1-reKCLNH_HyK" 
+    
+    process_csv_pipeline(folder_id=ID_FOLDER_GDRIVE)
 
 if __name__ == "__main__":
     main()

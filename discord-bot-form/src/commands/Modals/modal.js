@@ -10,6 +10,8 @@ const {
     TextInputStyle
 } = require('discord.js');
 const https = require('https');
+const { setLastChannelId } = require('../../errorPoller');
+const recentTasks = require('../../taskCache');
 
 function fetchCSV(url) {
     return new Promise((resolve, reject) => {
@@ -30,11 +32,11 @@ function fetchCSV(url) {
     });
 }
 
-const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv';
+const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=0';
 
 let cachedSheetData = null;
 let lastCacheTime = 0;
-const CACHE_DURATION = 5 * 60 * 1000; // 5 menit cache
+const CACHE_DURATION = 3 * 1000; // 3 detik cache
 
 // ── Job Lock — mencegah 2 user menjalankan pipeline yang sama secara bersamaan ──
 // Key: "<outlet>|<platform>|<startDate>|<endDate>"
@@ -112,11 +114,17 @@ const makeProgressEmbed = (step, title, description, fields = []) => {
 };
 
 module.exports = {
+    activeJobs,
+    buildJobKey,
+    acquireJob,
+    releaseJob,
+
     data: new SlashCommandBuilder()
         .setName('start')
         .setDescription('Kirim formulir Laporan Baseline Performance'),
 
     async execute(interaction) {
+        setLastChannelId(interaction.channelId);
         await interaction.deferReply();
 
         try {
@@ -271,6 +279,7 @@ module.exports = {
     },
 
     async startFormFlow(interaction) {
+        setLastChannelId(interaction.channelId);
         await interaction.deferReply({ flags: 64 });
 
         const isCached = cachedSheetData && (Date.now() - lastCacheTime < CACHE_DURATION);
@@ -668,6 +677,7 @@ module.exports = {
             };
 
             // Jalankan pipeline dengan live log tracking
+            formData.channelId = interaction.channelId;
             const pipelineResult = runPipeline(formData, async (logLine) => {
                 console.log(`[PIPELINE] ${logLine}`);
 
@@ -721,10 +731,21 @@ module.exports = {
                 }
                 // ── FINAL STATUS — Akurat berdasarkan hasil pipeline ──
                 if (result.success) {
+                    // Cek nilai nol untuk re-run
+                    let failedPlatforms = [];
+                    if (result.notifData) {
+                        const { aplikator, omzet_gr, omzet_sf, omzet_go } = result.notifData;
+                        const lowerApp = (aplikator || '').toLowerCase();
+                        if ((lowerApp.includes('grab') || lowerApp.includes('all')) && (!omzet_gr || omzet_gr === 'Rp 0')) failedPlatforms.push('Grab');
+                        if ((lowerApp.includes('shopee') || lowerApp.includes('all')) && (!omzet_sf || omzet_sf === 'Rp 0')) failedPlatforms.push('Shopee');
+                        if ((lowerApp.includes('gofood') || lowerApp.includes('all')) && (!omzet_go || omzet_go === 'Rp 0')) failedPlatforms.push('GoFood');
+                    }
+
                     // Cek apakah output mengandung tanda partial failure
                     const hasWarning = result.output.includes('FAILED') ||
                         result.output.includes('No merchants to process') ||
-                        result.output.includes('Tidak ditemukan file baseline');
+                        result.output.includes('Tidak ditemukan file baseline') ||
+                        failedPlatforms.length > 0;
 
                     const makeNotifEmbed = (title, color, defaultDesc) => {
                         const embed = new EmbedBuilder()
@@ -743,26 +764,23 @@ module.exports = {
                             const orderLines = [];
                             const lowerApp = aplikator.toLowerCase();
 
-                            if (lowerApp.includes('gofood') || lowerApp.includes('all')) {
-                                omzetLines.push(`GoFood: **${omzet_go || 'Rp 0'}**`);
-                                orderLines.push(`GoFood: **${order_go || '0'}**`);
-                            }
-                            if (lowerApp.includes('grab') || lowerApp.includes('all')) {
-                                omzetLines.push(`GrabFood: **${omzet_gr || 'Rp 0'}**`);
-                                orderLines.push(`GrabFood: **${order_gr || '0'}**`);
-                            }
-                            if (lowerApp.includes('shopee') || lowerApp.includes('all')) {
-                                omzetLines.push(`ShopeeFood: **${omzet_sf || 'Rp 0'}**`);
-                                orderLines.push(`ShopeeFood: **${order_sf || '0'}**`);
-                            }
+                            omzetLines.push(`GoFood: **${omzet_go || 'Rp 0'}**`);
+                            orderLines.push(`GoFood: **${order_go || '0'}**`);
+                            omzetLines.push(`GrabFood: **${omzet_gr || 'Rp 0'}**`);
+                            orderLines.push(`GrabFood: **${order_gr || '0'}**`);
+                            omzetLines.push(`ShopeeFood: **${omzet_sf || 'Rp 0'}**`);
+                            orderLines.push(`ShopeeFood: **${order_sf || '0'}**`);
 
                             const omzetStr = omzetLines.join('\n') || '-';
                             const orderStr = orderLines.join('\n') || '-';
 
-                            embed.setDescription(
-                                `Laporan untuk **${outlet}** telah berhasil dibuat dan siap diunduh.\n\n` +
-                                (finalPdfUrl ? `🔗 **[Klik di sini untuk membuka PDF](${finalPdfUrl})**` : '')
-                            );
+                            let desc = `Laporan untuk **${outlet}** telah selesai diproses.\n\n`;
+                            
+                            if (finalPdfUrl) {
+                                desc += `🔗 **[Klik di sini untuk membuka PDF Laporan](${finalPdfUrl})**`;
+                            }
+
+                            embed.setDescription(desc);
 
                             embed.addFields(
                                 { name: '📍 Outlet', value: outlet, inline: true },
@@ -772,17 +790,29 @@ module.exports = {
                                 { name: '🛒 Rata-rata Order / Bulan', value: orderStr, inline: true },
                                 { name: '📁 Nama File', value: `\`${pdf_name}\``, inline: false }
                             );
+
+                            const embeds = [embed];
+                            
+                            if (failedPlatforms.length > 0) {
+                                const warningEmbed = new EmbedBuilder()
+                                    .setTitle('⚠️ PERINGATAN KEKOSONGAN DATA')
+                                    .setDescription(`Gagal mendapatkan data transaksi untuk **${failedPlatforms.join(', ')}** (Terbaca Rp 0).\n👉 *Silakan klik tombol Re-Run di bawah untuk mengeksekusi ulang secara spesifik.*`)
+                                    .setColor(0xFF0000);
+                                embeds.push(warningEmbed);
+                            }
+                            
+                            return { embeds, finalPdfUrl };
                         } else {
                             embed.setDescription(
                                 defaultDesc + `\n\n` +
                                 (finalPdfUrl ? `🔗 **[Klik di sini untuk membuka PDF](${finalPdfUrl})**` : '')
                             );
+                            return { embeds: [embed], finalPdfUrl };
                         }
-                        return { embed, finalPdfUrl };
                     };
 
                     if (hasWarning) {
-                        const { embed, finalPdfUrl } = makeNotifEmbed(
+                        const { embeds, finalPdfUrl } = makeNotifEmbed(
                             '⚠️ Pipeline Selesai dengan Peringatan',
                             0xFFAA00,
                             `Pipeline **Baseline Performance** selesai, tetapi ada beberapa peringatan:\n\n` +
@@ -790,23 +820,44 @@ module.exports = {
                         );
 
                         const components = [];
+                        const actionRow = new ActionRowBuilder();
+                        
                         if (finalPdfUrl) {
-                            components.push(
-                                new ActionRowBuilder().addComponents(
-                                    new ButtonBuilder()
-                                        .setLabel('📄 Buka PDF Laporan')
-                                        .setStyle(ButtonStyle.Link)
-                                        .setURL(finalPdfUrl)
-                                )
+                            actionRow.addComponents(
+                                new ButtonBuilder()
+                                    .setLabel('📄 Buka PDF Laporan')
+                                    .setStyle(ButtonStyle.Link)
+                                    .setURL(finalPdfUrl)
                             );
+                        }
+                        
+                        if (result.notifData && failedPlatforms.length > 0) {
+                            const taskId = Math.random().toString(36).substring(2, 10);
+                            recentTasks.set(taskId, formData);
+                            
+                            failedPlatforms.forEach(plat => {
+                                // Discord max 5 buttons per ActionRow, so ensure we don't overflow
+                                if (actionRow.components.length < 5) {
+                                    actionRow.addComponents(
+                                        new ButtonBuilder()
+                                            .setCustomId(`rerun_${plat.toLowerCase()}_${taskId}`)
+                                            .setLabel(`🔄 Re-Run ${plat}`)
+                                            .setStyle(ButtonStyle.Secondary)
+                                    );
+                                }
+                            });
+                        }
+                        
+                        if (actionRow.components.length > 0) {
+                            components.push(actionRow);
                         }
 
                         await statusMsg.edit({
-                            embeds: [embed],
+                            embeds: embeds,
                             components: components
                         });
                     } else {
-                        const { embed, finalPdfUrl } = makeNotifEmbed(
+                        const { embeds, finalPdfUrl } = makeNotifEmbed(
                             '✅ Pipeline Selesai!',
                             0x00C853,
                             `Pipeline **Baseline Performance** berhasil dijalankan.\n` +
@@ -826,7 +877,7 @@ module.exports = {
                         }
 
                         await statusMsg.edit({
-                            embeds: [embed],
+                            embeds: embeds,
                             components: components
                         });
                     }
@@ -1201,7 +1252,7 @@ module.exports = {
             return Promise.resolve(cachedSheetData);
         }
 
-        const baselineUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=880434015&single=true&output=csv';
+        const baselineUrl = 'https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=880434015';
         const credsUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRYSUnKOqk29LCktTxdb0wPLbWMbRaWRP3eC_UA4AwYod1FW6zDMhtLMC5ghIvot2B8upCDfBsn-TCP/pub?gid=565510790&single=true&output=csv';
 
         return Promise.all([fetchCSV(baselineUrl), fetchCSV(credsUrl)])

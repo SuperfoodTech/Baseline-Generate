@@ -188,6 +188,20 @@ new_get_session = """def get_session(username=None, password=None, phone=None, h
             if do_switch:
                 if target_name:
                     success = auto_switch_merchant(driver, target_name)
+                    if not success:
+                        log.warning(f"⚠️ [MERCHANT] auto_switch_merchant failed for target {target_name}. Initiating logout/relogin recovery...")
+                        recovered = _deliberate_logout_and_relogin(
+                            driver,
+                            username=username,
+                            password=password,
+                            phone=phone,
+                        )
+                        if recovered:
+                            log.info("🔄 [MERCHANT] Recovery successful. Retrying merchant switch...")
+                            success = auto_switch_merchant(driver, target_name)
+                        else:
+                            log.error("❌ Recovery failed.")
+                            success = False
                 else:
                     if "/food/dashboard" in driver.current_url:
                         log.info("🔄 Navigating to merchant selector...")

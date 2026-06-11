@@ -12,7 +12,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from grab_api_scraper import run_api_download_for_portal, validate_credentials
 from result import main as run_result
 
-CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4/pub?gid=0&single=true&output=csv"
+CSV_URL = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=0"
 
 async def run_all():
     # Reload env just in case
@@ -20,7 +20,9 @@ async def run_all():
     
     print(f"Fetching merchant list from spreadsheet...")
     try:
-        resp = requests.get(CSV_URL, timeout=30)
+        import time
+        cache_buster_url = CSV_URL + f"&t={int(time.time())}"
+        resp = requests.get(cache_buster_url, timeout=30)
         resp.raise_for_status()
         df = pd.read_csv(io.StringIO(resp.text))
         

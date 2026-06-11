@@ -1,7 +1,13 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const { Client, Collection, GatewayIntentBits } = require('discord.js');
+const { Client, Collection, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { startErrorPoller, setLastChannelId, clearAlertCache } = require('./src/errorPoller');
+const { runPipeline } = require('./bridge/run_pipeline');
+const recentTasks = require('./src/taskCache');
+const modalCmd = require('./src/commands/Modals/modal.js');
+
+const activeReRuns = new Map();
 
 // 1. Inisialisasi Client (Bot)
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -36,6 +42,7 @@ for (const folder of commandFolders) {
 // 4. Event ketika bot berhasil menyala
 client.once('clientReady', () => {
     console.log(`Bot sudah online sebagai ${client.user.tag}!`);
+    startErrorPoller(client);
 });
 
 // 5. Event ketika user menggunakan Slash Command atau berinteraksi dengan Menu
@@ -71,13 +78,288 @@ client.on('interactionCreate', async interaction => {
                 command.clearCache();
                 await interaction.reply({
                     content: '🔄 **Cache berhasil dihapus!** Mengambil data terbaru dari Google Sheets pada pengisian formulir berikutnya.',
-                    flags: 64 // ephemeral (only the clicker sees it)
+                    flags: ['Ephemeral'] // ephemeral (only the clicker sees it)
                 });
             }
         } else if (interaction.customId.startsWith('cancel_pipeline_')) {
             const command = client.commands.get('start');
             if (command && command.cancelPipeline) {
                 await command.cancelPipeline(interaction);
+            }
+        } else if (interaction.customId.startsWith('rerun_')) {
+            const parts = interaction.customId.split('_');
+            const platform = parts[1].toLowerCase(); 
+            const taskId = parts[2];
+            
+            const cachedData = recentTasks.get(taskId);
+            if (!cachedData) {
+                return interaction.reply({
+                    content: '❌ **Sesi Re-Run Kedaluwarsa!** Cache tugas ini sudah hilang karena bot di-restart atau sudah terlalu lama. Silakan jalankan ulang via perintah `/start`.',
+                    ephemeral: true
+                });
+            }
+
+            // Create a copy of formData and isolate the platform
+            const formData = { ...cachedData };
+            
+            // Map the platform shortcut back to form data aplikator
+            if (platform === 'grab') formData.aplikator = 'GrabFood';
+            else if (platform === 'shopee') formData.aplikator = 'ShopeeFood';
+            else if (platform === 'gofood') formData.aplikator = 'GoFood';
+            else formData.aplikator = platform;
+
+            const jobKey = modalCmd.buildJobKey(formData.outlet, formData.aplikator, formData.tanggalMulai, formData.tanggalSelesai);
+            if (!modalCmd.acquireJob(jobKey, interaction.user.id, interaction.user.username)) {
+                return interaction.reply({
+                    content: `⚠️ **Sistem Sibuk!** Proses untuk **${formData.aplikator}** (Outlet: ${formData.outlet}) sedang berjalan. Harap tunggu hingga proses sebelumnya selesai.`,
+                    ephemeral: true
+                });
+            }
+
+            // Force clear all local CSV caches to guarantee fresh data download
+            const { execSync } = require('child_process');
+            try {
+                execSync('find . -type f -name "*cache*.csv" -delete', { cwd: path.join(__dirname, '..') });
+            } catch (e) {}
+
+            await interaction.reply({ 
+                content: `🔄 Sedang mengantre proses **Re-Run** untuk **${formData.aplikator}** (Outlet: ${formData.outlet})... Caches telah dihapus. Pantau *progress* di bawah ini.`
+            });
+
+            // Re-bind error poller to this channel and reset spam protection cache
+            setLastChannelId(interaction.channelId);
+            clearAlertCache();
+
+            const bdDisplay = formData.bd ? formData.bd.split('|').join(', ') : 'Semua BD';
+            const steps = [
+                { id: platform, name: `Scraping data ${formData.aplikator}...` },
+                { id: 'merge', name: '📊 Menggabungkan laporan...' },
+                { id: 'pdf', name: '📄 Membuat PDF Laporan...' }
+            ];
+            const totalPhases = steps.length;
+            let phaseNumber = 0;
+            let currentPhase = 'Memulai proses...';
+
+            const makeProgressBar = (phase, total) => {
+                const filled = '█'.repeat(phase);
+                const empty = '░'.repeat(total - phase);
+                return `[${filled}${empty}] ${phase}/${total}`;
+            };
+
+            const buildEmbed = () => {
+                return new EmbedBuilder()
+                    .setColor(0xFFA500)
+                    .setTitle(`🔄 Re-Run Pipeline: ${formData.aplikator}`)
+                    .setDescription(
+                        `Pipeline **${formData.tagihan.toUpperCase()}** sedang diproses ulang.\n\n` +
+                        `${makeProgressBar(phaseNumber, totalPhases)}\n` +
+                        `> 📍 **Outlet:** ${formData.outlet.substring(0, 100)}\n` +
+                        `> 👤 **BD:** ${bdDisplay}\n` +
+                        `> 📱 **Platform:** ${formData.aplikator}\n` +
+                        `> 📅 **Rentang:** ${formData.tanggalMulai} s/d ${formData.tanggalSelesai}\n\n` +
+                        `${currentPhase}\n` +
+                        `⏱️ Estimasi waktu: **1–5 menit**`
+                    )
+                    .setFooter({ text: 'Sistem Re-Run Performance' })
+                    .setTimestamp();
+            };
+
+            const cancelRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`cancel_rerun_${taskId}`)
+                    .setLabel('⏹️ Batalkan Proses')
+                    .setStyle(ButtonStyle.Danger)
+            );
+
+            // Create an initial status message
+            const statusMsg = await interaction.channel.send({
+                embeds: [buildEmbed()],
+                components: [cancelRow]
+            });
+
+            let lastUpdate = Date.now();
+            let isTrulyFailed = false;
+            
+            // Run pipeline
+            const pipeline = runPipeline(formData, async (logLine) => {
+                const lower = logLine.toLowerCase();
+                let newPhase = null;
+
+                // DETEKSI KEGAGALAN DARI LOG (Grab, Shopee, GoFood)
+                if (lower.includes('failed') || lower.includes('error') || lower.includes('❌') || lower.includes('✗')) {
+                    // Filter false positives jika ada
+                    if (!lower.includes('0 errors') && !lower.includes('no error')) {
+                        isTrulyFailed = true;
+                    }
+                }
+
+                let matchedIndex = -1;
+                if (lower.includes(platform) && (lower.includes('pipeline') || lower.includes('automation') || lower.includes('fetching') || lower.includes('scrapperv2'))) {
+                    matchedIndex = 0;
+                } else if (lower.includes('penggabungan') || lower.includes('gabung') || lower.includes('merging')) {
+                    matchedIndex = 1;
+                } else if (lower.includes('pdf') || lower.includes('apps script') || lower.includes('webhook')) {
+                    matchedIndex = 2;
+                }
+
+                if (matchedIndex !== -1) {
+                    phaseNumber = matchedIndex + 1;
+                    currentPhase = `**[${phaseNumber}/${totalPhases}]** ${steps[matchedIndex].name}`;
+                }
+
+                if (Date.now() - lastUpdate > 3000) {
+                    lastUpdate = Date.now();
+                    await statusMsg.edit({ embeds: [buildEmbed()], components: [cancelRow] }).catch(() => {});
+                }
+            });
+            
+            activeReRuns.set(taskId, pipeline.proc);
+
+            pipeline.promise.then(async (result) => {
+                const isCancelled = pipeline.proc ? pipeline.proc.cancelled : false;
+                activeReRuns.delete(taskId);
+                
+                modalCmd.releaseJob(jobKey);
+
+                if (isCancelled) {
+                    return; // statusMsg sudah diupdate oleh handler cancel_rerun_
+                }
+
+                if (result.success) {
+                    let embeds = [];
+                    let components = [];
+                    
+                    if (result.notifData) {
+                        const { outlet, start_date, end_date, aplikator, pdf_name, omzet_gr, omzet_sf, order_gr, order_sf, omzet_go, order_go } = result.notifData;
+                        const embed = new EmbedBuilder()
+                            .setTitle('✅ Re-Run Selesai')
+                            .setColor(0x00FF00)
+                            .setFooter({ text: 'Sistem Re-Run Performance' });
+
+                        const omzetLines = [];
+                        const orderLines = [];
+                        const lowerApp = aplikator.toLowerCase();
+
+                        omzetLines.push(`GoFood: **${omzet_go || 'Rp 0'}**`);
+                        orderLines.push(`GoFood: **${order_go || '0'}**`);
+                        omzetLines.push(`GrabFood: **${omzet_gr || 'Rp 0'}**`);
+                        orderLines.push(`GrabFood: **${order_gr || '0'}**`);
+                        omzetLines.push(`ShopeeFood: **${omzet_sf || 'Rp 0'}**`);
+                        orderLines.push(`ShopeeFood: **${order_sf || '0'}**`);
+
+                        const omzetStr = omzetLines.join('\n') || '-';
+                        const orderStr = orderLines.join('\n') || '-';
+                        
+                        const pdfUrl = result.notifData.pdf_url || (result.output.replace(/\x1B\[[0-9;]*m/g, '').match(/URL:\s*(https:\/\/drive\.google\.com\/file\/d\/[^\s\r\n]+)/) || [])[1];
+                        
+                        let desc = `Laporan untuk **${outlet}** telah diperbarui melalui Re-Run.\n\n`;
+                        if (pdfUrl) {
+                            desc += `🔗 **[Klik di sini untuk membuka PDF Laporan](${pdfUrl})**`;
+                            const actionRow = new ActionRowBuilder().addComponents(
+                                new ButtonBuilder()
+                                    .setLabel('📄 Buka PDF Laporan')
+                                    .setStyle(ButtonStyle.Link)
+                                    .setURL(pdfUrl)
+                            );
+                            components.push(actionRow);
+                        }
+
+                        embed.setDescription(desc);
+                        embed.addFields(
+                            { name: '📍 Outlet', value: outlet, inline: true },
+                            { name: '📱 Aplikator', value: aplikator, inline: true },
+                            { name: '📅 Rentang Tanggal', value: `\`${start_date}\` → \`${end_date}\``, inline: false },
+                            { name: '📊 Rata-rata Omzet / Bulan', value: omzetStr, inline: true },
+                            { name: '🛒 Rata-rata Order / Bulan', value: orderStr, inline: true },
+                            { name: '📁 Nama File', value: `\`${pdf_name}\``, inline: false }
+                        );
+
+                        embeds.push(embed);
+                        
+                        if (result.failedPlatforms && result.failedPlatforms.length > 0) {
+                            const warningEmbed = new EmbedBuilder()
+                                .setTitle('⚠️ MASIH ADA DATA KOSONG')
+                                .setDescription(`Setelah Re-Run, data transaksi untuk **${result.failedPlatforms.join(', ')}** masih gagal didapatkan (Terbaca Rp 0).`)
+                                .setColor(0xFF0000);
+                            embeds.push(warningEmbed);
+                        }
+                    }
+
+                    // Disable tombol Re-Run di pesan original karena sudah sukses HANYA JIKA TIDAK GAGAL
+                    if (!isTrulyFailed) {
+                        if (interaction.message && interaction.message.components) {
+                            try {
+                                const newComponents = interaction.message.components.map(row => {
+                                    const newRow = new ActionRowBuilder();
+                                    row.components.forEach(btn => {
+                                        if (btn.customId === interaction.customId) {
+                                            newRow.addComponents(ButtonBuilder.from(btn).setDisabled(true).setLabel(`✅ Berhasil: ${platform.toUpperCase()}`));
+                                        } else {
+                                            newRow.addComponents(ButtonBuilder.from(btn));
+                                        }
+                                    });
+                                    return newRow;
+                                });
+                                await interaction.message.edit({ components: newComponents });
+                            } catch (err) {
+                                console.error('Gagal update pesan original Re-Run:', err);
+                            }
+                        }
+                    } else {
+                        // Jika selesai tapi log menyatakan gagal, biarkan tombol aktif dan tambahkan info
+                        const warningEmbed = new EmbedBuilder()
+                            .setTitle('⚠️ ADA KEGAGALAN TERDETEKSI DI LOG')
+                            .setDescription(`Meskipun pipeline selesai, sistem mendeteksi adanya error/kegagalan spesifik di log aplikator. Tombol Re-Run pada pesan awal tetap dibiarkan aktif untuk dicoba lagi.`)
+                            .setColor(0xFFA500);
+                        embeds.push(warningEmbed);
+                    }
+
+                    await statusMsg.edit({
+                        content: ``,
+                        embeds: embeds.length ? embeds : [{
+                            title: '✅ Re-Run Selesai!',
+                            description: `Laporan untuk **${formData.aplikator}** berhasil diproses, namun tidak ada ringkasan data yang bisa ditampilkan.`,
+                            color: 0x00FF00
+                        }],
+                        components: components
+                    });
+                } else {
+                    await statusMsg.edit({
+                        content: `❌ **Re-Run Gagal!** Proses **${formData.aplikator}** berhenti dengan error (Exit Code: ${result.exitCode}).`,
+                        embeds: [], components: []
+                    });
+                }
+            }).catch(async (err) => {
+                activeReRuns.delete(taskId);
+                modalCmd.releaseJob(jobKey);
+                await statusMsg.edit({
+                    content: `❌ **Re-Run Error Tidak Terduga:** ${err.message}`,
+                    embeds: [], components: []
+                });
+            });
+        } else if (interaction.customId.startsWith('cancel_rerun_')) {
+            const taskId = interaction.customId.replace('cancel_rerun_', '');
+            const proc = activeReRuns.get(taskId);
+            
+            if (proc && !proc.killed) {
+                proc.cancelled = true;
+                try {
+                    process.kill(-proc.pid, 'SIGKILL'); // Kill process group forcefully
+                } catch (e) {
+                    try { proc.kill('SIGKILL'); } catch (err) {}
+                }
+                activeReRuns.delete(taskId);
+                
+                await interaction.update({
+                    content: '⏹️ **Proses Re-Run dibatalkan secara paksa.**',
+                    embeds: [],
+                    components: []
+                });
+            } else {
+                await interaction.reply({
+                    content: '⚠️ **Gagal membatalkan:** Proses tidak ditemukan atau sudah selesai.',
+                    ephemeral: true
+                });
             }
         }
     }

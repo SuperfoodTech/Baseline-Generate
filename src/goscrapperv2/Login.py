@@ -51,7 +51,9 @@ def ambil_otp_dari_endpoint(url_dasar, action="getOtp", label_email=None):
     # Jika URL mengarah langsung ke Google Sheets CSV, kita download CSV dan ambil OTP terbaru
     if "docs.google.com/spreadsheets" in url_dasar:
         try:
-            with urlopen(url_dasar, timeout=30) as response:
+            import time
+            cache_buster = f"&t={int(time.time())}" if "?" in url_dasar else f"?t={int(time.time())}"
+            with urlopen(url_dasar + cache_buster, timeout=30) as response:
                 content = response.read().decode("utf-8").strip()
                 lines = content.splitlines()
                 if not lines or len(lines) < 2:
@@ -98,7 +100,9 @@ def ambil_data_outlet_dari_csv(csv_url):
     if not csv_url:
         raise ValueError("URL CSV kosong.")
 
-    with urlopen(csv_url, timeout=30) as response:
+    import time
+    cache_buster = f"&t={int(time.time())}" if "?" in csv_url else f"?t={int(time.time())}"
+    with urlopen(csv_url + cache_buster, timeout=30) as response:
         lines = response.read().decode("utf-8").splitlines()
         
     reader = csv.reader(lines)
