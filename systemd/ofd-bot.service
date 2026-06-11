@@ -1,7 +1,7 @@
 [Unit]
 Description=OFD Discord Bot
-After=network.target srs-postgres.service
-Requires=srs-postgres.service
+After=network.target postgresql.service
+Requires=postgresql.service
 
 [Service]
 Type=simple
