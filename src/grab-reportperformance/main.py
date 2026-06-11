@@ -79,77 +79,49 @@ async def run_all():
     print(f"  GRAB MULTI-PORTAL AUTOMATION ({len(portals)} accounts from Spreadsheet)")
     print("="*60)
     
-    # Launch Playwright browser once to be shared across all portals
-    from playwright.async_api import async_playwright
-    import json
-    
-    headless_env = True
-    try:
-        # Resolve config.json location
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        config_path = os.path.join(base_dir, "config.json")
-        if os.path.exists(config_path):
-            with open(config_path, "r") as f:
-                headless_env = json.load(f).get("headless_grab", True)
-    except Exception as e:
-        print(f"⚠️ Failed to parse config.json for headless mode: {e}. Fallback to headless=True")
-        headless_env = True
-
-    print(f"Launching shared Playwright Chromium (headless={headless_env})...")
-    p_inst = await async_playwright().start()
-    shared_browser = await p_inst.chromium.launch(headless=headless_env)
-    
     MAX_RETRIES = 3
     failed_portals = []
 
-    try:
-        for portal in portals:
-            user = portal["user"]
-            pwd = portal["pwd"]
-            outlet_name = f"{portal['outlet']} ({portal['branch']})" if portal['branch'] else portal['outlet']
-            success = False
+    for portal in portals:
+        user = portal["user"]
+        pwd = portal["pwd"]
+        outlet_name = f"{portal['outlet']} ({portal['branch']})" if portal['branch'] else portal['outlet']
+        success = False
 
-            for attempt in range(1, MAX_RETRIES + 1):
-                if attempt > 1:
-                    print(f"\n  [RETRY {attempt-1}/{MAX_RETRIES-1}] Retrying {outlet_name} in 5 seconds...")
-                    await asyncio.sleep(5)
+        for attempt in range(1, MAX_RETRIES + 1):
+            if attempt > 1:
+                print(f"\n  [RETRY {attempt-1}/{MAX_RETRIES-1}] Retrying {outlet_name} in 5 seconds...")
+                await asyncio.sleep(5)
 
-                print(f"\n\n[PORTAL {portal['id']}] Starting process for: {outlet_name} (Attempt {attempt}/{MAX_RETRIES})")
-                print(f"User: {user}")
-                print("-" * 50)
+            print(f"\n\n[PORTAL {portal['id']}] Starting process for: {outlet_name} (Attempt {attempt}/{MAX_RETRIES})")
+            print(f"User: {user}")
+            print("-" * 50)
 
-                try:
-                    # Step 1: Download data via API using shared browser instance
-                    print(f"Step 1: Downloading data via API (Reusing browser)...")
-                    downloaded_file, error = await run_api_download_for_portal(user, pwd, browser=shared_browser)
+            try:
+                # Step 1: Download data via API
+                print(f"Step 1: Downloading data via API...")
+                downloaded_file, error = await run_api_download_for_portal(user, pwd)
 
-                    if not downloaded_file:
-                        print(f"✗ [PORTAL {portal['id']}] Gagal mengunduh data (attempt {attempt}).")
-                        print(f"  Pesan Error: {error}")
-                        continue  # retry
-
-                    # Step 2: Process and Push
-                    print(f"\nStep 2: Processing and pushing to Google Sheets...")
-                    run_result(username=user, outlet=portal['outlet'], branch=portal['branch'])
-
-                    print(f"\n✓ [PORTAL {portal['id']}] {outlet_name} COMPLETED SUCCESSFULLY")
-                    success = True
-                    break  # done, no more retries needed
-
-                except Exception as e:
-                    print(f"\n✗ [PORTAL {portal['id']}] FAILED (attempt {attempt}): {str(e)}")
+                if not downloaded_file:
+                    print(f"✗ [PORTAL {portal['id']}] Gagal mengunduh data (attempt {attempt}).")
+                    print(f"  Pesan Error: {error}")
                     continue  # retry
 
-            if not success:
-                print(f"\n✗✗ [PORTAL {portal['id']}] {outlet_name} GAGAL setelah {MAX_RETRIES} percobaan.")
-                failed_portals.append(outlet_name)
-    finally:
-        print("\nClosing shared Playwright browser instance...")
-        try:
-            await shared_browser.close()
-            await p_inst.stop()
-        except Exception as e:
-            print(f"Error closing browser: {e}")
+                # Step 2: Process and Push
+                print(f"\nStep 2: Processing and pushing to Google Sheets...")
+                run_result(username=user, outlet=portal['outlet'], branch=portal['branch'])
+
+                print(f"\n✓ [PORTAL {portal['id']}] {outlet_name} COMPLETED SUCCESSFULLY")
+                success = True
+                break  # done, no more retries needed
+
+            except Exception as e:
+                print(f"\n✗ [PORTAL {portal['id']}] FAILED (attempt {attempt}): {str(e)}")
+                continue  # retry
+
+        if not success:
+            print(f"\n✗✗ [PORTAL {portal['id']}] {outlet_name} GAGAL setelah {MAX_RETRIES} percobaan.")
+            failed_portals.append(outlet_name)
 
     print("\n" + "="*60)
     print("  ALL PORTALS FINISHED PROCESSING")
