@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    container_name: ofd_discord_bot_staging
+    init: true
+    restart: unless-stopped
+    working_dir: /app/discord-bot-form
+    command: npm start
+    # Variabel environment di-load dari file .env bot
+    env_file:
+      - ./discord-bot-form/.env
+    # Volume untuk menyimpan data persisten & session agar tidak hilang saat restart
+    volumes:
+      - ./data:/app/data
+      - ./src:/app/src
+      - /app/src/.venv
+      - ./shopee-session-monitor:/app/shopee-session-monitor
+      - ./discord-bot-form:/app/discord-bot-form
+      - /app/discord-bot-form/node_modules
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - db
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=superfood_admin
+      - DB_PASS=superfood_password
+      - DB_NAME=srs_db
+      - HEADLESS=true
+      - TZ=Asia/Jakarta
+
+  db:
+    image: postgres:15
+    container_name: srs_postgres_staging
+    restart: always
+    environment:
+      POSTGRES_USER: superfood_admin
+      POSTGRES_PASSWORD: superfood_password
+      POSTGRES_DB: srs_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data_staging:/var/lib/postgresql/data
+      # Inisialisasi database dari skema pada run pertama
+      - ./src/database:/docker-entrypoint-initdb.d
+
+volumes:
+  postgres_data_staging:
