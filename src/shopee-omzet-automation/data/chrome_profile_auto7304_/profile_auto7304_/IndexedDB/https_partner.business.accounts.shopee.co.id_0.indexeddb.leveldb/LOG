@@ -1,0 +1,24 @@
+2026/06/10-13:23:29.863 124e8 Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7304_/profile_auto7304_/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/MANIFEST-000001
+2026/06/10-13:23:29.863 124e8 Recovering log #156
+2026/06/10-13:23:29.865 124e8 Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7304_/profile_auto7304_/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/000156.log 
+2026/06/10-13:23:29.866 124e8 Delete type=2 #155
+2026/06/10-13:23:29.897 124e8 Level-0 table #161: started
+2026/06/10-13:23:29.915 124e8 Level-0 table #161: 6584 bytes OK
+2026/06/10-13:23:29.920 124e8 Delete type=0 #156
+2026/06/10-13:23:29.921 124e8 Manual compaction at level-0 from '\x00/\x00\x00\x00' @ 72057594037927935 : 1 .. '\x000\x00\x00\x00' @ 0 : 0; will stop at '\x00/\x00\x00\x05' @ 8794 : 1
+2026/06/10-13:23:29.921 124e8 Compacting 1@0 + 1@1 files
+2026/06/10-13:23:29.928 124e8 Generated table #162@0: 584 keys, 7791 bytes
+2026/06/10-13:23:29.928 124e8 Compacted 1@0 + 1@1 files => 7791 bytes
+2026/06/10-13:23:30.021 124e8 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/06/10-13:23:30.021 124e8 Delete type=2 #161
+2026/06/10-13:23:30.022 124e8 Manual compaction at level-0 from '\x00/\x00\x00\x05' @ 8794 : 1 .. '\x000\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/06/10-13:23:35.511 124fa Level-0 table #164: started
+2026/06/10-13:23:35.513 124fa Level-0 table #164: 4344 bytes OK
+2026/06/10-13:23:35.515 124fa Delete type=2 #158
+2026/06/10-13:23:35.515 124fa Delete type=0 #160
+2026/06/10-13:23:35.515 124eb Manual compaction at level-0 from '\x000\x00\x00\x00' @ 72057594037927935 : 1 .. '\x001\x00\x00\x00' @ 0 : 0; will stop at '\x000\x00\x00\x05' @ 8893 : 1
+2026/06/10-13:23:35.516 124eb Compacting 1@0 + 1@1 files
+2026/06/10-13:23:35.606 124eb Generated table #165@0: 586 keys, 8031 bytes
+2026/06/10-13:23:35.606 124eb Compacted 1@0 + 1@1 files => 8031 bytes
+2026/06/10-13:23:35.609 124eb compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/06/10-13:23:35.610 124e8 Manual compaction at level-0 from '\x000\x00\x00\x05' @ 8893 : 1 .. '\x001\x00\x00\x00' @ 0 : 0; will stop at (end)

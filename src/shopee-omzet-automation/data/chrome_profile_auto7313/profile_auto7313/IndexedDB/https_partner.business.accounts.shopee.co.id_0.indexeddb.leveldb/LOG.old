@@ -1,0 +1,25 @@
+2026/06/11-10:20:03.589 73d2 Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7313/profile_auto7313/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/MANIFEST-000001
+2026/06/11-10:20:03.589 73d2 Recovering log #84
+2026/06/11-10:20:03.590 73d2 Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7313/profile_auto7313/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/000084.log 
+2026/06/11-10:20:03.594 73d2 Delete type=2 #82
+2026/06/11-10:20:03.616 73d6 Level-0 table #89: started
+2026/06/11-10:20:03.619 73d6 Level-0 table #89: 5865 bytes OK
+2026/06/11-10:20:03.622 73d6 Delete type=0 #84
+2026/06/11-10:20:03.625 73d1 Manual compaction at level-0 from '\x00\x1a\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x1b\x00\x00\x00' @ 0 : 0; will stop at '\x00\x1a\x00\x00\x05' @ 5272 : 1
+2026/06/11-10:20:03.626 73d1 Compacting 1@0 + 1@1 files
+2026/06/11-10:20:03.634 73d1 Generated table #90@0: 568 keys, 7382 bytes
+2026/06/11-10:20:03.634 73d1 Compacted 1@0 + 1@1 files => 7382 bytes
+2026/06/11-10:20:03.641 73d1 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/06/11-10:20:03.642 73d6 Manual compaction at level-0 from '\x00\x1a\x00\x00\x05' @ 5272 : 1 .. '\x00\x1b\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/06/11-10:20:49.200 73d6 Level-0 table #92: started
+2026/06/11-10:20:49.202 73d6 Level-0 table #92: 6295 bytes OK
+2026/06/11-10:20:49.204 73d6 Delete type=0 #88
+2026/06/11-10:20:49.204 73d6 Delete type=2 #86
+2026/06/11-10:20:49.204 73d6 Delete type=2 #89
+2026/06/11-10:20:49.205 73d6 Manual compaction at level-0 from '\x00\x1b\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x1c\x00\x00\x00' @ 0 : 0; will stop at '\x00\x1b\x00\x00\x05' @ 5483 : 1
+2026/06/11-10:20:49.206 73d6 Compacting 1@0 + 1@1 files
+2026/06/11-10:20:49.211 73d6 Generated table #93@0: 578 keys, 7304 bytes
+2026/06/11-10:20:49.211 73d6 Compacted 1@0 + 1@1 files => 7304 bytes
+2026/06/11-10:20:49.212 73d6 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/06/11-10:20:49.212 73d6 Delete type=2 #92
+2026/06/11-10:20:49.213 73d1 Manual compaction at level-0 from '\x00\x1b\x00\x00\x05' @ 5483 : 1 .. '\x00\x1c\x00\x00\x00' @ 0 : 0; will stop at (end)

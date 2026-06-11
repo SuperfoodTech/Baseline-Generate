@@ -22,6 +22,51 @@ const VENV_PY = path.join(SRC_DIR, '.venv', 'bin', 'python');
 const PYTHON_EXE = fs.existsSync(VENV_PY) ? VENV_PY : 'python3';
 const CLI_PATH = path.join(SRC_DIR, 'cli.py');
 
+// ── OFD Job Lock ─────────────────────────────────────────────
+// File lock ini dibaca oleh warmer.py untuk mengetahui bahwa Docker pause
+// bersifat intentional (pipeline sedang berjalan), bukan warmer stuck.
+// Path harus berada di shared volume antara container bot dan warmer:
+//   docker-compose.yml: ./src/shopee-omzet-automation/data → /app/src/shopee-omzet-automation/data
+const OFD_JOB_LOCK_PATH = path.join(
+    SRC_DIR,
+    'shopee-omzet-automation',
+    'data',
+    'ofd_job.lock'
+);
+
+/**
+ * Tulis file lock agar warmer tahu pipeline OFD sedang berjalan.
+ * @param {Function} onLog
+ */
+function acquireJobLock(onLog = console.log) {
+    try {
+        fs.mkdirSync(path.dirname(OFD_JOB_LOCK_PATH), { recursive: true });
+        fs.writeFileSync(
+            OFD_JOB_LOCK_PATH,
+            JSON.stringify({ startedAt: new Date().toISOString(), pid: process.pid }),
+            'utf8'
+        );
+        onLog(`🔒 [JOB LOCK] Acquired: ${OFD_JOB_LOCK_PATH}`);
+    } catch (err) {
+        onLog(`⚠️ [JOB LOCK] Gagal menulis lock file: ${err.message}`);
+    }
+}
+
+/**
+ * Hapus file lock setelah pipeline selesai.
+ * @param {Function} onLog
+ */
+function releaseJobLock(onLog = console.log) {
+    try {
+        if (fs.existsSync(OFD_JOB_LOCK_PATH)) {
+            fs.unlinkSync(OFD_JOB_LOCK_PATH);
+            onLog(`🔓 [JOB LOCK] Released: ${OFD_JOB_LOCK_PATH}`);
+        }
+    } catch (err) {
+        onLog(`⚠️ [JOB LOCK] Gagal menghapus lock file: ${err.message}`);
+    }
+}
+
 /**
  * Konversi tanggal DD-MM-YYYY → YYYY-MM-DD
  * @param {string} ddmmyyyy
@@ -149,7 +194,8 @@ function runPipeline(formData, onLog = () => { }) {
         const outlet = firstValue(formData.outlet);
         const bd = formData.bd || '';
 
-        // 1. Pause warmer sebelum memulai pipeline
+        // 1. Acquire job lock + Pause warmer sebelum memulai pipeline
+        acquireJobLock(onLog);
         await controlWarmer('pause', onLog);
 
         // Multi-cabang: jika hanya 1 cabang dipilih → filter spesifik
@@ -209,8 +255,11 @@ function runPipeline(formData, onLog = () => { }) {
         });
 
         const cleanupAndResolve = async (data) => {
-            // 2. Unpause warmer setelah pipeline selesai
+            // 2. Unpause warmer + Release job lock setelah pipeline selesai
+            // Urutan: unpause dulu, baru hapus lock — agar warmer yang baru resume
+            // langsung melihat lock sudah hilang dan tidak masuk ke wait loop.
             await controlWarmer('unpause', onLog);
+            releaseJobLock(onLog);
             resolve(data);
         };
 

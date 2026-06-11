@@ -29,7 +29,7 @@ import csv
 import logging
 import requests
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 import threading
 
 # ── Path Setup ─────────────────────────────────────────────────────────────────
@@ -66,11 +66,15 @@ _accounts_env        = os.getenv("ACCOUNTS", "")
 TARGET_ACCOUNTS      = [a.strip() for a in _accounts_env.split(",") if a.strip()] if _accounts_env else []
 DISCORD_WEBHOOK_URL  = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
 UPTIME_KUMA_PUSH_URL = os.getenv("UPTIME_KUMA_PUSH_URL", "").strip()
+# Jam pengiriman daily summary (default: 07:00 WIB)
+DAILY_SUMMARY_HOUR   = int(os.getenv("DAILY_SUMMARY_HOUR", "7"))
 
 # ── Watchdog & Heartbeat Config ───────────────────────────────────────────────
 LAST_ACTIVE = time.time()
-HEARTBEAT_INTERVAL_SECONDS = 60   # 1 minute (check more often, ping kuma more often)
-STUCK_THRESHOLD_SECONDS = 180     # 3 minutes without activity is considered stuck
+HEARTBEAT_INTERVAL_SECONDS = 30   # Cek setiap 30 detik
+STUCK_THRESHOLD_SECONDS = 180     # 3 menit tanpa aktivitas = stuck
+
+
 
 # ── Logger ─────────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -85,6 +89,15 @@ log = logging.getLogger("warmer")
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 DATA_DIR          = OMZET_DIR / "data"   # Where session_*.json & chrome_profile_* live
+
+# ── OFD Job Lock Config ───────────────────────────────────────────────────────
+# run_pipeline.js menulis file ini ke shared volume saat pipeline OFD dimulai,
+# dan menghapusnya saat pipeline selesai. Warmer membaca file ini untuk tahu
+# bahwa Docker pause bersifat intentional (bukan stuck).
+# Path harus sama dengan yang digunakan run_pipeline.js (shared volume).
+_ofd_env = os.getenv("OFD_JOB_LOCK_FILE", "").strip()
+OFD_JOB_LOCK_FILE = Path(_ofd_env) if _ofd_env else (DATA_DIR / "ofd_job.lock")
+
 CREDS_CACHE_PATH  = PROJECT_ROOT / "data" / "shopee_credentials_cache.csv"
 CREDS_URL         = (
     "https://docs.google.com/spreadsheets/d/e/"
@@ -95,8 +108,158 @@ CREDS_URL         = (
 # Business hours URL — navigating here forces Shopee to issue a fresh tob_token
 BUSINESS_HOURS_URL = "https://partner.shopee.co.id/settings/shopee-food/business-hours-settings"
 
+# ── Stats File — persists across restarts ──────────────────────────────────────
+# Disimpan di DATA_DIR (shared volume) agar survive Docker/os.execv restart.
+STATS_FILE = DATA_DIR / "warmer_stats.json"
+
+# ── Session start time (untuk hitung uptime) ─────────────────────────────────
+SESSION_START = datetime.now()
+
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
+# ── Stats Persistence ─────────────────────────────────────────────────────────
+
+def _load_stats() -> dict:
+    """Muat stats dari file JSON. Return dict kosong jika belum ada."""
+    try:
+        if STATS_FILE.exists():
+            return json.loads(STATS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {
+        "period_start": datetime.now().isoformat(),
+        "stuck_restarts": 0,
+        "docker_restarts": 0,
+        "down_events": [],      # list of {ts, reason, username}
+        "last_error": None,     # {ts, username, reason}
+        "last_stuck_at": None,
+        "total_cycles": 0,
+        "total_success": 0,
+        "total_failed": 0,
+    }
+
+
+def _save_stats(stats: dict):
+    """Simpan stats ke file JSON secara atomic."""
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = STATS_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(STATS_FILE)
+    except Exception as exc:
+        log.warning(f"⚠️  Gagal menyimpan stats: {exc}")
+
+
+def record_stuck_restart(stuck_seconds: float):
+    """Catat event auto-restart karena stuck."""
+    stats = _load_stats()
+    stats["stuck_restarts"] = stats.get("stuck_restarts", 0) + 1
+    stats["last_stuck_at"] = datetime.now().isoformat()
+    stats["last_error"] = {
+        "ts": datetime.now().isoformat(),
+        "username": "(watchdog)",
+        "reason": f"Warmer STUCK selama {stuck_seconds:.0f}s — auto-restart dipicu.",
+    }
+    _save_stats(stats)
+
+
+def record_down_event(username: str, reason: str):
+    """Catat event akun gagal diproses (down event)."""
+    stats = _load_stats()
+    event = {
+        "ts": datetime.now().isoformat(),
+        "username": username,
+        "reason": reason,
+    }
+    events = stats.get("down_events", [])
+    # Simpan max 50 event terakhir
+    events.append(event)
+    if len(events) > 50:
+        events = events[-50:]
+    stats["down_events"] = events
+    stats["last_error"] = event
+    stats["total_failed"] = stats.get("total_failed", 0) + 1
+    _save_stats(stats)
+
+
+def record_cycle_done(success: int, failed: int):
+    """Catat hasil siklus."""
+    stats = _load_stats()
+    stats["total_cycles"] = stats.get("total_cycles", 0) + 1
+    stats["total_success"] = stats.get("total_success", 0) + success
+    _save_stats(stats)
+
+
+def reset_stats_period():
+    """Reset statistik untuk periode 24 jam baru."""
+    _save_stats({
+        "period_start": datetime.now().isoformat(),
+        "stuck_restarts": 0,
+        "docker_restarts": 0,
+        "down_events": [],
+        "last_error": None,
+        "last_stuck_at": None,
+        "total_cycles": 0,
+        "total_success": 0,
+        "total_failed": 0,
+    })
+
+
+def is_ofd_job_locked() -> bool:
+    """
+    Cek apakah pipeline OFD sedang berjalan dengan membaca file lock.
+
+    run_pipeline.js (ofd_discord_bot) menulis file ini ke shared volume
+    saat pipeline dimulai dan menghapusnya saat selesai.
+    Jauh lebih reliable daripada pgrep karena:
+    - Tidak bergantung pada nama proses / PID
+    - Bekerja di dalam container Docker yang ter-isolasi
+    - Path-nya ada di shared volume yang bisa diakses kedua container
+    """
+    try:
+        return OFD_JOB_LOCK_FILE.exists()
+    except Exception:
+        return False
+
+
+def wait_for_ofd_job(caller_context: str = ""):
+    """
+    Mem-pause eksekusi selama file lock OFD masih ada.
+    Selama menunggu, LAST_ACTIVE tetap diupdate agar watchdog TIDAK
+    menganggap warmer sebagai stuck dan melakukan restart.
+
+    Catatan: Saat Docker container warmer di-pause oleh run_pipeline.js,
+    seluruh proses di-freeze — loop ini tidak jalan. Yang penting adalah
+    SETELAH di-unpause, watchdog tidak langsung restart karena LAST_ACTIVE
+    sudah stale. Watchdog harus cek lock file sebelum memutuskan restart.
+
+    Args:
+        caller_context: Label opsional untuk log (misal: nama akun).
+    """
+    global LAST_ACTIVE
+    if not is_ofd_job_locked():
+        return  # Tidak ada pipeline aktif, lanjut langsung
+
+    label = f"[{caller_context}] " if caller_context else ""
+    log.info(f"  ⏸️  {label}Job lock OFD terdeteksi ('{OFD_JOB_LOCK_FILE.name}') — warmer menunggu pipeline selesai.")
+    send_discord_alert(
+        f"⏸️ **[Session Warmer]** {label}Pause sementara — pipeline OFD sedang aktif (job lock ditemukan)."
+    )
+
+    waited = 0
+    while is_ofd_job_locked():
+        # ⚠️  KUNCI: Update LAST_ACTIVE saat menunggu agar watchdog tidak restart
+        LAST_ACTIVE = time.time()
+        time.sleep(10)
+        waited += 10
+        log.info(
+            f"  ⏸️  {label}Masih menunggu pipeline OFD selesai... (sudah {waited}s)"
+        )
+
+    log.info(f"  ▶️  {label}Job lock sudah hilang. Warmer RESUME.")
+    # Reset timestamp setelah resume agar watchdog mulai menghitung ulang bersih
+    LAST_ACTIVE = time.time()
 
 def send_discord_alert(message: str):
     """Posts a plain-text message to the Discord webhook (if configured)."""
@@ -118,22 +281,180 @@ def heartbeat_and_watchdog():
         time.sleep(HEARTBEAT_INTERVAL_SECONDS)
         now = time.time()
         time_since_active = now - LAST_ACTIVE
-        
+
         # 1. Stuck Detection
         if time_since_active > STUCK_THRESHOLD_SECONDS:
-            log.error(f"💀 Warmer terdeteksi STUCK (tidak ada aktivitas selama {time_since_active:.0f}s). Restarting...")
-            send_discord_alert(f"💀 **[Session Warmer]** Terdeteksi STUCK selama {time_since_active:.0f}s. Melakukan restart otomatis...")
-            
-            # Restart the process
-            os.execv(sys.executable, ['python'] + sys.argv)
-            
+            # ⚠️  PENTING: Jangan restart jika warmer sedang di-pause oleh Docker
+            # karena pipeline OFD aktif (ditandai dengan job lock file).
+            # Saat Docker pause, seluruh proses di-freeze sehingga LAST_ACTIVE
+            # tidak bisa diupdate — ini bukan stuck, tapi intentional pause.
+            if is_ofd_job_locked():
+                log.info(
+                    f"⏸️  Watchdog: LAST_ACTIVE stale ({time_since_active:.0f}s) tapi "
+                    f"job lock OFD aktif — ini Docker pause, bukan stuck. Reset timer."
+                )
+                LAST_ACTIVE = time.time()  # Reset agar tidak loop terus
+            else:
+                log.error(
+                    f"💀 Warmer terdeteksi STUCK (tidak ada aktivitas selama {time_since_active:.0f}s). Restarting..."
+                )
+                record_stuck_restart(time_since_active)
+                send_discord_alert(
+                    f"💀 **[Session Warmer]** Terdeteksi STUCK selama {time_since_active:.0f}s. "
+                    "Melakukan restart otomatis..."
+                )
+                os.execv(sys.executable, ['python'] + sys.argv)
 
-        # 3. Heartbeat to Uptime Kuma
+        # 2. Heartbeat to Uptime Kuma
         if UPTIME_KUMA_PUSH_URL:
             try:
                 requests.get(UPTIME_KUMA_PUSH_URL, timeout=10)
             except Exception as e:
                 log.warning(f"⚠️  Uptime Kuma push gagal: {e}")
+
+
+def send_daily_summary():
+    """Kirim ringkasan 24 jam ke Discord via embed webhook."""
+    if not DISCORD_WEBHOOK_URL:
+        return
+
+    stats = _load_stats()
+    now   = datetime.now()
+
+    # ── Hitung periode ──────────────────────────────────────────────────
+    try:
+        period_start = datetime.fromisoformat(stats.get("period_start", now.isoformat()))
+    except Exception:
+        period_start = now
+    period_hours = max(1, round((now - period_start).total_seconds() / 3600))
+
+    # ── Uptime sesi ini ─────────────────────────────────────────────────
+    uptime_sec  = (now - SESSION_START).total_seconds()
+    uptime_str  = f"{int(uptime_sec // 3600)}j {int((uptime_sec % 3600) // 60)}m"
+
+    # ── Statistik ───────────────────────────────────────────────────────
+    stuck_cnt   = stats.get("stuck_restarts", 0)
+    down_events = stats.get("down_events", [])
+    # Filter hanya 24 jam terakhir
+    cutoff      = now - timedelta(hours=24)
+    recent_down = [
+        e for e in down_events
+        if datetime.fromisoformat(e["ts"]) >= cutoff
+    ]
+    down_cnt    = len(recent_down)
+    cycle_cnt   = stats.get("total_cycles", 0)
+    total_ok    = stats.get("total_success", 0)
+    total_fail  = stats.get("total_failed", 0)
+
+    # ── Status warna & teks ─────────────────────────────────────────────
+    if stuck_cnt > 0 or down_cnt > 5:
+        color  = 0xFF4444   # merah
+        status = "⚠️ Ada Masalah"
+    elif down_cnt > 0:
+        color  = 0xFFAA00   # kuning
+        status = "🟡 Perlu Perhatian"
+    else:
+        color  = 0x00CC66   # hijau
+        status = "✅ Normal"
+
+    # ── Last error ──────────────────────────────────────────────────────
+    last_err = stats.get("last_error")
+    if last_err:
+        try:
+            err_ts  = datetime.fromisoformat(last_err["ts"]).strftime("%d/%m %H:%M")
+        except Exception:
+            err_ts  = "?"
+        last_err_str = (
+            f"`{last_err.get('username', '?')}` @ {err_ts}\n"
+            f"{last_err.get('reason', '-')[:200]}"
+        )
+    else:
+        last_err_str = "Tidak ada error dalam periode ini."
+
+    # ── Tabel down events terbaru (max 5) ───────────────────────────────
+    if recent_down:
+        down_lines = []
+        for ev in recent_down[-5:]:
+            try:
+                ev_ts = datetime.fromisoformat(ev["ts"]).strftime("%H:%M")
+            except Exception:
+                ev_ts = "?"
+            reason_short = ev.get("reason", "-")[:60]
+            down_lines.append(f"• `{ev.get('username','?')}` {ev_ts} — {reason_short}")
+        down_detail = "\n".join(down_lines)
+    else:
+        down_detail = "Tidak ada kegagalan dalam 24 jam terakhir. 🎉"
+
+    # ── Bangun embed payload ─────────────────────────────────────────────
+    embed = {
+        "title": f"📊 Laporan Harian Session Warmer — {now.strftime('%d %b %Y')}",
+        "color": color,
+        "description": (
+            f"**Status saat ini:** {status}\n"
+            f"**Uptime sesi:** {uptime_str}\n"
+            f"**Periode laporan:** {period_hours} jam terakhir"
+        ),
+        "fields": [
+            {
+                "name": "🔁 Siklus & Akun",
+                "value": (
+                    f"Siklus selesai: **{cycle_cnt}**\n"
+                    f"Sukses: **{total_ok}** | Gagal: **{total_fail}**"
+                ),
+                "inline": True,
+            },
+            {
+                "name": "⚡ Restart & Down",
+                "value": (
+                    f"Auto-restart (stuck): **{stuck_cnt}x**\n"
+                    f"Akun gagal (24j): **{down_cnt}x**"
+                ),
+                "inline": True,
+            },
+            {
+                "name": f"🔴 Kegagalan Akun Terakhir (24j — {down_cnt} total)",
+                "value": down_detail,
+                "inline": False,
+            },
+            {
+                "name": "🪲 Error Terakhir",
+                "value": last_err_str,
+                "inline": False,
+            },
+        ],
+        "footer": {"text": "Shopee Session Warmer • Daily Report"},
+        "timestamp": now.isoformat(),
+    }
+
+    try:
+        requests.post(
+            DISCORD_WEBHOOK_URL,
+            json={"embeds": [embed]},
+            timeout=15,
+        )
+        log.info("📊 Daily summary berhasil dikirim ke Discord.")
+    except Exception as exc:
+        log.warning(f"⚠️  Gagal mengirim daily summary: {exc}")
+
+    # Reset stats untuk periode berikutnya
+    reset_stats_period()
+
+
+def daily_summary_thread():
+    """Thread background: kirim summary setiap hari pada jam DAILY_SUMMARY_HOUR."""
+    log.info(f"📅 Daily summary thread aktif — akan kirim setiap pukul {DAILY_SUMMARY_HOUR:02d}:00.")
+    last_sent_date = None
+
+    while True:
+        time.sleep(60)  # Cek setiap menit
+        now = datetime.now()
+        if now.hour == DAILY_SUMMARY_HOUR and now.date() != last_sent_date:
+            log.info("📊 Mengirim daily summary ke Discord...")
+            try:
+                send_daily_summary()
+                last_sent_date = now.date()
+            except Exception as exc:
+                log.warning(f"⚠️  Daily summary thread error: {exc}")
 
 
 def load_credentials() -> list[dict]:
@@ -301,7 +622,10 @@ def warm_account(acc: dict) -> bool:
 
         # ── 2. Navigate to Business Hours — triggers fresh tob_token ───────
         log.info(f"  │  [{username}] 🔄 Navigasi ke Business Hours untuk refresh token...")
-        session_tokens = browser.refresh_tokens(driver)
+        
+        # Ekstrak valid entity_id dari session_data (jika ada) untuk fallback
+        valid_entity_id = session_data.get("shopee_tob_entity_id")
+        session_tokens = browser.refresh_tokens(driver, fallback_entity_id=valid_entity_id)
 
         tob_token  = session_tokens.get("shopee_tob_token", "")
         entity_id  = session_tokens.get("shopee_tob_entity_id", "")
@@ -332,6 +656,7 @@ def warm_account(acc: dict) -> bool:
         elif "ERR_INTERNET_DISCONNECTED" in exc_str or "ERR_CONNECTION" in exc_str:
             friendly_error = "Koneksi internet server terputus."
 
+        record_down_event(username, friendly_error)
         send_discord_alert(
             f"🔴 **[Session Warmer]** Gagal memproses akun `{username}`.\n"
             f"**Alasan:** {friendly_error}"
@@ -388,6 +713,12 @@ def main():
 
         for idx, acc in enumerate(accounts, start=1):
             LAST_ACTIVE = time.time()  # Update activity timestamp
+
+            # ── Pause jika pipeline OFD sedang aktif (job lock file) ──────────
+            # wait_for_ofd_job() akan terus update LAST_ACTIVE saat menunggu,
+            # sehingga watchdog TIDAK akan salah mendeteksi ini sebagai stuck.
+            wait_for_ofd_job(caller_context=acc['username'])
+
             log.info(f"  [{idx}/{total}] Akun: {acc['username']}")
             ok = warm_account(acc)
             if ok:
@@ -410,6 +741,9 @@ def main():
         log.info(f"     Gagal    : {failed}/{total}")
         log.info("=" * 65 + "\n")
 
+        # Catat hasil siklus ke stats
+        record_cycle_done(success, failed)
+
         if DISCORD_WEBHOOK_URL and failed > 0:
             send_discord_alert(
                 f"⚠️ **[Session Warmer]** Siklus #{cycle} selesai dengan KEGAGALAN. "
@@ -425,9 +759,18 @@ def main():
 
 
 if __name__ == "__main__":
+    # Catat restart Docker (proses baru = container di-restart)
+    boot_stats = _load_stats()
+    boot_stats["docker_restarts"] = boot_stats.get("docker_restarts", 0) + 1
+    _save_stats(boot_stats)
+
     # Start heartbeat watchdog thread
     watchdog_thread = threading.Thread(target=heartbeat_and_watchdog, daemon=True)
     watchdog_thread.start()
+
+    # Start daily summary thread
+    summary_thread = threading.Thread(target=daily_summary_thread, daemon=True)
+    summary_thread.start()
 
     try:
         main()
