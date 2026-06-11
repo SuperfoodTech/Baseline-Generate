@@ -1024,6 +1024,7 @@ def auto_switch_merchant(driver, target_name, is_retry=False):
         
         for switch_attempt in range(3):
             # Use ActionChains to hover Profile then "Pilih Merchant Lain"
+            dropdown_opened = False
             try:
                 actions = ActionChains(driver)
                 # 1. Hover/Click merchantName (Profile)
@@ -1031,28 +1032,42 @@ def auto_switch_merchant(driver, target_name, is_retry=False):
                 actions.move_to_element(profile_menu).click().perform()
                 time.sleep(1)
                 
-                # 2. Hover "Pilih Merchant Lain"
+                # 2. Cek apakah dropdown terbuka dengan timeout SINGKAT (3 detik)
+                #    Jika 3 detik tidak muncul, sesi kemungkinan stale/overlay menghalangi.
+                quick_wait = WebDriverWait(driver, 3)
                 try:
-                    switch_trigger = wait.until(EC.presence_of_element_located((By.XPATH, "//span[contains(text(), 'Pilih Merchant Lain') or contains(text(), 'Switch Merchant')]")))
+                    switch_trigger = quick_wait.until(EC.presence_of_element_located((By.XPATH, "//span[contains(text(), 'Pilih Merchant Lain') or contains(text(), 'Switch Merchant')]")))
                     actions.move_to_element(switch_trigger).perform()
+                    dropdown_opened = True
                     time.sleep(1)
                 except:
-                    # If hover fails, try JS click as fallback
-                    driver.execute_script("""
+                    # Fallback: coba JS click dan CEK hasilnya
+                    js_found = driver.execute_script("""
                         var spans = document.querySelectorAll('span, p, div');
                         for (var s of spans) {
-                            if (s.innerText.includes('Pilih Merchant Lain') || s.innerText.includes('Switch Merchant')) {
+                            var text = (s.innerText || '').trim();
+                            if (text.includes('Pilih Merchant Lain') || text.includes('Switch Merchant')) {
                                 s.click();
-                                break;
+                                return true;
                             }
                         }
+                        return false;
                     """)
-                    time.sleep(1)
+                    if js_found:
+                        dropdown_opened = True
+                        time.sleep(1)
             except Exception as e:
                 log.warning(f"  ⚠️ Failed to trigger merchant menu: {e}")
                 if switch_attempt == 2:
                     return False
                 continue
+
+            # DETEKSI SESI STALE: Jika dropdown tidak terbuka, sesi sudah kedaluwarsa.
+            # Tidak ada gunanya mengulang klik yang sama 3x (hemat ~46 detik).
+            # Langsung return False agar pipeline memicu recovery (logout + login ulang).
+            if not dropdown_opened:
+                log.warning(f"  ⚠️ [STALE SESSION] Dropdown profil tidak terbuka setelah klik — sesi kemungkinan kedaluwarsa.")
+                return False
 
             # Use JS to click the target merchant in the revealed list
             js_switch_script = """
@@ -1088,13 +1103,15 @@ def auto_switch_merchant(driver, target_name, is_retry=False):
                 if switch_attempt == 2:
                     msg = f"Nama outlet '{target_name}' tidak terdaftar atau belum ditambahkan (invite) di akun Shopee ini."
                     log.error(f"❌ {msg}")
-                    # Mengirimkan error ke Discord HANYA di final attempt
-                    send_discord_error(
-                        platform="Shopee", 
-                        merchant=target_name, 
-                        error_type="SYSTEM_ERROR", 
-                        message=msg
-                    )
+                    # Mengirimkan error ke Discord HANYA setelah semua recovery habis (is_retry=True)
+                    # Ini mencegah notifikasi panik prematur saat pipeline masih bisa auto-recover.
+                    if is_retry:
+                        send_discord_error(
+                            platform="Shopee", 
+                            merchant=target_name, 
+                            error_type="SYSTEM_ERROR", 
+                            message=msg
+                        )
                     # Lempar error spesifik agar pipeline terluar menangkapnya
                     raise ValueError(f"MERCHANT_NOT_FOUND: {target_name}")
                 continue # Ulangi proses klik profil dan buka dropdown dari awal
