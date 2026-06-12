@@ -220,9 +220,15 @@ def _deliberate_logout_and_relogin(
             wait = WebDriverWait(driver, 30)
             login_ok = _perform_login(driver, wait, username=username, password=password, phone=phone)
             if login_ok:
-                time.sleep(3)
-                url_after = driver.current_url.lower()
-                if "dashboard" in url_after or "merchant-selector" in url_after or "onboarding" in url_after:
+                log.info("  ⏳ Menunggu pengalihan halaman setelah login recovery...")
+                redirected_ok = False
+                for _ in range(30):  # 30 * 0.5s = 15s max wait
+                    curr_url = driver.current_url.lower()
+                    if "onboarding" in curr_url or "merchant-selector" in curr_url or "dashboard" in curr_url:
+                        redirected_ok = True
+                        break
+                    time.sleep(0.5)
+                if redirected_ok:
                     log.info("  ✅ [LOGOUT-RELOGIN] Credential login succeeded directly from login page!")
                     return True
             return False
@@ -787,7 +793,7 @@ def _perform_login(driver, wait, username: str = None, password: str = None, pho
     start_wait = time.time()
     while time.time() - start_wait < 30:
         current_url = driver.current_url.lower()
-        if "authenticate" not in current_url and "verify" not in current_url and "login" not in current_url:
+        if "onboarding" in current_url or "merchant-selector" in current_url or "dashboard" in current_url:
             break
         try:
             # Check for any OTP input
@@ -815,12 +821,26 @@ def _perform_login(driver, wait, username: str = None, password: str = None, pho
                 return False
         except Exception:
             pass
+
+        # Cek dan klik tombol Lanjutkan/Continue jika ada di halaman konfirmasi setelah login
+        try:
+            btn_el = driver.find_element(By.XPATH, "//button[contains(., 'Lanjutkan') or contains(., 'Continue')] | //*[text()='Lanjutkan' or text()='Continue']")
+            if btn_el.is_displayed():
+                log.info("👉 [AUTH] Menemukan tombol 'Lanjutkan', mencoba mengklik...")
+                try:
+                    btn_el.click()
+                except Exception:
+                    driver.execute_script("arguments[0].click();", btn_el)
+                time.sleep(2)
+        except Exception:
+            pass
+
         time.sleep(1)
 
     # Re-verify that we successfully navigated away from login/authenticate pages
     current_url = driver.current_url.lower()
-    if "authenticate" in current_url or "verify" in current_url or "login" in current_url:
-        log.error("❌ [AUTH] Login did not redirect to dashboard and is still on authentication page. Aborting.")
+    if "onboarding" not in current_url and "merchant-selector" not in current_url and "dashboard" not in current_url:
+        log.error(f"❌ [AUTH] Login did not redirect to dashboard and is still on: {current_url}. Aborting.")
         return False
 
     return True
@@ -1097,7 +1117,7 @@ def _handle_merchant_selection(driver, active_id_forced=None, interactive=True):
             scan_result = driver.execute_script("""
                 var results = [];
                 // Target specific merchant-like containers to avoid querying thousands of nodes
-                var items = document.querySelectorAll('li, [class*="merchant"], [class*="shop"]');
+                var items = document.querySelectorAll('.listItem, .merchant-item, li[class*="item"], li, [class*="merchant"], [class*="shop"]');
                 for (var i = 0; i < items.length; i++) {
                     var el = items[i];
                     // Skip wrappers with many children to target leaf nodes/cards
@@ -1128,7 +1148,7 @@ def _handle_merchant_selection(driver, active_id_forced=None, interactive=True):
             """)
 
             if scan_result:
-                all_els = driver.find_elements(By.CSS_SELECTOR, 'li, [class*="merchant"], [class*="shop"]')
+                all_els = driver.find_elements(By.CSS_SELECTOR, '.listItem, .merchant-item, li[class*="item"], li, [class*="merchant"], [class*="shop"]')
                 for r in scan_result:
                     name = r['name']
                     name_key = name.lower()
@@ -1400,18 +1420,33 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
                         driver.quit()
                         continue
                     
-                time.sleep(3)
-                if "onboarding" in driver.current_url or "merchant-selector" in driver.current_url:
+                # Wait dynamically for either dashboard, onboarding, or merchant-selector URL (up to 15s)
+                log.info("  ⏳ Menunggu pengalihan halaman setelah login...")
+                redirected_ok = False
+                for _ in range(30):  # 30 * 0.5s = 15s max wait
+                    curr_url = driver.current_url.lower()
+                    if "onboarding" in curr_url or "merchant-selector" in curr_url or "dashboard" in curr_url:
+                        redirected_ok = True
+                        break
+                    time.sleep(0.5)
+
+                if redirected_ok and ("onboarding" in driver.current_url.lower() or "merchant-selector" in driver.current_url.lower()):
                     log.info("📍 [SESSION] Detected Onboarding page. Selecting first available merchant...")
                     bypass_js = """
                         var loaders = document.querySelectorAll('.ant-spin, [class*="loading"], .shopee-loading, .ant-spin-nested-loading');
                         loaders.forEach(el => el.remove());
                         // Klik elemen wrapper .listItem (bukan inner .merchantInfo) 
                         // karena event onClick menempel di wrapper terluar.
-                        var target = document.querySelector('.listItem, .merchant-item, .ant-list-item');
+                        var target = document.querySelector('.listItem, .merchant-item, li[class*="item"], [class*="merchant-item"], .ant-list-item');
                         if (target) {
                             target.scrollIntoView({block: 'center'});
-                            target.click();
+                            try { target.click(); } catch(e) {}
+                            var clickEvent = new MouseEvent('click', {
+                                bubbles: true,
+                                cancelable: true,
+                                view: window
+                            });
+                            target.dispatchEvent(clickEvent);
                             return true;
                         }
                         return false;
