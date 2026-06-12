@@ -1,3 +1,6 @@
-2026/06/12-16:17:32.153 59dab Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7307/profile_auto7307/shared_proto_db/MANIFEST-000001
-2026/06/12-16:17:32.153 59dab Recovering log #39
-2026/06/12-16:17:32.164 59dab Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7307/profile_auto7307/shared_proto_db/000039.log 
+2026/06/12-22:08:15.978 9b076 Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7307/profile_auto7307/shared_proto_db/MANIFEST-000001
+2026/06/12-22:08:15.979 9b076 Recovering log #55
+2026/06/12-22:08:15.990 9b076 Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7307/profile_auto7307/shared_proto_db/000055.log 
+2026/06/12-22:08:24.667 9b079 Level-0 table #59: started
+2026/06/12-22:08:24.675 9b079 Level-0 table #59: 108939 bytes OK
+2026/06/12-22:08:24.679 9b079 Delete type=0 #55
