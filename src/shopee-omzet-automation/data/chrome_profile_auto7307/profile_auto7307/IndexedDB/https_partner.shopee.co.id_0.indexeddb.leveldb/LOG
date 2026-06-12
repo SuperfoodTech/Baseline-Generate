@@ -1,6 +1,3 @@
-2026/06/11-11:59:53.403 12fc6 Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7307/profile_auto7307/IndexedDB/https_partner.shopee.co.id_0.indexeddb.leveldb/MANIFEST-000001
-2026/06/11-11:59:53.404 12fc6 Recovering log #25
-2026/06/11-11:59:53.513 12fc6 Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7307/profile_auto7307/IndexedDB/https_partner.shopee.co.id_0.indexeddb.leveldb/000025.log 
-2026/06/11-12:01:10.175 12fc9 Level-0 table #30: started
-2026/06/11-12:01:10.201 12fc9 Level-0 table #30: 978178 bytes OK
-2026/06/11-12:01:10.204 12fc9 Delete type=0 #25
+2026/06/12-16:17:34.242 59daa Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7307/profile_auto7307/IndexedDB/https_partner.shopee.co.id_0.indexeddb.leveldb/MANIFEST-000001
+2026/06/12-16:17:34.242 59daa Recovering log #76
+2026/06/12-16:17:34.274 59daa Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7307/profile_auto7307/IndexedDB/https_partner.shopee.co.id_0.indexeddb.leveldb/000076.log 

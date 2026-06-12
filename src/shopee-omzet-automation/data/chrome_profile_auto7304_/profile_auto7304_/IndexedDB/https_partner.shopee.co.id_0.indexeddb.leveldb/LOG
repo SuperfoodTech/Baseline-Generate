@@ -1,3 +1,12 @@
-2026/06/11-11:00:12.497 f0ec Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7304_/profile_auto7304_/IndexedDB/https_partner.shopee.co.id_0.indexeddb.leveldb/MANIFEST-000001
-2026/06/11-11:00:12.497 f0ec Recovering log #18
-2026/06/11-11:00:12.606 f0ec Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7304_/profile_auto7304_/IndexedDB/https_partner.shopee.co.id_0.indexeddb.leveldb/000018.log 
+2026/06/12-16:17:09.892 59c35 Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7304_/profile_auto7304_/IndexedDB/https_partner.shopee.co.id_0.indexeddb.leveldb/MANIFEST-000001
+2026/06/12-16:17:09.893 59c35 Recovering log #18
+2026/06/12-16:17:09.980 59c35 Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7304_/profile_auto7304_/IndexedDB/https_partner.shopee.co.id_0.indexeddb.leveldb/000018.log 
+2026/06/12-16:17:10.326 59c34 Level-0 table #24: started
+2026/06/12-16:17:10.351 59c34 Level-0 table #24: 963350 bytes OK
+2026/06/12-16:17:10.354 59c34 Delete type=0 #18
+2026/06/12-16:17:15.596 59c36 Compacting 1@0 + 1@1 files
+2026/06/12-16:17:15.622 59c36 Generated table #25@0: 721 keys, 35459 bytes
+2026/06/12-16:17:15.623 59c36 Compacted 1@0 + 1@1 files => 35459 bytes
+2026/06/12-16:17:15.624 59c36 compacted to: files[ 0 1 0 0 0 0 0 ]
+2026/06/12-16:17:15.625 59c36 Delete type=2 #21
+2026/06/12-16:17:15.625 59c36 Delete type=2 #24
