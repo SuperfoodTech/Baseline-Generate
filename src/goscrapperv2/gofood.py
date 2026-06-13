@@ -1881,6 +1881,7 @@ if __name__ == "__main__":
                 'phone'      : phone_norm,
                 'phone_raw'  : phone_raw,
                 'email'      : acc.get('email', ''),
+                'emails'     : acc.get('emails', []),
                 'nama_outlet': acc['nama_outlet'],
                 'cabang'     : acc['cabang'],
                 'store_id'   : acc['store_id'],
