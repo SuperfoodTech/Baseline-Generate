@@ -1,25 +1,14 @@
-2026/06/13-09:57:18.920 54e8 Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7303/profile_auto7303/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/MANIFEST-000128
-2026/06/13-09:57:18.921 54e8 Recovering log #144
-2026/06/13-09:57:18.921 54e8 Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7303/profile_auto7303/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/000144.log 
-2026/06/13-09:57:18.922 54e8 Delete type=2 #143
-2026/06/13-09:57:18.945 54f9 Level-0 table #149: started
-2026/06/13-09:57:18.949 54f9 Level-0 table #149: 6289 bytes OK
-2026/06/13-09:57:18.951 54f9 Delete type=0 #144
-2026/06/13-09:57:18.951 54e8 Manual compaction at level-0 from '\x00+\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00,\x00\x00\x00' @ 0 : 0; will stop at '\x00+\x00\x00\x05' @ 6558 : 1
-2026/06/13-09:57:18.951 54e8 Compacting 1@0 + 1@1 files
-2026/06/13-09:57:18.954 54e8 Generated table #150@0: 491 keys, 7134 bytes
-2026/06/13-09:57:18.954 54e8 Compacted 1@0 + 1@1 files => 7134 bytes
-2026/06/13-09:57:18.957 54e8 compacted to: files[ 0 1 1 0 0 0 0 ]
-2026/06/13-09:57:18.957 54e8 Delete type=2 #149
-2026/06/13-09:57:18.958 54e8 Manual compaction at level-0 from '\x00+\x00\x00\x05' @ 6558 : 1 .. '\x00,\x00\x00\x00' @ 0 : 0; will stop at (end)
-2026/06/13-09:57:23.321 54f7 Level-0 table #152: started
-2026/06/13-09:57:23.323 54f7 Level-0 table #152: 5566 bytes OK
-2026/06/13-09:57:23.325 54f7 Delete type=2 #146
-2026/06/13-09:57:23.325 54f7 Delete type=0 #148
-2026/06/13-09:57:23.326 54e8 Manual compaction at level-0 from '\x00,\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00-\x00\x00\x00' @ 0 : 0; will stop at '\x00,\x00\x00\x05' @ 6720 : 1
-2026/06/13-09:57:23.327 54e8 Compacting 1@0 + 1@1 files
-2026/06/13-09:57:23.331 54e8 Generated table #153@0: 481 keys, 6891 bytes
-2026/06/13-09:57:23.331 54e8 Compacted 1@0 + 1@1 files => 6891 bytes
-2026/06/13-09:57:23.332 54e8 compacted to: files[ 0 1 1 0 0 0 0 ]
-2026/06/13-09:57:23.332 54e8 Delete type=2 #152
-2026/06/13-09:57:23.333 54e8 Manual compaction at level-0 from '\x00,\x00\x00\x05' @ 6720 : 1 .. '\x00-\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/06/13-14:48:51.813 366ed Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7303/profile_auto7303/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/MANIFEST-000128
+2026/06/13-14:48:51.813 366ed Recovering log #155
+2026/06/13-14:48:51.814 366ed Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7303/profile_auto7303/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/000155.log 
+2026/06/13-14:48:51.814 366ed Delete type=2 #153
+2026/06/13-14:48:51.825 366fb Level-0 table #160: started
+2026/06/13-14:48:51.829 366fb Level-0 table #160: 5677 bytes OK
+2026/06/13-14:48:51.831 366fb Delete type=0 #155
+2026/06/13-14:48:51.831 366fc Manual compaction at level-0 from '\x00.\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00/\x00\x00\x00' @ 0 : 0; will stop at '\x00.\x00\x00\x05' @ 7054 : 1
+2026/06/13-14:48:51.831 366fc Compacting 1@0 + 1@1 files
+2026/06/13-14:48:51.834 366fc Generated table #161@0: 486 keys, 7892 bytes
+2026/06/13-14:48:51.834 366fc Compacted 1@0 + 1@1 files => 7892 bytes
+2026/06/13-14:48:51.836 366fc compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/06/13-14:48:51.837 366fc Delete type=2 #160
+2026/06/13-14:48:51.837 366eb Manual compaction at level-0 from '\x00.\x00\x00\x05' @ 7054 : 1 .. '\x00/\x00\x00\x00' @ 0 : 0; will stop at (end)
