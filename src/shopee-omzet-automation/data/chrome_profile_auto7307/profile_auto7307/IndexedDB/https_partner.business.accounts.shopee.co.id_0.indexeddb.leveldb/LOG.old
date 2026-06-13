@@ -1,14 +1,14 @@
-2026/06/12-16:17:54.025 59daa Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7307/profile_auto7307/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/MANIFEST-000001
-2026/06/12-16:17:54.025 59daa Recovering log #366
-2026/06/12-16:17:54.026 59daa Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7307/profile_auto7307/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/000366.log 
-2026/06/12-16:17:54.026 59daa Delete type=2 #365
-2026/06/12-16:17:54.047 59dae Level-0 table #371: started
-2026/06/12-16:17:54.049 59dae Level-0 table #371: 1996 bytes OK
-2026/06/12-16:17:54.056 59dae Delete type=0 #366
-2026/06/12-16:17:54.057 59dae Manual compaction at level-0 from '\x00k\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00l\x00\x00\x00' @ 0 : 0; will stop at '\x00k\x00\x00\x05' @ 15336 : 1
-2026/06/12-16:17:54.057 59dae Compacting 1@0 + 1@1 files
-2026/06/12-16:17:54.071 59dae Generated table #372@0: 678 keys, 10490 bytes
-2026/06/12-16:17:54.071 59dae Compacted 1@0 + 1@1 files => 10490 bytes
-2026/06/12-16:17:54.075 59dae compacted to: files[ 0 1 1 0 0 0 0 ]
-2026/06/12-16:17:54.076 59dae Delete type=2 #371
-2026/06/12-16:17:54.077 59daa Manual compaction at level-0 from '\x00k\x00\x00\x05' @ 15336 : 1 .. '\x00l\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/06/12-16:17:59.383 59daa Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7307/profile_auto7307/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/MANIFEST-000001
+2026/06/12-16:17:59.385 59daa Recovering log #370
+2026/06/12-16:17:59.386 59daa Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7307/profile_auto7307/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/000370.log 
+2026/06/12-16:17:59.386 59daa Delete type=2 #368
+2026/06/12-16:17:59.407 59daa Level-0 table #375: started
+2026/06/12-16:17:59.412 59daa Level-0 table #375: 9003 bytes OK
+2026/06/12-16:17:59.413 59daa Delete type=0 #370
+2026/06/12-16:17:59.417 59dae Manual compaction at level-0 from '\x00l\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00m\x00\x00\x00' @ 0 : 0; will stop at '\x00l\x00\x00\x05' @ 15618 : 1
+2026/06/12-16:17:59.418 59dae Compacting 1@0 + 1@1 files
+2026/06/12-16:17:59.424 59dae Generated table #376@0: 674 keys, 10277 bytes
+2026/06/12-16:17:59.424 59dae Compacted 1@0 + 1@1 files => 10277 bytes
+2026/06/12-16:17:59.427 59dae compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/06/12-16:17:59.427 59dae Delete type=2 #375
+2026/06/12-16:17:59.428 59daa Manual compaction at level-0 from '\x00l\x00\x00\x05' @ 15618 : 1 .. '\x00m\x00\x00\x00' @ 0 : 0; will stop at (end)
