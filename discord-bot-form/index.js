@@ -86,6 +86,11 @@ client.on('interactionCreate', async interaction => {
             if (command && command.cancelPipeline) {
                 await command.cancelPipeline(interaction);
             }
+        } else if (interaction.customId === 'cancel_weekly_pipeline') {
+            const command = client.commands.get('agency');
+            if (command && command.cancelWeeklyPipeline) {
+                await command.cancelWeeklyPipeline(interaction);
+            }
         } else if (interaction.customId.startsWith('rerun_')) {
             const parts = interaction.customId.split('_');
             const platform = parts[1].toLowerCase(); 
@@ -360,6 +365,15 @@ client.on('interactionCreate', async interaction => {
                     content: '⚠️ **Gagal membatalkan:** Proses tidak ditemukan atau sudah selesai.',
                     ephemeral: true
                 });
+            }
+        }
+    }
+    // Jika interaksi adalah Modal Submit
+    else if (interaction.isModalSubmit()) {
+        if (interaction.customId === 'agency_report_modal') {
+            const command = client.commands.get('agency');
+            if (command && command.handleModalSubmit) {
+                await command.handleModalSubmit(interaction);
             }
         }
     }
