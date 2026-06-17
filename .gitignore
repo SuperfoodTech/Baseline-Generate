@@ -87,7 +87,8 @@ node_modules/
 
 # ── GoFood / Temp Files ────────────────────────────────────────────────────
 src/gofood-automation/
-cli.py
+/cli.py
+
 
 # ── Chrome Profiles ────────────────────────────────────────────────────────
 **/chrome_profiles/
