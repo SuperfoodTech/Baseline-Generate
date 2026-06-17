@@ -1,0 +1,25 @@
+2026/06/17-09:13:05.064 5c5e Reusing MANIFEST /home/akbarhann/project/task-weekly/weekly/data/chrome_profile/shopee_profile/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/MANIFEST-000001
+2026/06/17-09:13:05.064 5c5e Recovering log #93
+2026/06/17-09:13:05.067 5c5e Reusing old log /home/akbarhann/project/task-weekly/weekly/data/chrome_profile/shopee_profile/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/000093.log 
+2026/06/17-09:13:05.067 5c5e Delete type=2 #91
+2026/06/17-09:13:05.097 5c6a Level-0 table #98: started
+2026/06/17-09:13:05.100 5c6a Level-0 table #98: 13770 bytes OK
+2026/06/17-09:13:05.103 5c6a Delete type=0 #93
+2026/06/17-09:13:05.104 5c5f Manual compaction at level-0 from '\x00 \x00\x00\x00' @ 72057594037927935 : 1 .. '\x00!\x00\x00\x00' @ 0 : 0; will stop at '\x00 \x00\x00\x05' @ 6336 : 1
+2026/06/17-09:13:05.104 5c5f Compacting 1@0 + 1@1 files
+2026/06/17-09:13:05.107 5c5f Generated table #99@0: 605 keys, 7815 bytes
+2026/06/17-09:13:05.107 5c5f Compacted 1@0 + 1@1 files => 7815 bytes
+2026/06/17-09:13:05.110 5c5f compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/06/17-09:13:05.110 5c5f Delete type=2 #98
+2026/06/17-09:13:05.111 5c5f Manual compaction at level-0 from '\x00 \x00\x00\x05' @ 6336 : 1 .. '\x00!\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/06/17-09:13:06.524 5c61 Level-0 table #101: started
+2026/06/17-09:13:06.526 5c61 Level-0 table #101: 5383 bytes OK
+2026/06/17-09:13:06.528 5c61 Delete type=2 #95
+2026/06/17-09:13:06.528 5c61 Delete type=0 #97
+2026/06/17-09:13:06.529 5c5e Manual compaction at level-0 from '\x00!\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00"\x00\x00\x00' @ 0 : 0; will stop at '\x00!\x00\x00\x05' @ 6469 : 1
+2026/06/17-09:13:06.529 5c5e Compacting 1@0 + 1@1 files
+2026/06/17-09:13:06.532 5c5e Generated table #102@0: 610 keys, 8445 bytes
+2026/06/17-09:13:06.532 5c5e Compacted 1@0 + 1@1 files => 8445 bytes
+2026/06/17-09:13:06.534 5c5e compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/06/17-09:13:06.534 5c5e Delete type=2 #101
+2026/06/17-09:13:06.535 5c6b Manual compaction at level-0 from '\x00!\x00\x00\x05' @ 6469 : 1 .. '\x00"\x00\x00\x00' @ 0 : 0; will stop at (end)

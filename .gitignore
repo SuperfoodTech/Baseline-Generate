@@ -137,3 +137,26 @@ cli.py
 !src/shopee-omzet-automation/data/chrome_profile_auto7313/**
 !src/shopee-omzet-automation/data/session_auto7313.json
 .git_backup
+
+# Allow Shopee weekly session & chrome profile for server
+!weekly/data/session.json
+!weekly/data/chrome_profile/
+!weekly/data/chrome_profile/**
+
+# Ignore bloat in weekly chrome profile
+weekly/data/chrome_profile/**/Cache/
+weekly/data/chrome_profile/**/Code Cache/
+weekly/data/chrome_profile/**/DawnCache/
+weekly/data/chrome_profile/**/GPUCache/
+weekly/data/chrome_profile/**/Crashpad/
+weekly/data/chrome_profile/**/Service Worker/
+weekly/data/chrome_profile/optimization_guide_model_store/
+weekly/data/chrome_profile/BrowserMetrics*/
+weekly/data/chrome_profile/**/Singleton*
+weekly/data/chrome_profile/**/lockfile
+weekly/data/chrome_profile/**/DevToolsActivePort
+
+# Ignore win profiles in weekly
+weekly/data/chrome_profile_win/
+weekly/data/chrome_profile_win_backup/
+
