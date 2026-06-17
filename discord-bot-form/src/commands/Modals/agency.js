@@ -18,6 +18,9 @@ const { runWeeklyPipeline } = require('../../../bridge/run_weekly_pipeline');
 // Path to weekly directory
 const WEEKLY_DIR = path.resolve(__dirname, '../../../../weekly');
 
+// Gantilah URL di bawah ini dengan URL Web App dari Apps Script Anda setelah di-deploy
+const APPS_SCRIPT_DRIVE_URL = "ISI_DENGAN_URL_WEB_APP_APPS_SCRIPT_ANDA";
+
 // Memory lock for active weekly pipeline jobs
 let isWeeklyJobRunning = false;
 let activeWeeklyProcess = null;
@@ -43,6 +46,59 @@ function fetchCSV(url) {
             }).on('error', (err) => reject(err));
         };
         fetchUrl(url + '&t=' + Date.now());
+    });
+}
+
+function uploadToDrive(url, payload) {
+    return new Promise((resolve, reject) => {
+        const urlObj = new URL(url);
+        const postData = JSON.stringify(payload);
+        
+        const options = {
+            hostname: urlObj.hostname,
+            path: urlObj.pathname + urlObj.search,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(postData)
+            }
+        };
+        
+        const req = https.request(options, (res) => {
+            // Google Apps Script redirects with 302 Found
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                const redirectUrl = res.headers.location;
+                // Follow the redirect using a GET request
+                https.get(redirectUrl, (redirectRes) => {
+                    let data = '';
+                    redirectRes.on('data', (chunk) => data += chunk);
+                    redirectRes.on('end', () => {
+                        try {
+                            const parsed = JSON.parse(data);
+                            resolve(parsed);
+                        } catch (e) {
+                            reject(new Error(`Failed to parse response: ${data}`));
+                        }
+                    });
+                }).on('error', (err) => reject(err));
+                return;
+            }
+            
+            let data = '';
+            res.on('data', (chunk) => data += chunk);
+            res.on('end', () => {
+                try {
+                    const parsed = JSON.parse(data);
+                    resolve(parsed);
+                } catch (e) {
+                    reject(new Error(`Failed to parse response: ${data}`));
+                }
+            });
+        });
+        
+        req.on('error', (err) => reject(err));
+        req.write(postData);
+        req.end();
     });
 }
 
@@ -656,8 +712,10 @@ module.exports = {
 
                 if (result.success) {
                     const attachments = [];
+                    const uploadedFiles = [];
                     const searchPaths = platform === 'all' ? ['grab', 'shopee'] : [platform];
                     
+                    // Update: uploading files to Google Drive
                     for (const plat of searchPaths) {
                         const dir = path.join(WEEKLY_DIR, 'laporan', plat, `${startDate}_to_${endDate}`);
                         if (fs.existsSync(dir)) {
@@ -666,12 +724,53 @@ module.exports = {
                                 if (file.endsWith('.xlsx') && (file.startsWith('0Master') || file.startsWith('CUSTOM_') || file.startsWith('Merged_'))) {
                                     const filePath = path.join(dir, file);
                                     const stats = fs.statSync(filePath);
+                                    
+                                    // Add to attachments for Discord (if < 8MB)
                                     if (stats.size < 8 * 1024 * 1024) {
                                         attachments.push(new AttachmentBuilder(filePath));
+                                    }
+
+                                    // Upload to Google Drive
+                                    if (APPS_SCRIPT_DRIVE_URL && APPS_SCRIPT_DRIVE_URL !== "ISI_DENGAN_URL_WEB_APP_APPS_SCRIPT_ANDA") {
+                                        try {
+                                            const fileContent = fs.readFileSync(filePath);
+                                            const base64Content = fileContent.toString('base64');
+                                            
+                                            console.log(`[DRIVE UPLOAD] Uploading ${file}...`);
+                                            const driveRes = await uploadToDrive(APPS_SCRIPT_DRIVE_URL, {
+                                                folderId: "1AF7zvgT0fuMTzTrXV_FKwUWj1R7JeOcx",
+                                                platform: plat.toUpperCase(), // e.g. GRAB or SHOPEE
+                                                dateRange: `${startDate}_to_${endDate}`,
+                                                filename: file,
+                                                content: base64Content
+                                            });
+
+                                            if (driveRes && driveRes.status === 'success') {
+                                                uploadedFiles.push({
+                                                    name: file,
+                                                    url: driveRes.url
+                                                });
+                                                console.log(`[DRIVE UPLOAD] Successful! Url: ${driveRes.url}`);
+                                            } else {
+                                                console.error(`[DRIVE UPLOAD] Failed for ${file}:`, driveRes ? driveRes.message : 'No response');
+                                            }
+                                        } catch (uploadErr) {
+                                            console.error(`[DRIVE UPLOAD] Error for ${file}:`, uploadErr);
+                                        }
                                     }
                                 }
                             }
                         }
+                    }
+
+                    let driveStatus = '';
+                    if (APPS_SCRIPT_DRIVE_URL === "ISI_DENGAN_URL_WEB_APP_APPS_SCRIPT_ANDA") {
+                        driveStatus = '⚠️ *Upload Google Drive belum dikonfigurasi (URL Apps Script belum diisi di kode).*';
+                    } else if (uploadedFiles.length > 0) {
+                        driveStatus = '📂 **Google Drive Uploads:**\n' + 
+                            uploadedFiles.map(f => `• [${f.name}](${f.url})`).join('\n');
+                    } else {
+                        driveStatus = '❌ *Gagal mengunggah file laporan ke Google Drive.*';
                     }
 
                     const successEmbed = new EmbedBuilder()
@@ -683,7 +782,7 @@ module.exports = {
                             `> 📅 **Rentang:** ${startDate} s/d ${endDate}\n` +
                             `${selectedOutlets.length > 0 ? `> 🏢 **Outlet:** ${selectedOutlets.join(', ')}\n` : ''}` +
                             `> ⏱️ **Durasi:** ${durationStr}\n\n` +
-                            `Laporan Excel hasil kalkulasi dilampirkan di bawah ini.`
+                            `${driveStatus}`
                         )
                         .setFooter({ text: 'Sistem Weekly Agency Performance' })
                         .setTimestamp();
