@@ -136,3 +136,4 @@ cli.py
 !src/shopee-omzet-automation/data/chrome_profile_auto7313/
 !src/shopee-omzet-automation/data/chrome_profile_auto7313/**
 !src/shopee-omzet-automation/data/session_auto7313.json
+.git_backup
