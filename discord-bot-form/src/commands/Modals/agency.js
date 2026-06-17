@@ -12,8 +12,8 @@ const {
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
 const { runWeeklyPipeline } = require('../../../bridge/run_weekly_pipeline');
-const modalCmd = require('./modal');
 
 // Path to weekly directory
 const WEEKLY_DIR = path.resolve(__dirname, '../../../../weekly');
@@ -21,6 +21,83 @@ const WEEKLY_DIR = path.resolve(__dirname, '../../../../weekly');
 // Memory lock for active weekly pipeline jobs
 let isWeeklyJobRunning = false;
 let activeWeeklyProcess = null;
+
+// GSheets caching specifically for weekly merchants (gid=0)
+let cachedWeeklySheetData = null;
+let lastWeeklyCacheTime = 0;
+const WEEKLY_CACHE_DURATION = 30 * 1000; // 30 seconds cache
+
+function fetchCSV(url) {
+    return new Promise((resolve, reject) => {
+        const fetchUrl = (currentUrl) => {
+            https.get(currentUrl, (res) => {
+                if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                    return fetchUrl(res.headers.location);
+                }
+                if (res.statusCode !== 200) {
+                    return reject(new Error(`HTTP Status ${res.statusCode}`));
+                }
+                let data = '';
+                res.on('data', (chunk) => data += chunk);
+                res.on('end', () => resolve(data));
+            }).on('error', (err) => reject(err));
+        };
+        fetchUrl(url + '&t=' + Date.now());
+    });
+}
+
+async function getWeeklyOutlets(platform) {
+    const now = Date.now();
+    let csvData;
+    if (cachedWeeklySheetData && (now - lastWeeklyCacheTime < WEEKLY_CACHE_DURATION)) {
+        csvData = cachedWeeklySheetData;
+    } else {
+        const url = 'https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=0';
+        csvData = await fetchCSV(url);
+        cachedWeeklySheetData = csvData;
+        lastWeeklyCacheTime = now;
+    }
+
+    const lines = csvData.split(/\r?\n/);
+    if (lines.length < 2) return [];
+
+    const headers = lines[0].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(h => h.trim().replace(/^"|"$/g, ''));
+    const appIdx = headers.indexOf('Aplikasi');
+    const statusIdx = headers.indexOf('Status');
+    const nameIdx = headers.indexOf('Nama Outlet');
+
+    if (appIdx === -1 || statusIdx === -1 || nameIdx === -1) {
+        console.error('[WEEKLY FETCH] Headers not found in GSheets gid=0:', headers);
+        return [];
+    }
+
+    const outletsSet = new Set();
+
+    for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
+        if (cols.length <= Math.max(appIdx, statusIdx, nameIdx)) continue;
+
+        const app = cols[appIdx].toLowerCase();
+        const status = cols[statusIdx].toLowerCase();
+        const name = cols[nameIdx];
+
+        if (!name || name === '-') continue;
+        if (status !== 'live') continue;
+
+        const matchesPlatform = 
+            (platform === 'all' && (app.includes('grab') || app.includes('shopee'))) ||
+            (platform === 'grab' && app.includes('grab')) ||
+            (platform === 'shopee' && app.includes('shopee'));
+
+        if (matchesPlatform) {
+            outletsSet.add(name);
+        }
+    }
+
+    return Array.from(outletsSet).sort((a, b) => a.localeCompare(b));
+}
 
 // Progress steps helper
 const makeProgressEmbed = (currentStepName, title, description, fields = [], hasOutletStep = true) => {
@@ -209,14 +286,12 @@ module.exports = {
 
         await interaction.deferReply({ flags: 64 });
 
-        let sheetData;
+        // Pre-fetch weekly sheet data
         try {
-            sheetData = await modalCmd.fetchSheetData();
+            await getWeeklyOutlets('all');
         } catch (err) {
-            console.error('Gagal mengambil data sheet:', err);
-            sheetData = { outlets: [] };
+            console.error('[WEEKLY FETCH] Gagal pre-fetch data sheet:', err);
         }
-        const allOutlets = sheetData.outlets || [];
 
         try {
             // STEP 0: Pilih Aplikator
@@ -262,14 +337,16 @@ module.exports = {
 
             // STEP 2: Pilih Outlet (Jika select_merchant)
             if (hasOutletStep) {
-                if (allOutlets.length === 0) {
+                const weeklyOutlets = await getWeeklyOutlets(platform);
+
+                if (weeklyOutlets.length === 0) {
                     return lastInteractionAfterOutlet.reply({
-                        content: '❌ Gagal meload daftar outlet dari Google Sheets.',
+                        content: '❌ Gagal memuat daftar outlet live untuk platform terpilih.',
                         flags: 64
                     });
                 }
 
-                const outletOptions = allOutlets.map(name => ({
+                const outletOptions = weeklyOutlets.map(name => ({
                     label: name.substring(0, 100),
                     value: name
                 }));
@@ -345,7 +422,6 @@ module.exports = {
                 startDate = defaultStartISO;
                 endDate = defaultEndISO;
             } else {
-                // Tampilkan menu tombol agar user bisa mengklik untuk input tanggal manual
                 let errorMsg = null;
 
                 const getEmbed = () => {
@@ -452,7 +528,6 @@ module.exports = {
                                     return;
                                 }
 
-                                // valid
                                 collector.stop('confirmed');
                                 resolveDate({
                                     startISO: toISOFormat(parsedStart),
@@ -660,7 +735,6 @@ module.exports = {
             isWeeklyJobRunning = false;
             activeWeeklyProcess = null;
             console.error('Error during agency flow:', err);
-            // Don't log timeout/cancel errors as critical errors
             if (err.message !== 'Timeout or cancelled' && err.message !== 'Timeout atau dibatalkan') {
                 await interaction.followUp({
                     content: `❌ **Terjadi kesalahan:** ${err.message}`,
