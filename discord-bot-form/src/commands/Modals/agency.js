@@ -670,8 +670,16 @@ module.exports = {
                 channelId: interaction.channelId
             };
 
+            let logHistory = [];
             const pipeline = runWeeklyPipeline(formData, async (logLine) => {
-                currentLog = logLine;
+                const cleanLines = logLine.split('\n').map(l => l.trim()).filter(Boolean);
+                for (const line of cleanLines) {
+                    logHistory.push(line);
+                }
+                if (logHistory.length > 5) {
+                    logHistory = logHistory.slice(-5);
+                }
+
                 let step = 3;
                 if (logLine.includes('[JOB LOCK]') || logLine.includes('[WARMER]')) {
                     step = 2;
@@ -679,10 +687,10 @@ module.exports = {
                     step = 4;
                 }
 
-                if (Date.now() - lastUpdate > 3000) {
+                if (Date.now() - lastUpdate > 2000) {
                     lastUpdate = Date.now();
                     await progressMsg.edit({
-                        embeds: [buildProgressEmbed(step)],
+                        embeds: [buildProgressEmbed(step, logHistory.join('\n'))],
                         components: [cancelRow]
                     }).catch(() => { });
                 }

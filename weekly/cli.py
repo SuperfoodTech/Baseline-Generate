@@ -181,7 +181,7 @@ def run_grab(start_date: str, end_date: str, user_filter: str = None, outlet_fil
     import subprocess
     python_exe = _resolve_python_executable()
     cmd = [
-        python_exe, "main.py",
+        python_exe, "-u", "main.py",
         "--start-date", start_date,
         "--end-date", end_date,
         "--output-dir", output_dir,
@@ -204,7 +204,7 @@ def run_shopee(start_date: str, end_date: str, merchant_filter: str = None):
     import subprocess
     python_exe = _resolve_python_executable()
     cmd = [
-        python_exe, "run_weekly.py",
+        python_exe, "-u", "run_weekly.py",
         "--start", start_date,
         "--end", end_date,
         "--output-dir", output_dir,
