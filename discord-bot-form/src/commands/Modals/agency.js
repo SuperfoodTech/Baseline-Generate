@@ -1,11 +1,11 @@
-const { 
-    SlashCommandBuilder, 
-    ModalBuilder, 
-    TextInputBuilder, 
-    TextInputStyle, 
-    ActionRowBuilder, 
-    ButtonBuilder, 
-    ButtonStyle, 
+const {
+    SlashCommandBuilder,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
     EmbedBuilder,
     AttachmentBuilder,
     StringSelectMenuBuilder
@@ -19,7 +19,7 @@ const { runWeeklyPipeline } = require('../../../bridge/run_weekly_pipeline');
 const WEEKLY_DIR = path.resolve(__dirname, '../../../../weekly');
 
 // Gantilah URL di bawah ini dengan URL Web App dari Apps Script Anda setelah di-deploy
-const APPS_SCRIPT_DRIVE_URL = "ISI_DENGAN_URL_WEB_APP_APPS_SCRIPT_ANDA";
+const APPS_SCRIPT_DRIVE_URL = "https://script.google.com/macros/s/AKfycby0FNvijiWhJJmgrY7GMNtw3-rOg8sBdMygOm2S1c65SArfq5RHxEdF0u0xLerUxK0S/exec";
 
 // Memory lock for active weekly pipeline jobs
 let isWeeklyJobRunning = false;
@@ -53,7 +53,7 @@ function uploadToDrive(url, payload) {
     return new Promise((resolve, reject) => {
         const urlObj = new URL(url);
         const postData = JSON.stringify(payload);
-        
+
         const options = {
             hostname: urlObj.hostname,
             path: urlObj.pathname + urlObj.search,
@@ -63,7 +63,7 @@ function uploadToDrive(url, payload) {
                 'Content-Length': Buffer.byteLength(postData)
             }
         };
-        
+
         const req = https.request(options, (res) => {
             // Google Apps Script redirects with 302 Found
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
@@ -83,7 +83,7 @@ function uploadToDrive(url, payload) {
                 }).on('error', (err) => reject(err));
                 return;
             }
-            
+
             let data = '';
             res.on('data', (chunk) => data += chunk);
             res.on('end', () => {
@@ -95,7 +95,7 @@ function uploadToDrive(url, payload) {
                 }
             });
         });
-        
+
         req.on('error', (err) => reject(err));
         req.write(postData);
         req.end();
@@ -142,7 +142,7 @@ async function getWeeklyOutlets(platform) {
         if (!name || name === '-') continue;
         if (status !== 'live') continue;
 
-        const matchesPlatform = 
+        const matchesPlatform =
             (platform === 'all' && (app.includes('grab') || app.includes('shopee'))) ||
             (platform === 'grab' && app.includes('grab')) ||
             (platform === 'shopee' && app.includes('shopee'));
@@ -629,7 +629,7 @@ module.exports = {
 
             const buildProgressEmbed = (progressStep = 1, extraDesc = '') => {
                 let progressLabel = '';
-                switch(progressStep) {
+                switch (progressStep) {
                     case 1: progressLabel = 'Initial setup & validation'; break;
                     case 2: progressLabel = 'Pausing warmer & acquiring lock'; break;
                     case 3: progressLabel = 'Running weekly scraper'; break;
@@ -692,7 +692,7 @@ module.exports = {
                     await progressMsg.edit({
                         embeds: [buildProgressEmbed(step)],
                         components: [cancelRow]
-                    }).catch(() => {});
+                    }).catch(() => { });
                 }
             });
 
@@ -714,7 +714,7 @@ module.exports = {
                     const attachments = [];
                     const uploadedFiles = [];
                     const searchPaths = platform === 'all' ? ['grab', 'shopee'] : [platform];
-                    
+
                     // Update: uploading files to Google Drive
                     for (const plat of searchPaths) {
                         const dir = path.join(WEEKLY_DIR, 'laporan', plat, `${startDate}_to_${endDate}`);
@@ -724,7 +724,7 @@ module.exports = {
                                 if (file.endsWith('.xlsx') && (file.startsWith('0Master') || file.startsWith('CUSTOM_') || file.startsWith('Merged_'))) {
                                     const filePath = path.join(dir, file);
                                     const stats = fs.statSync(filePath);
-                                    
+
                                     // Add to attachments for Discord (if < 8MB)
                                     if (stats.size < 8 * 1024 * 1024) {
                                         attachments.push(new AttachmentBuilder(filePath));
@@ -735,7 +735,7 @@ module.exports = {
                                         try {
                                             const fileContent = fs.readFileSync(filePath);
                                             const base64Content = fileContent.toString('base64');
-                                            
+
                                             console.log(`[DRIVE UPLOAD] Uploading ${file}...`);
                                             const driveRes = await uploadToDrive(APPS_SCRIPT_DRIVE_URL, {
                                                 folderId: "1AF7zvgT0fuMTzTrXV_FKwUWj1R7JeOcx",
@@ -767,7 +767,7 @@ module.exports = {
                     if (APPS_SCRIPT_DRIVE_URL === "ISI_DENGAN_URL_WEB_APP_APPS_SCRIPT_ANDA") {
                         driveStatus = '⚠️ *Upload Google Drive belum dikonfigurasi (URL Apps Script belum diisi di kode).*';
                     } else if (uploadedFiles.length > 0) {
-                        driveStatus = '📂 **Google Drive Uploads:**\n' + 
+                        driveStatus = '📂 **Google Drive Uploads:**\n' +
                             uploadedFiles.map(f => `• [${f.name}](${f.url})`).join('\n');
                     } else {
                         driveStatus = '❌ *Gagal mengunggah file laporan ke Google Drive.*';
@@ -817,7 +817,7 @@ module.exports = {
             }).catch(async (err) => {
                 isWeeklyJobRunning = false;
                 activeWeeklyProcess = null;
-                
+
                 const errorEmbed = new EmbedBuilder()
                     .setColor(0xFF0000)
                     .setTitle('❌ Error Tidak Terduga')
@@ -827,7 +827,7 @@ module.exports = {
                 await progressMsg.edit({
                     embeds: [errorEmbed],
                     components: []
-                }).catch(() => {});
+                }).catch(() => { });
             });
 
         } catch (err) {
@@ -838,7 +838,7 @@ module.exports = {
                 await interaction.followUp({
                     content: `❌ **Terjadi kesalahan:** ${err.message}`,
                     flags: 64
-                }).catch(() => {});
+                }).catch(() => { });
             }
         }
     },
@@ -849,7 +849,7 @@ module.exports = {
             try {
                 process.kill(-activeWeeklyProcess.pid, 'SIGKILL');
             } catch (e) {
-                try { activeWeeklyProcess.kill('SIGKILL'); } catch (err) {}
+                try { activeWeeklyProcess.kill('SIGKILL'); } catch (err) { }
             }
             activeWeeklyProcess = null;
             isWeeklyJobRunning = false;
