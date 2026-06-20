@@ -570,7 +570,7 @@ def run_shopee_vb(start_date: str, end_date: str, merchant_filter: str = None):
         return False
 
 
-def run_gofood(start_date: str, end_date: str, outlet_filter: str = None, branch_filter: str = None, task_choice: str = "2"):
+def run_gofood(start_date: str, end_date: str, outlet_filter: str = None, branch_filter: str = None, task_choice: str = "2", no_sheet: bool = False, clear_cache: bool = False):
     """
     Delegates to the GoFood Login/Dashboard utility.
     Working directory is set to goscrapperv2 so that
@@ -602,6 +602,10 @@ def run_gofood(start_date: str, end_date: str, outlet_filter: str = None, branch
         cmd.extend(["--outlet", outlet_filter])
     if branch_filter:
         cmd.extend(["--branch", branch_filter])
+    if no_sheet:
+        cmd.append("--no-sheet")
+    if clear_cache:
+        cmd.append("--clear-cache")
 
     print(f"\n{YELLOW}{BOLD}▶ GOFOOD AUTO LOGIN & SCRAPE PIPELINE{RESET}")
     print(f"  {DIM}Directory : {gofood_dir}{RESET}")
@@ -668,10 +672,15 @@ def interactive_mode():
         print()
         while True:
             try:
-                o_choice = int(input(f"  {BOLD}Pilih nomor outlet (1-{len(outlets)}):{RESET} ").strip())
-                if 1 <= o_choice <= len(outlets):
-                     unified_outlet = outlets[o_choice - 1]
-                     break
+                o_choices = input(f"  {BOLD}Pilih nomor outlet (contoh: 1,3 atau 'all'):{RESET} ").strip()
+                if o_choices.lower() == "all":
+                    unified_outlet = outlets
+                    break
+                else:
+                    indices = [int(x.strip()) for x in o_choices.split(",") if x.strip()]
+                    if all(1 <= i <= len(outlets) for i in indices):
+                        unified_outlet = [outlets[i - 1] for i in indices]
+                        break
             except ValueError: pass
             print(f"  {RED}Pilihan tidak valid.{RESET}")
 
@@ -682,19 +691,16 @@ def interactive_mode():
         print(f"    {GREEN}[4]{RESET} Semua (Grab + Shopee + GoFood)")
         print()
         while True:
-            plat_choice = input(f"  {BOLD}Pilihan (1/2/3/4):{RESET} ").strip()
-            if plat_choice == "1":
-                platform = "grab"
-                break
-            elif plat_choice == "2":
-                platform = "shopee"
-                break
-            elif plat_choice == "3":
-                platform = "gofood"
-                break
-            elif plat_choice == "4":
+            plat_choice = input(f"  {BOLD}Pilihan (contoh: 1,3 atau 4):{RESET} ").strip()
+            if plat_choice == "4" or plat_choice.lower() == "all":
                 platform = "all"
                 break
+            else:
+                indices = [x.strip() for x in plat_choice.split(",") if x.strip()]
+                if all(i in ("1", "2", "3") for i in indices) and indices:
+                    plat_map = {"1": "grab", "2": "shopee", "3": "gofood"}
+                    platform = ",".join([plat_map[i] for i in indices])
+                    break
             print(f"  {RED}Input tidak valid.{RESET}")
 
         scope_choice = "2"
@@ -704,8 +710,11 @@ def interactive_mode():
         # Terjemahkan Nama Outlet ke Merchant Name (nama toko spesifik di ShopeeFood)
         shopee_merchant = unified_outlet
         try:
-            # Mencari baris yang namanya cocok dan aplikasinya mengandung "Shopee"
-            shopee_rows = df_live[(df_live["Nama Outlet"] == unified_outlet) & (df_live["Aplikasi"].str.contains("Shopee", na=False, case=False))]
+            if isinstance(unified_outlet, list):
+                shopee_rows = df_live[df_live["Nama Outlet"].isin(unified_outlet) & (df_live["Aplikasi"].str.contains("Shopee", na=False, case=False))]
+            else:
+                shopee_rows = df_live[(df_live["Nama Outlet"] == unified_outlet) & (df_live["Aplikasi"].str.contains("Shopee", na=False, case=False))]
+            
             if not shopee_rows.empty:
                 merchants_list = []
                 for _, r in shopee_rows.iterrows():
@@ -716,7 +725,8 @@ def interactive_mode():
                 seen = set()
                 merchants_list = [x for x in merchants_list if not (x in seen or seen.add(x))]
                 if merchants_list:
-                    shopee_merchant = "|".join(merchants_list)
+                    shopee_merchant = merchants_list
+
         except Exception:
             pass
 
@@ -733,19 +743,18 @@ def interactive_mode():
         print()
 
         while True:
-            if task_choice != "3":
-                choice = input(f"  {BOLD}Pilihan (1/2/3/4):{RESET} ").strip()
-                if choice in ("1", "2", "3", "4"):
-                    break
-                print(f"  {RED}Input tidak valid. Masukkan 1, 2, 3, atau 4.{RESET}")
+            choice = input(f"  {BOLD}Pilihan (contoh: 1,2 atau 4):{RESET} ").strip()
+            if choice == "4" or choice.lower() == "all":
+                platform = "all"
+                break
             else:
-                choice = input(f"  {BOLD}Pilihan (1/2/4):{RESET} ").strip()
-                if choice in ("1", "2", "4"):
+                indices = [x.strip() for x in choice.split(",") if x.strip()]
+                valid_choices = ("1", "2", "3") if task_choice != "3" else ("1", "2")
+                if all(i in valid_choices for i in indices) and indices:
+                    plat_map = {"1": "grab", "2": "shopee", "3": "gofood"}
+                    platform = ",".join([plat_map[i] for i in indices])
                     break
-                print(f"  {RED}Input tidak valid. Masukkan 1, 2, atau 4.{RESET}")
-
-        platform_map = {"1": "grab", "2": "shopee", "3": "gofood", "4": "all"}
-        platform = platform_map[choice]
+            print(f"  {RED}Input tidak valid.{RESET}")
 
         # ─ Scope selection ─
         print(f"\n  {BOLD}Pilih cakupan outlet:{RESET}")
@@ -781,7 +790,7 @@ def interactive_mode():
                 sys.exit(1)
                 
             df_vb = pd.DataFrame()
-            if task_choice == "3" and platform in ("shopee", "all"):
+            if task_choice == "3" and ("shopee" in platform or platform == "all"):
                 try:
                     resp_vb = requests.get(CSV_URL_VB, timeout=30)
                     resp_vb.raise_for_status()
@@ -791,7 +800,7 @@ def interactive_mode():
                     sys.exit(1)
 
             # --- FILTER CUSTOM GRAB ---
-            if platform in ("grab", "all"):
+            if "grab" in platform or platform == "all":
                 if task_choice == "3":
                     CSV_URL_VB_GRAB = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYSUnKOqk29LCktTxdb0wPLbWMbRaWRP3eC_UA4AwYod1FW6zDMhtLMC5ghIvot2B8upCDfBsn-TCP/pub?gid=978201567&single=true&output=csv"
                     try:
@@ -865,7 +874,7 @@ def interactive_mode():
                     sys.exit(1)
 
             # --- FILTER CUSTOM SHOPEE ---
-            if platform in ("shopee", "all"):
+            if "shopee" in platform or platform == "all":
                 if task_choice == "3":
                     df_shopee = df_vb
                 else:
@@ -895,7 +904,7 @@ def interactive_mode():
                     sys.exit(1)
 
             # --- FILTER CUSTOM GOFOOD ---
-            if platform in ("gofood", "all") and task_choice != "3":
+            if ("gofood" in platform or platform == "all") and task_choice != "3":
                 df_gofood = df_main[df_main["Aplikasi"].str.contains("GoFood", na=False, case=False) & df_main["Status"].str.contains("Live", na=False, case=False)]
                 if not df_gofood.empty:
                     gofood_outlets = sorted(df_gofood["Nama Outlet"].dropna().unique())
@@ -979,11 +988,39 @@ def interactive_mode():
         print(f"\n  {RED}[ERROR] Format tanggal tidak valid: {err}{RESET}")
         sys.exit(1)
 
+    # ─ Headless Mode ─
+    while True:
+        headless_choice = input(f"\n  {BOLD}Jalankan mode headless (tanpa GUI browser)? (Y/n):{RESET} ").strip().lower()
+        if headless_choice in ("y", "yes", "", "true", "1"):
+            is_headless = True
+            break
+        elif headless_choice in ("n", "no", "false", "0"):
+            is_headless = False
+            break
+        print(f"  {RED}Input tidak valid. Masukkan y atau n.{RESET}")
+
+    # ─ No Sheet Mode (GoFood) ─
+    no_sheet = False
+    if "gofood" in platform or platform == "all":
+        while True:
+            sheet_choice = input(f"\n  {BOLD}Matikan pengiriman data ke Google Sheets (GoFood)? (y/N):{RESET} ").strip().lower()
+            if sheet_choice in ("y", "yes", "1", "true"):
+                no_sheet = True
+                break
+            elif sheet_choice in ("n", "no", "", "0", "false"):
+                no_sheet = False
+                break
+            print(f"  {RED}Input tidak valid. Masukkan y atau n.{RESET}")
+
     # ─ Confirmation ─
-    if task_choice == "3":
-        platform_label = {"grab": "Grab", "shopee": "Shopee", "all": "Kedua Platform (Grab + Shopee)"}[platform]
+    if platform == "all":
+        if task_choice == "3":
+            platform_label = "Kedua Platform (Grab + Shopee)"
+        else:
+            platform_label = "Semua Platform (Grab + Shopee + GoFood)"
     else:
-        platform_label = {"grab": "Grab", "shopee": "Shopee", "gofood": "GoFood", "all": "Semua Platform (Grab + Shopee + GoFood)"}[platform]
+        labels = {"grab": "Grab", "shopee": "Shopee", "gofood": "GoFood"}
+        platform_label = " + ".join([labels[p] for p in platform.split(",") if p in labels])
     date_folder = f"{start_date}_to_{end_date}"
     
     print(f"\n  {CYAN}{'─'*50}{RESET}")
@@ -997,6 +1034,7 @@ def interactive_mode():
         print(f"  Outlet   : {BOLD}Semua Outlet{RESET}")
     print(f"  Start    : {BOLD}{start_date}{RESET}")
     print(f"  End      : {BOLD}{end_date}{RESET}")
+    print(f"  Headless : {BOLD}{'Ya' if is_headless else 'Tidak (Dengan GUI)'}{RESET}")
     print(f"  Output   : {DIM}laporan/{{platform}}/{date_folder}/{RESET}")
     print(f"  {CYAN}{'─'*50}{RESET}")
     
@@ -1005,7 +1043,7 @@ def interactive_mode():
         print(f"\n  {YELLOW}Dibatalkan.{RESET}")
         sys.exit(0)
 
-    return task_choice, platform, start_date, end_date, outlet, branch, shopee_merchant
+    return task_choice, platform, start_date, end_date, outlet, branch, shopee_merchant, is_headless, no_sheet
 
 
 # ── Discord Webhook Notifier ───────────────────────────────────────────
@@ -1096,6 +1134,8 @@ Examples:
     parser.add_argument("--outlet", type=str, default=None, help="Filter specific outlet name")
     parser.add_argument("--branch", type=str, default=None, help="Filter specific branch name")
     parser.add_argument("--bd", type=str, default=None, help="Filter specific BD name (Shopee Baseline)")
+    parser.add_argument("--headless", type=str, choices=["true", "false", "1", "0", "yes", "no"], default=None, help="Set headless mode (true/false)")
+    parser.add_argument("--no-sheet", action="store_true", help="Nonaktifkan pengiriman data ke Google Sheets (GoFood)")
 
     args = parser.parse_args()
 
@@ -1114,11 +1154,17 @@ Examples:
         # Lookup Merchant Name Shopee dari GSheets berdasarkan Nama Outlet
         # Ini mengatasi mismatch nama outlet (Discord) vs merchant name Shopee (GSheets)
         shopee_merchant = _resolve_shopee_merchant(outlet, branch_name=branch, task_choice=task_choice) if outlet else None
-        print(f"\n{CYAN}[DISCORD MODE] Task={task_choice} | Platform={platform} | Outlet={outlet} | Brand={branch} | BD={bd}{RESET}")
+        
+        is_headless_str = os.environ.get("OFD_HEADLESS", "true")
+        is_headless = is_headless_str.lower() in ("true", "1", "yes")
+        no_sheet_str = os.environ.get("OFD_NO_SHEET", "false")
+        no_sheet = no_sheet_str.lower() in ("true", "1", "yes")
+
+        print(f"\n{CYAN}[DISCORD MODE] Task={task_choice} | Platform={platform} | Outlet={outlet} | Brand={branch} | BD={bd} | Headless={is_headless} | NoSheet={no_sheet}{RESET}")
         banner()
     # ── Normal CLI Mode ─────────────────────────────────────────────────
     elif args.platform is None or args.start is None or args.end is None:
-        task_choice, platform, start_date, end_date, outlet, branch, shopee_merchant = interactive_mode()
+        task_choice, platform, start_date, end_date, outlet, branch, shopee_merchant, is_headless, no_sheet = interactive_mode()
     else:
         task_choice = args.task or "2"
         platform   = args.platform.lower()
@@ -1127,7 +1173,18 @@ Examples:
         outlet     = args.outlet
         branch     = args.branch
         shopee_merchant = _resolve_shopee_merchant(outlet, branch_name=branch, task_choice=task_choice) if outlet else None
+        
+        if args.headless is not None:
+            is_headless = args.headless.lower() in ("true", "1", "yes")
+        else:
+            is_headless = True
+            
+        no_sheet = args.no_sheet
+            
         banner()
+
+    # Set HEADLESS env var for sub-scripts
+    os.environ["HEADLESS"] = "True" if is_headless else "False"
 
     # Standardize/Normalize date strings to YYYY-MM-DD
     try:
@@ -1193,7 +1250,7 @@ Examples:
         for o in outlets_to_run:
             for b in branches_to_run:
                 name_key = f"GoFood_{o}_{b}" if o and b else (f"GoFood_{o}" if o else "GoFood")
-                results[name_key] = run_gofood(start_date, end_date, outlet_filter=o, branch_filter=b, task_choice=task_choice)
+                results[name_key] = run_gofood(start_date, end_date, outlet_filter=o, branch_filter=b, task_choice=task_choice, no_sheet=no_sheet)
 
     # ── Summary ──
     elapsed = datetime.now() - start_time
@@ -1327,6 +1384,7 @@ Examples:
                     combined_df.to_excel(writer, index=False, sheet_name="Baseline Summary")
                     
                 print(f"  {GREEN}✓ File gabungan berhasil dibuat: {final_path}{RESET}")
+
 
                 # ── Generate PDF via Webhook ──
                 print(f"\n{YELLOW}{BOLD}▶ PEMBUATAN PDF BASELINE{RESET}")
