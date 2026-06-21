@@ -449,9 +449,9 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
         valid_orders["Order_Counter"] = pd.to_numeric(valid_orders["Number of Transactions"], errors="coerce").fillna(0)
     else:
         # Old format counts valid Long Order IDs
-        # Agar hitungan order akurat (HANYA menghitung pesanan real, bukan potongan iklan/adjustment)
-        if "Category" in valid_orders.columns:
-            is_real_order = valid_orders["Category"].str.contains("grabfood", case=False, na=False) | valid_orders["Category"].isin(["payment"])
+        # Menggunakan kunci dari User: Long Order ID harus alphanumeric dengan tanda strip (-)
+        if "Long Order ID" in valid_orders.columns:
+            is_real_order = valid_orders["Long Order ID"].str.contains("-", na=False)
             valid_orders["Order_Counter"] = is_real_order.astype(int)
         else:
             valid_orders["Order_Counter"] = 1
