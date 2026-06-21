@@ -427,10 +427,12 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     if "Status" in working.columns:
         working["Status"] = working["Status"].fillna("").astype(str).str.strip().str.casefold()
 
-    # Mengikuti rumus sheet User: NOT(REGEXMATCH(O7:O,"^[A-Za-z0-9]+$"))
-    # Yaitu wajib memiliki tanda strip (-) dan tidak boleh kosong
+    # Mengikuti rumus sheet User: (O7:O <> "") * REGEXMATCH(O7:O,"[^A-Za-z0-9]")
+    # Yaitu tidak kosong dan mengandung karakter non-alphanumeric (seperti tanda strip)
     if "Long Order ID" in working.columns:
-        is_valid_order_id = working["Long Order ID"].str.contains("-", na=False)
+        # Menghapus spasi awal/akhir dulu untuk memastikan, lalu cek regex
+        valid_long_id = working["Long Order ID"].astype(str).str.strip()
+        is_valid_order_id = (valid_long_id != "") & valid_long_id.str.contains(r'[^A-Za-z0-9]', regex=True, na=False)
     else:
         is_valid_order_id = pd.Series(True, index=working.index)
         
