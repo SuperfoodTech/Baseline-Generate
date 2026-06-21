@@ -1333,7 +1333,7 @@ Examples:
                 sf_df = pd.read_excel(shopee_path)
                 if "BASELINE_MASTER_SHOPEE" in shopee_path and shopee_merchant:
                     m_lower = [str(m).strip().lower() for m in shopee_merchant]
-                    sf_df = sf_df[sf_df['Merchant'].astype(str).str.strip().str.lower().isin(m_lower)]
+                    sf_df = sf_df[sf_df['Merchant'].astype(str).str.strip().str.rstrip('_').str.strip().str.lower().isin(m_lower)]
                 if not sf_df.empty:
                     frames.append(sf_df)
             else:
