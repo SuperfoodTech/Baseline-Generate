@@ -1511,7 +1511,7 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
         
         is_last_row = (idx == num_periods - 1)
         rata_rata_order_per_cust = int(omzet / order_sukses) if order_sukses > 0 else 0
-        total_order_row = order_sukses + order_batal
+        total_order_row = order_sukses
         
         row_data = [
             username,
@@ -1589,7 +1589,7 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
             order_sukses = int(totals[label]['orders'])
             order_batal = int(totals[label]['order_batal'])
             rata_rata_order_per_cust = int(omzet / order_sukses) if order_sukses > 0 else 0
-            total_order_row = order_sukses + order_batal
+            total_order_row = order_sukses
             
             row_data = [
                 username,
@@ -1750,7 +1750,7 @@ def tulis_baseline_excel(all_results, start_date, end_date, outlet_filter=None):
             
             if m_label in monthly_totals:
                 monthly_totals[m_label]['revenue'] += val.get('revenue', 0.0)
-                monthly_totals[m_label]['orders'] += val.get('orders', 0) + val.get('order_batal', 0)
+                monthly_totals[m_label]['orders'] += val.get('orders', 0)
 
         # Hitung rata-rata bulanan
         total_omzet_kotor = sum(monthly_totals[lbl]['revenue'] for _, lbl in months_iter)
