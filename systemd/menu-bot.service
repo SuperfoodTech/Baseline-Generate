@@ -4,9 +4,9 @@ After=network.target
 
 [Service]
 Type=simple
-User=akbarhann
-WorkingDirectory=/home/akbarhann/project/task-weekly/discord-bot-menu
-EnvironmentFile=/home/akbarhann/project/task-weekly/discord-bot-menu/.env
+User=akbar
+WorkingDirectory=/home/akbar/task-weekly/discord-bot-menu
+EnvironmentFile=/home/akbar/task-weekly/discord-bot-menu/.env
 Environment=NODE_ENV=production
 Environment=TZ=Asia/Jakarta
 Environment=PYTHONUNBUFFERED=1

@@ -1,3 +1,6 @@
-2026/06/11-10:58:12.630 eb8c Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7311/profile_auto7311/Local Storage/leveldb/MANIFEST-000001
-2026/06/11-10:58:12.651 eb8c Recovering log #17
-2026/06/11-10:58:12.654 eb8c Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7311/profile_auto7311/Local Storage/leveldb/000017.log 
+2026/06/11-15:38:24.447 293ff Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7311/profile_auto7311/Local Storage/leveldb/MANIFEST-000001
+2026/06/11-15:38:24.457 293ff Recovering log #17
+2026/06/11-15:38:24.458 293ff Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7311/profile_auto7311/Local Storage/leveldb/000017.log 
+2026/06/11-15:39:24.463 29403 Level-0 table #20: started
+2026/06/11-15:39:24.465 29403 Level-0 table #20: 15466 bytes OK
+2026/06/11-15:39:24.468 29403 Delete type=0 #17

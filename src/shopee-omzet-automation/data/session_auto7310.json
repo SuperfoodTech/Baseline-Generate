@@ -1,13 +1,31 @@
 {
-  "shopee_tob_token": "B:EHa0Xpv86dHDOfKZznPG5vqh5nHjHo8Jz/subk7lwvDKBG+x5go5OUlCzsjq50v92u0OWiPQJYYNCq1lvhUdZmjy4Iw8pEowMpNpRW7WhM2lr2UVp8bz611A0jFjf9tn1ghrj1vq4QFQ5jUiB2seQxhf5k+QhePFsPvaEl5A26PbV7W5jagI8iouhtP2HH8PIEuXmRgOX0SCRHRxJbIOnS9y+/uucXcZ22O1gn4=",
+  "shopee_tob_token": "B:ENAI3B+9QQdGq2gJ9fz2Z0qTK/yrYN4F9tEec2J5BAJhVl4qtROfmGUrVAB+kbCsuY24T652gqFHEdQNJUpCXKHguqEPoXOLY43zWGBRoobHDxZqMJMMjW9OH7dtTtzbyBeZ9Re+VXW03l6VdK0e2JW0FdZ+YZkG203+ssSZoVHSNfAdtTwu3hQZHWLHOOSwUpEV/EAUTV+CN+HVYEgjZScgb9ETfWAhfJITGqY=",
   "shopee_tob_entity_id": "11511947",
-  "saved_at": "2026-06-11T14:38:42.930767",
+  "saved_at": "2026-06-11T15:37:39.565425",
   "extra_cookies": {
-    "shopee_request_from": "partner_web",
-    "_sapid": "35533b0785f6256d300ef7058a2e88d369837b13a63daffe9fbe1bf5",
+    "SPC_F": "RWNWN2aAMOoQ1a4Jk3r7zqzPKSJ3qbMn",
+    "shopee_webUnique_ccd": "bOkP9BzXjpG1MQkBvPHsRg%3D%3D%7CU8BbknXzlwog6e7fbRprnZQcTVet1uy4zZto2%2BiOens2VE4mEndyUfaz4oyPZRBnIrj1l5vAlhRntg8rPL2r%7CUI95R0OvXF%2BjHjxJ%7C08%7C3",
+    "DF": "297590315",
+    "_QPWSDCXHZQA": "cddb69b4-5904-4dd6-fe5a-40c9b982dd88",
+    "REC_T_ID": "0aee59ee-5f31-11f1-b5b3-aea6e5625894",
+    "SPC_R_T_IV": "SmxHT2NYUnViWE5ja09mVg==",
+    "shopee_tob_token": "B:ENAI3B+9QQdGq2gJ9fz2Z0qTK/yrYN4F9tEec2J5BAJhVl4qtROfmGUrVAB+kbCsuY24T652gqFHEdQNJUpCXKHguqEPoXOLY43zWGBRoobHDxZqMJMMjW9OH7dtTtzbyBeZ9Re+VXW03l6VdK0e2JW0FdZ+YZkG203+ssSZoVHSNfAdtTwu3hQZHWLHOOSwUpEV/EAUTV+CN+HVYEgjZScgb9ETfWAhfJITGqY=",
+    "SPC_T_IV": "SmxHT2NYUnViWE5ja09mVg==",
+    "__shopee_partner_website_x_token_live": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyaWQiOiIxMTgzNjE2NTY2MiIsInJlZ2lvbiI6IklEIiwiYnVzaW5lc3NJZCI6MSwidG9rZW4iOiJCOkVOQUkzQis5UVFkR3EyZ0o5ZnoyWjBxVEsveXJZTjRGOXRFZWMySjVCQUpoVmw0cXRST2ZtR1VyVkFCK2tiQ3N1WTI0VDY1MmdxRkhFZFFOSlVwQ1hLSGd1cUVQb1hPTFk0M3pXR0JSb29iSER4WnFNSk1Nalc5T0g3ZHRUdHpieUJlWjlSZStWWFcwM2w2VmRLMGUySlcwRmRaK1laa0cyMDMrc3NTWm9WSFNOZkFkdFR3dTNoUVpIV0xIT09Td1VwRVYvRUFVVFYrQ04rSFZZRWdqWlNjZ2I5RVRmV0FoZkpJVEdxWT0iLCJlcnJvck1zZyI6IiIsImVycm9yQ29kZSI6MCwiaWF0IjoxNzgwODA3NzEwLCJleHAiOjE4NjcyMDc3MTB9.OWEkYYpXk1XioCSXjfX-oX8LtFqvW9GKSD_oymdIikFwzbUFRdljsOzGN2ctAoXGjpjTahG65XgrJNBpGoKIi2aY3cREQoJCLlnyOq_556iHhYc8bzpN4MRX6N9Zc9uramX5adzmb7ygnUjXRBl0M1vV-L8XRzv-NjjCiXBEYdw",
     "shopee_foody_mid": "11511947",
-    "__shopee_partner_website_x_token_live": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyaWQiOiIxMTgzNjE2NTY2MiIsInJlZ2lvbiI6IklEIiwiYnVzaW5lc3NJZCI6MSwidG9rZW4iOiJCOkVIYTBYcHY4NmRIRE9mS1p6blBHNXZxaDVuSGpIbzhKei9zdWJrN2x3dkRLQkcreDVnbzVPVWxDenNqcTUwdjkydTBPV2lQUUpZWU5DcTFsdmhVZFptank0SXc4cEVvd01wTnBSVzdXaE0ybHIyVVZwOGJ6NjExQTBqRmpmOXRuMWdocmoxdnE0UUZRNWpVaUIyc2VReGhmNWsrUWhlUEZzUHZhRWw1QTI2UGJWN1c1amFnSThpb3VodFAySEg4UElFdVhtUmdPWDBTQ1JIUnhKYklPblM5eSsvdXVjWGNaMjJPMWduND0iLCJlcnJvck1zZyI6IiIsImVycm9yQ29kZSI6MCwiaWF0IjoxNzgxMDc4MTA5LCJleHAiOjE4Njc0NzgxMDl9.HCsygnxO8ayd4cWqkYlBJ15n7Nbm96s0c08GsdKPb9ItKDKz3iNTxymm4MjlR3vUHWB4YwzcskWSZIyavUWPwU6wx-g3xve9Xb713if_Kts8juMvTRf5APjeAypiabltvk66CsY-4PZFIvp7brGet5K4nO1LT6-MpMztyL_O_TE",
-    "shopee_tob_token": "B:EHa0Xpv86dHDOfKZznPG5vqh5nHjHo8Jz/subk7lwvDKBG+x5go5OUlCzsjq50v92u0OWiPQJYYNCq1lvhUdZmjy4Iw8pEowMpNpRW7WhM2lr2UVp8bz611A0jFjf9tn1ghrj1vq4QFQ5jUiB2seQxhf5k+QhePFsPvaEl5A26PbV7W5jagI8iouhtP2HH8PIEuXmRgOX0SCRHRxJbIOnS9y+/uucXcZ22O1gn4=",
-    "shopee_tob_entity_id": ""
+    "shopee_tob_entity_id": "",
+    "SPC_B_SI": "o3YnagAAAABaa1FCOUZYYfmAGwAAAAAAUWdpSHJ5RTQ=",
+    "SPC_B_EC": "ARjdQUU7frkMQ769AfcTSKaJlWVbftgJu35/OnbESuRhLVIQAdprCpENCWM2lXDEWWDp211wQ62T5n4cSgHzkLBOynrR10bz4ZluYfXzUF9m8j1xc9jB4DKo7m6+JIShQh548kpsVdr+1SUQ3RvgkOhTUHjQOW+f5y8EQZPTtvuHGKW+0ZaoMh3sYRiDcYZzW64FLidHZuaAEseNDCwT1EMcBDrhUcXEkRUICW/+pgnL64y0o8/SAk3mi5lx5lkSK9jp+//R16bAklhCSs4H4vQAxHJj1jQLXprHHtAKDLLpf/JsRCF7j+JxWXxQUL4FbF2G7zoWPlRQbHrldivQxUez4VXwD9LqGIPHEhI/tcORs0KiP8ud0tXQEalMwPxAfg==.APNTxdwZdVwcPIC93WfkBAby7UM2ok94RttvBTav/eO1",
+    "language": "id",
+    "shopee_request_from": "partner_web",
+    "SPC_CLIENTID": "UldOV04yYUFNT29Ruhoinatbudhkfpxd",
+    "SPC_SI": "o3YnagAAAABaa1FCOUZYYfiAGwAAAAAAN2V5WTB2Z3g=",
+    "csrftoken": "yLnpjdk7CTaJlykuKUSOoBGrzZxrJH6d",
+    "_sapid": "35b21e406317002a30efd242f4afe6199c545375b543a4dd2374d57b",
+    "SPC_R_T_ID": "jHKdzrsH64P3AsbvfunZ3jBjv/KwwqT6+vTeYCVi+qxytu5bY5cBUceoJf72hWBgNaTbi4L9H5fdRm3RtuTzCeeitk8zYc4OYpxoURqpq1v/mc5qN3cHXUrdKi498Lyu6h/vc32hwUe1uoP8pNwTNMx+2lLSNVbsjow6+C90A64=",
+    "REC7iLP4Q": "3c1ed7bb-d4b6-498e-a48f-6b75f008ded6",
+    "SPC_T_ID": "jHKdzrsH64P3AsbvfunZ3jBjv/KwwqT6+vTeYCVi+qxytu5bY5cBUceoJf72hWBgNaTbi4L9H5fdRm3RtuTzCeeitk8zYc4OYpxoURqpq1v/mc5qN3cHXUrdKi498Lyu6h/vc32hwUe1uoP8pNwTNMx+2lLSNVbsjow6+C90A64=",
+    "ds": "0eb9727cca044841d12898be82ec759a",
+    "SPC_SEC_SI": "v1-ZkxoakZ6dkhOd0xLNko2SfGJnuFdeqvu9NmIH4m1GdiuMiyXlAV8ZpYBs4CSIdnk4R95kv0kvr/DC31QNNFWMQM0ZbK0grwI4EheF/Zmw+Q="
   }
 }
