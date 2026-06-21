@@ -837,6 +837,10 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
             except SessionStuckError as se:
                 logger.warning(f"  [Action] SessionStuck on S3 download for {user}: {se}")
                 last_dl_err = f"Stuck: {se}"
+                # Delete broken session file to force fresh login on next attempt
+                if os.path.exists(session_path):
+                    try: os.remove(session_path)
+                    except: pass
                 break
             except Exception as e:
                 logger.error(f"  [Error] S3 Download attempt failed for {user}: {e}")
@@ -850,22 +854,36 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
             if p: await p.stop()
             return s3_filename, None
             
-        logger.warning(f"  [Action] Primary S3 method failed for {user}: {last_dl_err}. Falling back to Fast API Extraction...")
+        logger.warning(f"  [Action] Primary S3 method failed for {user}: {last_dl_err}.")
 
-        # --- Fast API Extraction (V1+V2) as FALLBACK METHOD ---
-        logger.info(f"  [Action] Executing Fast API Extraction (V1+V2) as fallback method for {user}...")
-        fast_filename, fast_err = await api.execute_fallback(mgid, report_start, report_end)
-        
-        if fast_filename:
-            logger.info(f"  [Action] Fast API Extraction Fallback Success! Returning generated CSV.")
-            if context: await context.close()
-            if managed_browser: await managed_browser.close()
-            if p: await p.stop()
-            return fast_filename, None
+        # If it failed due to a stuck session, don't bother with fallback, it will fail too.
+        if "Stuck:" not in last_dl_err:
+            logger.info(f"  [Action] Executing Fast API Extraction (V1+V2) as fallback method for {user}...")
+            fast_filename = None
+            fast_err = ""
+            try:
+                fast_filename, fast_err = await api.execute_fallback(mgid, report_start, report_end)
+            except SessionStuckError as se:
+                logger.warning(f"  [Action] SessionStuck during fallback for {user}: {se}")
+                fast_err = f"Stuck fallback: {se}"
+                if os.path.exists(session_path):
+                    try: os.remove(session_path)
+                    except: pass
+            except Exception as e:
+                logger.error(f"  [Error] Fallback attempt failed for {user}: {e}")
+                fast_err = f"Fallback Ex: {e}"
             
-        # If fallback also fails, log error, send discord err (on last run_attempt), and retry whole session
-        logger.warning(f"  [Action] Fallback Fast API Extraction failed for {user}: {fast_err}.")
-        last_dl_err += f" | Fallback Err: {fast_err}"
+            if fast_filename:
+                logger.info(f"  [Action] Fast API Extraction Fallback Success! Returning generated CSV.")
+                if context: await context.close()
+                if managed_browser: await managed_browser.close()
+                if p: await p.stop()
+                return fast_filename, None
+                
+            logger.warning(f"  [Action] Fallback Fast API Extraction failed for {user}: {fast_err}.")
+            last_dl_err += f" | Fallback Err: {fast_err}"
+        else:
+            logger.info(f"  [Action] Skipping fallback because session is stuck.")
         
         if run_attempt >= 1 and is_retry:
             send_discord_error("Grab", user, "DOWNLOAD_FAILED", f"Gagal mengunduh laporan S3 maupun Fallback API: {last_dl_err[:200]}", "")
@@ -875,7 +893,7 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
             await context.close()
             
         if run_attempt < 1:
-            logger.info(f"  [Action] Refreshing session: Re-logging in after fallback failure... (Run attempt {run_attempt + 1})")
+            logger.info(f"  [Action] Refreshing session: Re-logging in after download failure... (Run attempt {run_attempt + 1})")
             continue # Try again from auth
         else:
             if managed_browser:
