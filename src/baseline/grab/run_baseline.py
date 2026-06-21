@@ -427,9 +427,10 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     if "Status" in working.columns:
         working["Status"] = working["Status"].fillna("").astype(str).str.strip().str.casefold()
 
-    # Rule 1: Long order ID blank tidak include
+    # Mengikuti rumus sheet User: NOT(REGEXMATCH(O7:O,"^[A-Za-z0-9]+$"))
+    # Yaitu wajib memiliki tanda strip (-) dan tidak boleh kosong
     if "Long Order ID" in working.columns:
-        is_valid_order_id = working["Long Order ID"].ne("")
+        is_valid_order_id = working["Long Order ID"].str.contains("-", na=False)
     else:
         is_valid_order_id = pd.Series(True, index=working.index)
         
@@ -448,13 +449,9 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
         valid_orders["Number of Transactions"] = valid_orders["Number of Transactions"].astype(str).str.replace(',', '').str.replace('.', '')
         valid_orders["Order_Counter"] = pd.to_numeric(valid_orders["Number of Transactions"], errors="coerce").fillna(0)
     else:
-        # Old format counts valid Long Order IDs
-        # Menggunakan kunci dari User: Long Order ID harus alphanumeric dengan tanda strip (-)
-        if "Long Order ID" in valid_orders.columns:
-            is_real_order = valid_orders["Long Order ID"].str.contains("-", na=False)
-            valid_orders["Order_Counter"] = is_real_order.astype(int)
-        else:
-            valid_orders["Order_Counter"] = 1
+        # Karena filter valid_orders di atas sudah membuang baris yang tidak memiliki tanda strip,
+        # maka semua baris di sini dipastikan adalah pesanan asli (bukan iklan/adjustment)
+        valid_orders["Order_Counter"] = 1
     
     if "Updated On" in valid_orders.columns:
         valid_orders = valid_orders.loc[valid_orders["Updated On"].notna()].copy()
