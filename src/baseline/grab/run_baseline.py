@@ -404,7 +404,8 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     elif "Update Time" in working.columns and "Updated On" not in working.columns:
         working["Updated On"] = pd.to_datetime(working["Update Time"], errors="coerce", format="%d %b %Y %I:%M %p")
     elif "Updated On" in working.columns:
-        working["Updated On"] = pd.to_datetime(working["Updated On"], errors="coerce", format="%d %b %Y %I:%M %p")
+        # Menghilangkan format agar bisa robust untuk berbagai variasi data (misal: "1 Mar 2026")
+        working["Updated On"] = pd.to_datetime(working["Updated On"], errors="coerce")
         
     if "Long Order ID" in working.columns:
         working["Long Order ID"] = working["Long Order ID"].fillna("").astype(str).str.strip()
@@ -426,14 +427,20 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     if "Status" in working.columns:
         working["Status"] = working["Status"].fillna("").astype(str).str.strip().str.casefold()
 
-    valid_long_order_id = working["Long Order ID"].str.match(r"^[A-Za-z0-9-]+$", na=False) if "Long Order ID" in working.columns else pd.Series(True, index=working.index)
+    # Rule 1: Long order ID blank tidak include
+    if "Long Order ID" in working.columns:
+        is_valid_order_id = working["Long Order ID"].ne("")
+    else:
+        is_valid_order_id = pd.Series(True, index=working.index)
+        
+    # Rule 3: Tanpa filter category (Semua category diikutkan)
+    is_order_category = pd.Series(True, index=working.index)
     
-    # S3 Insights categories like 'grabfood', 'grabmart' OR Old format 'payment', 'adjustment'
-    is_order_category = working["Category"].str.contains("grabfood", case=False, na=False) | working["Category"].isin(["payment", "adjustment"]) if "Category" in working.columns else pd.Series(True, index=working.index)
+    # Rule 4: Filter status cancelled
     is_not_cancelled = working["Status"].ne("cancelled") if "Status" in working.columns else pd.Series(True, index=working.index)
     
-    # Do NOT filter by valid_long_order_id to keep adjustment rows
-    valid_orders = working.loc[is_order_category & is_not_cancelled].copy()
+    # Apply filters
+    valid_orders = working.loc[is_valid_order_id & is_order_category & is_not_cancelled].copy()
     
     # Parse Number of Transactions if S3 format
     if "Number of Transactions" in valid_orders.columns:
@@ -442,7 +449,8 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
         valid_orders["Order_Counter"] = pd.to_numeric(valid_orders["Number of Transactions"], errors="coerce").fillna(0)
     else:
         # Old format counts valid Long Order IDs
-        valid_orders["Order_Counter"] = valid_orders["Long Order ID"].str.match(r"^[A-Za-z0-9-]+$", na=False).astype(int)
+        # Agar hitungan order akurat secara baris valid (tidak memandang regex ketat, selama tidak blank)
+        valid_orders["Order_Counter"] = 1
     
     if "Updated On" in valid_orders.columns:
         valid_orders = valid_orders.loc[valid_orders["Updated On"].notna()].copy()
