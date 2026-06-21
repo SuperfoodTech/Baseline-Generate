@@ -22,7 +22,11 @@ echo -e "${YELLOW}[1/3] Pulling latest code...${NC}"
 git pull origin main
 
 echo ""
-echo -e "${YELLOW}[2/3] Restarting menu-bot service...${NC}"
+echo -e "${YELLOW}[2/3] Updating systemd service and restarting menu-bot...${NC}"
+# Copy systemd service file dynamically from current directory
+sudo cp "$(pwd)/systemd/menu-bot.service" /etc/systemd/system/menu-bot.service
+sudo systemctl daemon-reload
+sudo systemctl enable menu-bot
 # Bersihkan seluruh sisa zombie chrome/chromedriver di background
 sudo killall -q -9 chrome google-chrome chromedriver chrome-headless-shell || true
 sudo systemctl restart menu-bot
