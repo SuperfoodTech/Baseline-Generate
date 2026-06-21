@@ -1,0 +1,27 @@
+[Unit]
+Description=Menu Extractor Pipeline Discord Bot
+After=network.target
+
+[Service]
+Type=simple
+User=akbarhann
+WorkingDirectory=/home/akbarhann/project/task-weekly/discord-bot-menu
+EnvironmentFile=/home/akbarhann/project/task-weekly/discord-bot-menu/.env
+Environment=NODE_ENV=production
+Environment=TZ=Asia/Jakarta
+Environment=PYTHONUNBUFFERED=1
+
+# Run bot
+ExecStart=/usr/bin/npm start
+
+# Automatically restart on crash
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=menu-bot
+
+[Install]
+WantedBy=multi-user.target
