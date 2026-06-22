@@ -13,7 +13,12 @@ import re
 from datetime import datetime
 
 # Add parent directory of menu_core to sys.path so imports work
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+MENU_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, MENU_DIR)
+
+def get_output_dir(applicator, clean_outlet):
+    app_dir = "Gofood" if applicator == "gofood" else ("grab" if applicator == "grab" else "shopee")
+    return os.path.join(MENU_DIR, app_dir, "outlets", clean_outlet)
 
 from menu_core.sheets import get_outlets_for_applicator
 from menu_core.shopee import extract_shopee_menu
@@ -114,12 +119,7 @@ def interactive_menu():
                     clean_outlet = "".join(c for c in raw_outlet if c.isalnum() or c in (' ', '_', '-')).strip()
                     clean_outlet = re.sub(r'\s+', ' ', clean_outlet).lower()
                     
-                    if applicator == "gofood":
-                        output_dir = f"/home/akbarhann/project/task-weekly/menu/Gofood/outlets/{clean_outlet}"
-                    elif applicator == "grab":
-                        output_dir = f"/home/akbarhann/project/task-weekly/menu/grab/outlets/{clean_outlet}"
-                    else:
-                        output_dir = f"/home/akbarhann/project/task-weekly/menu/shopee/outlets/{clean_outlet}"
+                    output_dir = get_output_dir(applicator, clean_outlet)
                     
                     is_processed = False
                     if os.path.exists(output_dir):
@@ -187,12 +187,7 @@ def interactive_menu():
                     clean_outlet = "".join(c for c in raw_outlet if c.isalnum() or c in (' ', '_', '-')).strip()
                     clean_outlet = re.sub(r'\s+', ' ', clean_outlet).lower()
                     
-                    if applicator == "gofood":
-                        output_dir = f"/home/akbarhann/project/task-weekly/menu/Gofood/outlets/{clean_outlet}"
-                    elif applicator == "grab":
-                        output_dir = f"/home/akbarhann/project/task-weekly/menu/grab/outlets/{clean_outlet}"
-                    else:
-                        output_dir = f"/home/akbarhann/project/task-weekly/menu/shopee/outlets/{clean_outlet}"
+                    output_dir = get_output_dir(applicator, clean_outlet)
                     
                     is_processed = False
                     if os.path.exists(output_dir):
@@ -262,12 +257,7 @@ def interactive_menu():
                 clean_outlet = "".join(c for c in raw_outlet if c.isalnum() or c in (' ', '_', '-')).strip()
                 clean_outlet = re.sub(r'\s+', ' ', clean_outlet).lower()
                 
-                if applicator == "gofood":
-                    output_dir = f"/home/akbarhann/project/task-weekly/menu/Gofood/outlets/{clean_outlet}"
-                elif applicator == "grab":
-                    output_dir = f"/home/akbarhann/project/task-weekly/menu/grab/outlets/{clean_outlet}"
-                else:
-                    output_dir = f"/home/akbarhann/project/task-weekly/menu/shopee/outlets/{clean_outlet}"
+                output_dir = get_output_dir(applicator, clean_outlet)
                 
                 is_processed = False
                 if os.path.exists(output_dir):
@@ -304,12 +294,7 @@ def interactive_menu():
                     clean_outlet = "".join(c for c in raw_outlet if c.isalnum() or c in (' ', '_', '-')).strip()
                     clean_outlet = re.sub(r'\s+', ' ', clean_outlet).lower()
                     
-                    if applicator == "gofood":
-                        output_dir = f"/home/akbarhann/project/task-weekly/menu/Gofood/outlets/{clean_outlet}"
-                    elif applicator == "grab":
-                        output_dir = f"/home/akbarhann/project/task-weekly/menu/grab/outlets/{clean_outlet}"
-                    else:
-                        output_dir = f"/home/akbarhann/project/task-weekly/menu/shopee/outlets/{clean_outlet}"
+                    output_dir = get_output_dir(applicator, clean_outlet)
                     
                     is_processed = False
                     if os.path.exists(output_dir):
@@ -371,12 +356,7 @@ def main():
                     clean_outlet = "".join(c for c in raw_outlet if c.isalnum() or c in (' ', '_', '-')).strip()
                     clean_outlet = re.sub(r'\s+', ' ', clean_outlet).lower()
                     
-                    if app == "gofood":
-                        output_dir = f"/home/akbarhann/project/task-weekly/menu/Gofood/outlets/{clean_outlet}"
-                    elif app == "grab":
-                        output_dir = f"/home/akbarhann/project/task-weekly/menu/grab/outlets/{clean_outlet}"
-                    else:
-                        output_dir = f"/home/akbarhann/project/task-weekly/menu/shopee/outlets/{clean_outlet}"
+                    output_dir = get_output_dir(app, clean_outlet)
                     
                     is_processed = False
                     if not overwrite and os.path.exists(output_dir):
@@ -406,12 +386,7 @@ def main():
                 clean_outlet = "".join(c for c in raw_outlet if c.isalnum() or c in (' ', '_', '-')).strip()
                 clean_outlet = re.sub(r'\s+', ' ', clean_outlet).lower()
                 
-                if app == "gofood":
-                    output_dir = f"/home/akbarhann/project/task-weekly/menu/Gofood/outlets/{clean_outlet}"
-                elif app == "grab":
-                    output_dir = f"/home/akbarhann/project/task-weekly/menu/grab/outlets/{clean_outlet}"
-                else:
-                    output_dir = f"/home/akbarhann/project/task-weekly/menu/shopee/outlets/{clean_outlet}"
+                output_dir = get_output_dir(app, clean_outlet)
                 os.makedirs(output_dir, exist_ok=True)
                 
                 name_to_show = o['brand'] or o['nama_resto_final'] or o['nama_outlet']
@@ -468,12 +443,7 @@ def main():
             clean_outlet = "".join(c for c in raw_outlet if c.isalnum() or c in (' ', '_', '-')).strip()
             clean_outlet = re.sub(r'\s+', ' ', clean_outlet).lower()
             
-            if applicator == "gofood":
-                output_dir = f"/home/akbarhann/project/task-weekly/menu/Gofood/outlets/{clean_outlet}"
-            elif applicator == "grab":
-                output_dir = f"/home/akbarhann/project/task-weekly/menu/grab/outlets/{clean_outlet}"
-            else:
-                output_dir = f"/home/akbarhann/project/task-weekly/menu/shopee/outlets/{clean_outlet}"
+            output_dir = get_output_dir(applicator, clean_outlet)
             os.makedirs(output_dir, exist_ok=True)
             
             name_to_show = o['brand'] or o['nama_resto_final'] or o['nama_outlet']
@@ -521,12 +491,7 @@ def main():
         clean_outlet = "".join(c for c in raw_outlet if c.isalnum() or c in (' ', '_', '-')).strip()
         clean_outlet = re.sub(r'\s+', ' ', clean_outlet).lower()
         
-        if applicator == "gofood":
-            output_dir = f"/home/akbarhann/project/task-weekly/menu/Gofood/outlets/{clean_outlet}"
-        elif applicator == "grab":
-            output_dir = f"/home/akbarhann/project/task-weekly/menu/grab/outlets/{clean_outlet}"
-        else:
-            output_dir = f"/home/akbarhann/project/task-weekly/menu/shopee/outlets/{clean_outlet}"
+        output_dir = get_output_dir(applicator, clean_outlet)
         os.makedirs(output_dir, exist_ok=True)
         
         success = False

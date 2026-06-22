@@ -9,7 +9,8 @@ from openpyxl import Workbook
 from selenium.webdriver.chrome.options import Options
 
 # Add shopee-omzet-automation to sys.path
-AUTOMATION_DIR = Path("/home/akbarhann/project/task-weekly/src/shopee-omzet-automation")
+WORKSPACE_DIR = Path(__file__).resolve().parent.parent.parent
+AUTOMATION_DIR = WORKSPACE_DIR / "src" / "shopee-omzet-automation"
 if str(AUTOMATION_DIR) not in sys.path:
     sys.path.insert(0, str(AUTOMATION_DIR))
 
@@ -19,7 +20,7 @@ from core import browser
 orig_add_argument = Options.add_argument
 def custom_add_argument(self, argument):
     if "--user-data-dir=" in argument:
-        argument = f"--user-data-dir=/home/akbarhann/project/task-weekly/weekly/data/chrome_profile"
+        argument = f"--user-data-dir={WORKSPACE_DIR / 'weekly' / 'data' / 'chrome_profile'}"
         print(f"🔧 [PATCH] Mengalihkan user data dir ke: {argument}")
     orig_add_argument(self, argument)
 Options.add_argument = custom_add_argument
@@ -104,13 +105,13 @@ def extract_shopee_menu(store_metadata: dict, output_dir: str):
     nama_pendek = store_metadata.get('nama_pendek') or target_name
     
     # 1. Start browser and switch to target merchant
-    session_file = Path("/home/akbarhann/project/task-weekly/weekly/data/session.json")
+    session_file = WORKSPACE_DIR / "weekly" / "data" / "session.json"
     browser.set_session_file(session_file)
     
     # Load credentials if they exist
     username = "allvbadmin"
     password = "Shopee@321"
-    creds_file = Path("/home/akbarhann/project/task-weekly/weekly/credentials.json")
+    creds_file = WORKSPACE_DIR / "weekly" / "credentials.json"
     if creds_file.exists():
         try:
             creds = json.loads(creds_file.read_text())
