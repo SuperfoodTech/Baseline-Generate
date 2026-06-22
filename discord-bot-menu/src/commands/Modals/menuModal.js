@@ -388,7 +388,7 @@ module.exports = {
             new ButtonBuilder().setCustomId('cancel_menu_run').setLabel('Batalkan').setStyle(ButtonStyle.Danger)
         );
 
-        await finalLastInteraction.update({
+        await finalLastInteraction.editReply({
             embeds: [reviewEmbed],
             components: [confirmRow]
         });
