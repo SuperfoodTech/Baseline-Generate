@@ -485,9 +485,11 @@ module.exports = {
         const selectMenuOptions = options.map(opt => {
             const optionObj = {
                 label: opt.label,
-                value: opt.value,
-                description: opt.description || ''
+                value: opt.value
             };
+            if (opt.description) {
+                optionObj.description = opt.description;
+            }
             if (opt.emoji) {
                 optionObj.emoji = opt.emoji;
             }
