@@ -10,9 +10,100 @@ const https = require('https');
 const { runMenuPipeline } = require('../../../bridge/run_menu_pipeline');
 
 // Cache untuk data Google Sheets
+const fs = require('fs');
+const path = require('path');
+
+const CACHE_FILE = path.join(__dirname, '../../../../menu/master_merchants_cache.csv');
+const CACHE_DURATION = 15 * 60 * 1000; // 15 menit
 let cachedSheetData = null;
 let lastCacheTime = 0;
-const CACHE_DURATION = 15 * 60 * 1000; // 15 menit (dari sebelumnya 10 detik)
+let isFetching = false;
+
+function parseCSVLine(line) {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+            inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+            result.push(current.trim());
+            current = '';
+        } else {
+            current += char;
+        }
+    }
+    result.push(current.trim());
+    return result;
+}
+
+function parseCSVToOutlets(data) {
+    const lines = data.split(/\r?\n/);
+    if (lines.length === 0) return [];
+    
+    const headers = parseCSVLine(lines[0]).map(h => h.replace(/^"|"$/g, '').trim());
+    
+    const nameIdx = headers.indexOf('Nama Outlet');
+    const storeIdIdx = headers.indexOf('Store ID');
+    const appIdx = headers.indexOf('Aplikasi');
+    const statusIdx = headers.indexOf('Status');
+    const namaPenggunaIdx = headers.indexOf('Nama Pengguna');
+    const merchantNameIdx = headers.indexOf('Merchant Name');
+    const emailGo1Idx = headers.indexOf('Email Login Go 1');
+    const emailGo2Idx = headers.indexOf('Email Login Go 2');
+
+    const outlets = [];
+    for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        const cols = parseCSVLine(line).map(c => c.replace(/^"|"$/g, '').trim());
+
+        if (nameIdx !== -1 && cols.length > nameIdx) {
+            const status = statusIdx !== -1 && cols.length > statusIdx ? cols[statusIdx].toLowerCase().trim() : '';
+            if (status !== 'live') continue;
+
+            const outletName = cols[nameIdx];
+            const storeId = storeIdIdx !== -1 && cols.length > storeIdIdx ? cols[storeIdIdx] : '';
+            const app = appIdx !== -1 && cols.length > appIdx ? cols[appIdx].toLowerCase().trim() : '';
+            
+            const namaPengguna = namaPenggunaIdx !== -1 && cols.length > namaPenggunaIdx ? cols[namaPenggunaIdx].trim() : '';
+            const merchantName = merchantNameIdx !== -1 && cols.length > merchantNameIdx ? cols[merchantNameIdx].trim() : '';
+            const emailGo1 = emailGo1Idx !== -1 && cols.length > emailGo1Idx ? cols[emailGo1Idx].trim() : '';
+            const emailGo2 = emailGo2Idx !== -1 && cols.length > emailGo2Idx ? cols[emailGo2Idx].trim() : '';
+
+            outlets.push({
+                name: outletName,
+                storeId: storeId,
+                app: app,
+                namaPengguna: namaPengguna,
+                merchantName: merchantName,
+                emailGo1: emailGo1,
+                emailGo2: emailGo2
+            });
+        }
+    }
+    return outlets;
+}
+
+function loadLocalCache() {
+    try {
+        if (fs.existsSync(CACHE_FILE)) {
+            const stats = fs.statSync(CACHE_FILE);
+            const data = fs.readFileSync(CACHE_FILE, 'utf8');
+            cachedSheetData = parseCSVToOutlets(data);
+            lastCacheTime = stats.mtimeMs;
+            console.log(`[Sheet Cache] Loaded ${cachedSheetData.length} outlets from local file cache. Age: ${((Date.now() - lastCacheTime) / 1000).toFixed(1)}s`);
+            return true;
+        }
+    } catch (e) {
+        console.error('[Sheet Cache] Failed to load local cache file:', e);
+    }
+    return false;
+}
+
+// Muat cache dari file lokal secara instan pada startup
+loadLocalCache();
 
 function fetchCSV(url) {
     return new Promise((resolve, reject) => {
@@ -89,61 +180,55 @@ module.exports = {
 
     async fetchSheetData() {
         const now = Date.now();
-        if (cachedSheetData && (now - lastCacheTime < CACHE_DURATION)) {
+
+        // 1. Jika ada data di memori cache, kembalikan langsung
+        if (cachedSheetData && cachedSheetData.length > 0) {
+            // Jika cache memori sudah expired dan tidak sedang fetch, lakukan background update
+            if (now - lastCacheTime > CACHE_DURATION && !isFetching) {
+                isFetching = true;
+                console.log('[Sheet Cache] Memori cache expired. Melakukan background update...');
+                fetchCSV(SHEET_CSV_URL)
+                    .then(data => {
+                        try {
+                            fs.writeFileSync(CACHE_FILE, data, 'utf8');
+                        } catch (writeErr) {
+                            console.error('[Sheet Cache] Gagal menulis file cache:', writeErr);
+                        }
+                        cachedSheetData = parseCSVToOutlets(data);
+                        lastCacheTime = Date.now();
+                        isFetching = false;
+                        console.log(`[Sheet Cache] Background update sukses. Memuat ${cachedSheetData.length} outlet.`);
+                    })
+                    .catch(err => {
+                        isFetching = false;
+                        console.error('[Sheet Cache] Background update gagal:', err);
+                    });
+            }
             return cachedSheetData;
         }
 
+        // 2. Jika memori cache kosong, coba muat dari file cache lokal
+        if (loadLocalCache()) {
+            return cachedSheetData;
+        }
+
+        // 3. Jika file cache lokal juga tidak ada/gagal dimuat, lakukan fetch secara sinkronous (blocking) sebagai fallback terakhir
+        isFetching = true;
         try {
+            console.log('[Sheet Cache] Cache kosong. Mengunduh Google Sheets secara sinkronous...');
             const data = await fetchCSV(SHEET_CSV_URL);
-            const lines = data.split(/\r?\n/);
-            const headers = lines[0].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(h => h.trim().replace(/^"|"$/g, ''));
-            
-            const nameIdx = headers.indexOf('Nama Outlet');
-            const storeIdIdx = headers.indexOf('Store ID');
-            const appIdx = headers.indexOf('Aplikasi');
-            const statusIdx = headers.indexOf('Status');
-            const namaPenggunaIdx = headers.indexOf('Nama Pengguna');
-            const merchantNameIdx = headers.indexOf('Merchant Name');
-            const emailGo1Idx = headers.indexOf('Email Login Go 1');
-            const emailGo2Idx = headers.indexOf('Email Login Go 2');
-
-            const outlets = [];
-
-            for (let i = 1; i < lines.length; i++) {
-                const line = lines[i].trim();
-                if (!line) continue;
-                const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
-
-                if (nameIdx !== -1 && cols.length > nameIdx) {
-                    const status = statusIdx !== -1 && cols.length > statusIdx ? cols[statusIdx].toLowerCase().trim() : '';
-                    if (status !== 'live') continue;
-
-                    const outletName = cols[nameIdx];
-                    const storeId = storeIdIdx !== -1 && cols.length > storeIdIdx ? cols[storeIdIdx] : '';
-                    const app = appIdx !== -1 && cols.length > appIdx ? cols[appIdx].toLowerCase().trim() : '';
-                    
-                    const namaPengguna = namaPenggunaIdx !== -1 && cols.length > namaPenggunaIdx ? cols[namaPenggunaIdx].trim() : '';
-                    const merchantName = merchantNameIdx !== -1 && cols.length > merchantNameIdx ? cols[merchantNameIdx].trim() : '';
-                    const emailGo1 = emailGo1Idx !== -1 && cols.length > emailGo1Idx ? cols[emailGo1Idx].trim() : '';
-                    const emailGo2 = emailGo2Idx !== -1 && cols.length > emailGo2Idx ? cols[emailGo2Idx].trim() : '';
-
-                    outlets.push({
-                        name: outletName,
-                        storeId: storeId,
-                        app: app,
-                        namaPengguna: namaPengguna,
-                        merchantName: merchantName,
-                        emailGo1: emailGo1,
-                        emailGo2: emailGo2
-                    });
-                }
+            try {
+                fs.writeFileSync(CACHE_FILE, data, 'utf8');
+            } catch (writeErr) {
+                console.error('[Sheet Cache] Gagal menulis file cache:', writeErr);
             }
-
-            cachedSheetData = outlets;
-            lastCacheTime = now;
-            return outlets;
+            cachedSheetData = parseCSVToOutlets(data);
+            lastCacheTime = Date.now();
+            isFetching = false;
+            return cachedSheetData;
         } catch (e) {
-            console.error('Error fetching sheet data:', e);
+            isFetching = false;
+            console.error('[Sheet Cache] Gagal mengunduh Google Sheets:', e);
             return [];
         }
     },
