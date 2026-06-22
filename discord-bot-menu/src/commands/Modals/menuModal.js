@@ -76,9 +76,14 @@ module.exports = {
                 time: 60000
             });
 
-            await this.startFormFlow(btnInteraction);
+            await this.startFormFlow(btnInteraction, msg);
         } catch (err) {
-            await interaction.followUp({ content: '⏱️ Waktu pengisian formulir telah habis.', flags: 64 });
+            console.error('[Menu Flow Error]:', err);
+            if (err.name === 'Error [InteractionCollectorError]' || (err.message && err.message.includes('time'))) {
+                await interaction.followUp({ content: '⏱️ Waktu pengisian formulir telah habis.', flags: 64 });
+            } else {
+                await interaction.followUp({ content: `❌ Terjadi kesalahan sistem: ${err.message || err}`, flags: 64 });
+            }
         }
     },
 
@@ -143,7 +148,7 @@ module.exports = {
         }
     },
 
-    async startFormFlow(interaction) {
+    async startFormFlow(interaction, msg) {
         await interaction.deferUpdate();
 
         // 1. Pilih Aplikator
@@ -154,7 +159,7 @@ module.exports = {
             { label: 'Semua Aplikator', value: 'all', emoji: '🌟', description: 'Tarik menu dari semua aplikator' }
         ];
 
-        const appResult = await this.askSelection(interaction, {
+        const appResult = await this.askSelection(interaction, msg, {
             title: 'Pilih Aplikator / Platform',
             placeholder: 'Pilih Aplikator...',
             options: aplikatorOptions
@@ -168,7 +173,7 @@ module.exports = {
             { label: '⚙️ Pilih Custom Outlet', value: 'custom', description: 'Memilih satu atau beberapa outlet secara spesifik' }
         ];
 
-        const outletChoiceResult = await this.askSelection(appResult.lastInteraction, {
+        const outletChoiceResult = await this.askSelection(appResult.lastInteraction, msg, {
             title: 'Pilih Target Outlet',
             placeholder: 'Tentukan target outlet...',
             options: outletChoiceOptions
@@ -235,7 +240,7 @@ module.exports = {
                     description: `Store ID: ${o.storeId}`
                 }));
 
-                const customSelectResult = await this.askSelection(finalLastInteraction, {
+                const customSelectResult = await this.askSelection(finalLastInteraction, msg, {
                     title: `${platEmoji} Pilih Custom Outlet ${platTitle}`,
                     placeholder: `Pilih satu atau lebih outlet ${platTitle}...`,
                     options: customOptions,
@@ -255,7 +260,7 @@ module.exports = {
             { label: 'Overwrite All (Tarik ulang & timpa semua)', value: 'overwrite', emoji: '🔄' }
         ];
 
-        const modeResult = await this.askSelection(finalLastInteraction, {
+        const modeResult = await this.askSelection(finalLastInteraction, msg, {
             title: 'Pilih Mode Eksekusi',
             placeholder: 'Pilih Mode...',
             options: modeOptions
@@ -303,7 +308,7 @@ module.exports = {
             components: [confirmRow]
         });
 
-        const msg = finalLastInteraction.message;
+        // msg sudah didapatkan dari parameter startFormFlow
         try {
             const confirmInteraction = await msg.awaitMessageComponent({
                 filter: i => i.user.id === interaction.user.id && ['confirm_menu_run', 'cancel_menu_run'].includes(i.customId),
@@ -385,7 +390,7 @@ module.exports = {
         }
     },
 
-    async askSelection(interaction, { title, placeholder, options, minValues = 1, maxValues = 1 }) {
+    async askSelection(interaction, msg, { title, placeholder, options, minValues = 1, maxValues = 1 }) {
         const embed = new EmbedBuilder()
             .setColor(0x5865F2)
             .setTitle(title)
@@ -411,7 +416,6 @@ module.exports = {
             components: [row]
         });
 
-        const msg = interaction.message;
         const selectInteraction = await msg.awaitMessageComponent({
             filter: i => i.user.id === interaction.user.id && i.customId === 'temp_select',
             time: 60000
