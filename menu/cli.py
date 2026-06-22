@@ -427,9 +427,7 @@ def main():
     except KeyboardInterrupt:
         print("\n  Dibatalkan oleh pengguna.")
         sys.exit(0)
-        
-    import re
-    
+
     if isinstance(outlet, list):
         total_outlets = len(outlet)
         print(f"\n{CYAN}=== MEMULAI PENARIKAN MENU MASSAL ({total_outlets} OUTLET) ==={RESET}")
