@@ -12,12 +12,12 @@ const { runMenuPipeline } = require('../../../bridge/run_menu_pipeline');
 // Cache untuk data Google Sheets
 let cachedSheetData = null;
 let lastCacheTime = 0;
-const CACHE_DURATION = 10 * 1000; // 10 detik
+const CACHE_DURATION = 15 * 60 * 1000; // 15 menit (dari sebelumnya 10 detik)
 
 function fetchCSV(url) {
     return new Promise((resolve, reject) => {
         const fetchUrl = (currentUrl) => {
-            https.get(currentUrl, (res) => {
+            const req = https.get(currentUrl, (res) => {
                 if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                     return fetchUrl(res.headers.location);
                 }
@@ -27,7 +27,15 @@ function fetchCSV(url) {
                 let data = '';
                 res.on('data', (chunk) => data += chunk);
                 res.on('end', () => resolve(data));
-            }).on('error', (err) => reject(err));
+            });
+            
+            req.on('error', (err) => reject(err));
+            
+            // Set request timeout 15 detik agar tidak menggantung selamanya
+            req.setTimeout(15000, () => {
+                req.destroy();
+                reject(new Error('Request timeout fetching Google Sheets'));
+            });
         };
         fetchUrl(url + '&t=' + Date.now());
     });
@@ -295,7 +303,7 @@ module.exports = {
             components: [confirmRow]
         });
 
-        const msg = await interaction.fetchReply();
+        const msg = finalLastInteraction.message;
         try {
             const confirmInteraction = await msg.awaitMessageComponent({
                 filter: i => i.user.id === interaction.user.id && ['confirm_menu_run', 'cancel_menu_run'].includes(i.customId),
@@ -403,7 +411,7 @@ module.exports = {
             components: [row]
         });
 
-        const msg = await interaction.fetchReply();
+        const msg = interaction.message;
         const selectInteraction = await msg.awaitMessageComponent({
             filter: i => i.user.id === interaction.user.id && i.customId === 'temp_select',
             time: 60000
