@@ -397,17 +397,24 @@ module.exports = {
             .setDescription(`Silakan tentukan pilihan Anda pada menu dropdown di bawah.`)
             .setTimestamp();
 
+        const selectMenuOptions = options.map(opt => {
+            const optionObj = {
+                label: opt.label,
+                value: opt.value,
+                description: opt.description || ''
+            };
+            if (opt.emoji) {
+                optionObj.emoji = opt.emoji;
+            }
+            return optionObj;
+        });
+
         const selectMenu = new StringSelectMenuBuilder()
             .setCustomId('temp_select')
             .setPlaceholder(placeholder)
             .setMinValues(minValues)
             .setMaxValues(maxValues)
-            .addOptions(options.map(opt => ({
-                label: opt.label,
-                value: opt.value,
-                description: opt.description || '',
-                emoji: opt.emoji || null
-            })));
+            .addOptions(selectMenuOptions);
 
         const row = new ActionRowBuilder().addComponents(selectMenu);
 
