@@ -1473,12 +1473,7 @@ def get_session(username=None, password=None, phone=None, headless=True, close_b
                     except Exception as _cookie_err:
                         log.warning(f"  ⚠️ Cookie injection on retry failed: {_cookie_err}")
 
-                # Only wipe cookies and force fresh login if the token injection also failed
-                if not is_logged_in:
-                    log.info(f"⚠️ [SESSION] Saved tokens also invalid. Forcing fresh login (Attempt {attempt+1})...")
-                    driver.delete_all_cookies()
-                    driver.get("https://partner.shopee.co.id/login")
-                    time.sleep(4)
+
 
             # ── Step 3: Login if all above failed ──
             if not is_logged_in:
