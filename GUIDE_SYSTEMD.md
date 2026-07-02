@@ -70,3 +70,62 @@ Gunakan perintah ini untuk memantau apakah sistem berjalan lancar setelah di-upd
   ```bash
   sudo systemctl restart ofd-bot shopee-warmer
   ```
+
+---
+
+## 5. Setup Auto-Deploy GitHub ke Systemd (CD)
+
+Ada dua metode utama untuk membuat branch `main` di GitHub otomatis ter-deploy ke systemd di server setiap kali kamu melakukan `git push`:
+
+### Metode A: Menggunakan GitHub Actions & SSH (Direkomendasikan)
+Metode ini paling umum dan bersih. GitHub Actions akan masuk ke server menggunakan SSH Key, lalu menjalankan `./deploy.sh`.
+
+#### Langkah 1: Buat SSH Key Pair khusus untuk Deploy (di Server)
+1. Login ke SSH server kamu sebagai user `akbar` (atau user yang menjalankan systemd).
+2. Generate key pair baru:
+   ```bash
+   ssh-keygen -t ed25519 -C "github-actions-deploy"
+   ```
+   *(Tekan Enter untuk default path `/home/akbar/.ssh/id_ed25519` dan kosongkan passphrase)*.
+3. Daftarkan public key ke file `authorized_keys`:
+   ```bash
+   cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
+   chmod 600 ~/.ssh/authorized_keys
+   chmod 700 ~/.ssh
+   ```
+4. Salin isi **Private Key** untuk dimasukkan ke GitHub:
+   ```bash
+   cat ~/.ssh/id_ed25519
+   ```
+
+#### Langkah 2: Daftarkan Secrets di Repository GitHub
+Buka repository GitHub kamu, pergi ke **Settings** -> **Secrets and variables** -> **Actions** -> **New repository secret**.
+Tambahkan secrets berikut:
+1. `SSH_HOST`: IP Address / Hostname server kamu.
+2. `SSH_USERNAME`: Username server kamu (misal `akbar`).
+3. `SSH_PRIVATE_KEY`: Tempel isi private key yang tadi kamu salin (mulai dari `-----BEGIN OPENSSH PRIVATE KEY-----` sampai akhir).
+4. `SSH_PORT`: `22` (atau port SSH custom jika ada).
+
+File workflow GitHub Actions sudah disediakan di `.github/workflows/deploy.yml`. Begitu secrets di atas ditambahkan, setiap kali kamu push ke `main`, GitHub akan otomatis melakukan SSH ke server dan menjalankan `./deploy.sh`.
+
+---
+
+### Metode B: Menggunakan GitHub Self-Hosted Runner (Alternatif)
+Jika server berada di balik firewall/NAT sehingga port SSH-nya tidak bisa diakses dari internet publik oleh server GitHub, kamu bisa menggunakan **GitHub Self-Hosted Runner**.
+
+1. Di GitHub repository, buka **Settings** -> **Actions** -> **Runners** -> **New self-hosted runner**.
+2. Pilih OS **Linux** dan ikuti instruksi command line untuk men-download dan mengkonfigurasi runner di server kamu.
+3. Jalankan runner sebagai service systemd di server agar selalu aktif di background:
+   ```bash
+   sudo ./svc.sh install
+   sudo ./svc.sh start
+   ```
+4. Ubah file `.github/workflows/deploy.yml` bagian `runs-on` menjadi `self-hosted` dan jalankan script deploy lokal:
+   ```yaml
+   runs-on: self-hosted
+   steps:
+     - name: Run Deploy Script
+       run: |
+         cd ~/task-weekly
+         ./deploy.sh
+   ```
