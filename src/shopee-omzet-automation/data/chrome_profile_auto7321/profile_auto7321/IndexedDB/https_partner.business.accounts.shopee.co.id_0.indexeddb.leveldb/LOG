@@ -1,0 +1,7 @@
+2026/07/03-13:50:51.043 8ca7 Reusing MANIFEST /home/akbarhann/project/FoodMaster/baseline/src/shopee-omzet-automation/data/chrome_profile_auto7321/profile_auto7321/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/MANIFEST-000001
+2026/07/03-13:50:51.044 8ca7 Recovering log #4
+2026/07/03-13:50:51.046 8ca7 Reusing old log /home/akbarhann/project/FoodMaster/baseline/src/shopee-omzet-automation/data/chrome_profile_auto7321/profile_auto7321/IndexedDB/https_partner.business.accounts.shopee.co.id_0.indexeddb.leveldb/000004.log 
+2026/07/03-13:50:51.095 8ca6 Level-0 table #8: started
+2026/07/03-13:50:51.098 8ca6 Level-0 table #8: 15500 bytes OK
+2026/07/03-13:50:51.100 8ca6 Delete type=0 #4
+2026/07/03-13:50:51.102 8ca6 Manual compaction at level-0 from '\x00\x04\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x05\x00\x00\x00' @ 0 : 0; will stop at (end)

@@ -110,33 +110,9 @@ src/gofood-automation/
 !src/VB/shopee/sessions/
 !src/VB/shopee/sessions/*.json
 
-!src/shopee-omzet-automation/data/chrome_profile_auto7303/
-!src/shopee-omzet-automation/data/chrome_profile_auto7303/**
-!src/shopee-omzet-automation/data/session_auto7303.json
-!src/shopee-omzet-automation/data/chrome_profile_auto7304_/
-!src/shopee-omzet-automation/data/chrome_profile_auto7304_/**
-!src/shopee-omzet-automation/data/session_auto7304_.json
-!src/shopee-omzet-automation/data/chrome_profile_auto7307/
-!src/shopee-omzet-automation/data/chrome_profile_auto7307/**
-!src/shopee-omzet-automation/data/session_auto7307.json
-!src/shopee-omzet-automation/data/chrome_profile_auto7308/
-!src/shopee-omzet-automation/data/chrome_profile_auto7308/**
-!src/shopee-omzet-automation/data/session_auto7308.json
-!src/shopee-omzet-automation/data/chrome_profile_auto7309/
-!src/shopee-omzet-automation/data/chrome_profile_auto7309/**
-!src/shopee-omzet-automation/data/session_auto7309.json
-!src/shopee-omzet-automation/data/chrome_profile_auto7310/
-!src/shopee-omzet-automation/data/chrome_profile_auto7310/**
-!src/shopee-omzet-automation/data/session_auto7310.json
-!src/shopee-omzet-automation/data/chrome_profile_auto7311/
-!src/shopee-omzet-automation/data/chrome_profile_auto7311/**
-!src/shopee-omzet-automation/data/session_auto7311.json
-!src/shopee-omzet-automation/data/chrome_profile_auto7312/
-!src/shopee-omzet-automation/data/chrome_profile_auto7312/**
-!src/shopee-omzet-automation/data/session_auto7312.json
-!src/shopee-omzet-automation/data/chrome_profile_auto7313/
-!src/shopee-omzet-automation/data/chrome_profile_auto7313/**
-!src/shopee-omzet-automation/data/session_auto7313.json
+!src/shopee-omzet-automation/data/chrome_profile_auto73*/
+!src/shopee-omzet-automation/data/chrome_profile_auto73*/**
+!src/shopee-omzet-automation/data/session_auto73*.json
 .git_backup
 
 # Allow Shopee weekly session & chrome profile for server

@@ -1,3 +1,6 @@
-2026/06/11-15:38:24.621 293d1 Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7311/profile_auto7311/shared_proto_db/MANIFEST-000001
-2026/06/11-15:38:24.621 293d1 Recovering log #19
-2026/06/11-15:38:24.624 293d1 Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7311/profile_auto7311/shared_proto_db/000019.log 
+2026/07/03-13:48:23.387 877e Reusing MANIFEST /home/akbarhann/project/FoodMaster/baseline/src/shopee-omzet-automation/data/chrome_profile_auto7311/profile_auto7311/shared_proto_db/MANIFEST-000001
+2026/07/03-13:48:23.389 877e Recovering log #19
+2026/07/03-13:48:23.403 877e Reusing old log /home/akbarhann/project/FoodMaster/baseline/src/shopee-omzet-automation/data/chrome_profile_auto7311/profile_auto7311/shared_proto_db/000019.log 
+2026/07/03-13:48:35.732 877e Level-0 table #24: started
+2026/07/03-13:48:35.736 877e Level-0 table #24: 108590 bytes OK
+2026/07/03-13:48:35.738 877e Delete type=0 #19

@@ -1,3 +1,7 @@
-2026/06/23-09:33:47.487 51da Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7303/profile_auto7303/Local Storage/leveldb/MANIFEST-001429
-2026/06/23-09:33:47.507 51da Recovering log #1476
-2026/06/23-09:33:47.508 51da Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7303/profile_auto7303/Local Storage/leveldb/001476.log 
+2026/07/01-18:14:28.570 513a Reusing MANIFEST /home/akbarhann/project/FoodMaster/baseline/src/shopee-omzet-automation/data/chrome_profile_auto7303/profile_auto7303/Local Storage/leveldb/MANIFEST-001429
+2026/07/01-18:14:28.582 513a Recovering log #1476
+2026/07/01-18:14:28.585 513a Level-0 table #1478: started
+2026/07/01-18:14:28.593 513a Level-0 table #1478: 15792 bytes OK
+2026/07/01-18:14:28.594 513a Recovering log #1478
+2026/07/01-18:14:28.595 513a Reusing old log /home/akbarhann/project/FoodMaster/baseline/src/shopee-omzet-automation/data/chrome_profile_auto7303/profile_auto7303/Local Storage/leveldb/001478.log 
+2026/07/01-18:14:28.608 513a Delete type=0 #1476
