@@ -1,3 +1,15 @@
-2026/06/11-10:56:59.381 e785 Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7308/profile_auto7308/shared_proto_db/MANIFEST-000001
-2026/06/11-10:56:59.381 e785 Recovering log #26
-2026/06/11-10:56:59.394 e785 Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7308/profile_auto7308/shared_proto_db/000026.log 
+2026/07/03-13:35:14.132 6ddb Reusing MANIFEST /home/akbarhann/project/FoodMaster/baseline/src/shopee-omzet-automation/data/chrome_profile_auto7308/profile_auto7308/shared_proto_db/MANIFEST-000001
+2026/07/03-13:35:14.134 6ddb Recovering log #26
+2026/07/03-13:35:14.146 6ddb Reusing old log /home/akbarhann/project/FoodMaster/baseline/src/shopee-omzet-automation/data/chrome_profile_auto7308/profile_auto7308/shared_proto_db/000026.log 
+2026/07/03-13:35:25.906 6dc8 Level-0 table #30: started
+2026/07/03-13:35:25.915 6dc8 Level-0 table #30: 109491 bytes OK
+2026/07/03-13:35:25.918 6dc8 Delete type=0 #26
+2026/07/03-13:35:25.932 6dc9 Compacting 4@0 + 1@1 files
+2026/07/03-13:35:25.938 6dc9 Generated table #31@0: 308 keys, 13394 bytes
+2026/07/03-13:35:25.938 6dc9 Compacted 4@0 + 1@1 files => 13394 bytes
+2026/07/03-13:35:25.939 6dc9 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/07/03-13:35:25.940 6dc9 Delete type=2 #30
+2026/07/03-13:35:25.940 6dc9 Delete type=2 #21
+2026/07/03-13:35:25.940 6dc9 Delete type=2 #24
+2026/07/03-13:35:25.940 6dc9 Delete type=2 #18
+2026/07/03-13:35:25.940 6dc9 Delete type=2 #27
