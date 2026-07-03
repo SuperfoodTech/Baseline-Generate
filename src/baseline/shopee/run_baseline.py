@@ -258,7 +258,7 @@ def download_file(url, filename, cookies=None, max_retries=3):
     return False
 
 
-def get_shopee_baseline_credentials(merchant_name, max_age_hours=24):
+def get_shopee_baseline_credentials(merchant_name, max_age_hours=24, bd_filter=None):
     """
     Fetches the credentials for a merchant's BD by checking Google Sheets:
     Sheet 1: Master Merchants (to find BD name associated with merchant_name)
@@ -343,6 +343,21 @@ def get_shopee_baseline_credentials(merchant_name, max_age_hours=24):
             log.warning(f"⚠️ [CREDENTIALS] Merchant '{merchant_name}' not found in Master list. Using default credentials.")
             return default_creds
             
+        # Apply BD filter if provided to resolve duplicate merchants/credentials
+        if bd_filter:
+            resolved_users, resolved_bds = resolve_bd_to_names_and_usernames(bd_filter, max_age_hours)
+            mask_user = matched_rows['nama pengguna'].astype(str).str.strip().str.lower().isin(resolved_users)
+            mask_bd = pd.Series(False, index=matched_rows.index)
+            if 'bd' in matched_rows.columns:
+                mask_bd = matched_rows['bd'].astype(str).str.strip().str.lower().isin(resolved_bds)
+            
+            bd_matched_rows = matched_rows[mask_user | mask_bd]
+            if not bd_matched_rows.empty:
+                matched_rows = bd_matched_rows
+            else:
+                log.error(f"❌ [CREDENTIALS] BD filter '{bd_filter}' yielded no matches for merchant '{merchant_name}' in Master list.")
+                return default_creds
+            
         username = str(matched_rows.iloc[0].get('nama pengguna', '')).strip()
         password = str(matched_rows.iloc[0].get('kata sandi', '')).strip()
         
@@ -353,7 +368,7 @@ def get_shopee_baseline_credentials(merchant_name, max_age_hours=24):
         if not password or pd.isna(password):
             password = default_creds.get("password")
             
-        # Look up phone number from df_creds
+        # Look up phone number and fallback password from df_creds
         norm_username = _normalize(username)
         df_creds['norm_username'] = df_creds['username'].fillna("").apply(_normalize)
         
@@ -364,6 +379,9 @@ def get_shopee_baseline_credentials(merchant_name, max_age_hours=24):
         else:
             row_cred = matched_cred.iloc[0]
             phone = str(row_cred.get('phone', '')).strip()
+            # Fallback password lookup from credentials sheet if missing or default in merchants sheet
+            if not password or pd.isna(password) or password == "" or password == "-":
+                password = str(row_cred.get('password', '')).strip()
             
         if phone.startswith("+"):
             phone = phone[1:]
@@ -631,7 +649,7 @@ def run_pipeline():
         # Group target merchants by resolved credentials username
         merchants_by_user = {}
         for m_name in target_merchants:
-            creds = get_shopee_baseline_credentials(m_name)
+            creds = get_shopee_baseline_credentials(m_name, bd_filter=args.bd)
             u = creds["username"]
             if u not in merchants_by_user:
                 merchants_by_user[u] = {
