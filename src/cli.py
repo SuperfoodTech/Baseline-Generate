@@ -635,8 +635,51 @@ def interactive_mode():
     os.system('cls' if os.name == 'nt' else 'clear')
     banner()
 
-    # ─ Task selection ─
-    print(f"  {BOLD}Pilih Task:{RESET}")
+    import pandas as pd
+    import requests
+    import io
+
+    # 1. Download Master Merchants sheet to get unique BDs
+    print(f"  {CYAN}[INFO] Mengunduh daftar merchant untuk BD filter dari Google Sheets...{RESET}")
+    CSV_URL_MAIN = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=0"
+    CSV_URL_BASELINE = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=880434015"
+    
+    try:
+        resp = requests.get(CSV_URL_MAIN, timeout=30)
+        resp.raise_for_status()
+        df_main = pd.read_csv(io.StringIO(resp.text))
+    except Exception as e:
+        print(f"  {RED}[ERROR] Gagal mengunduh Google Sheets: {e}{RESET}")
+        sys.exit(1)
+
+    # 2. Select BD first
+    bds = sorted([str(x).strip() for x in df_main["BD"].dropna().unique() if str(x).strip()])
+    print(f"\n  {BOLD}Pilih BD (Business Development):{RESET}")
+    print(f"    {GREEN}[0]{RESET} Semua BD (Tanpa Filter)")
+    for idx, bd_name in enumerate(bds):
+        print(f"    {GREEN}[{idx + 1}]{RESET} {bd_name}")
+    print()
+    
+    selected_bd = None
+    while True:
+        try:
+            bd_choice = input(f"  {BOLD}Pilihan BD (0-{len(bds)}):{RESET} ").strip()
+            if bd_choice == "0" or bd_choice == "":
+                selected_bd = None
+                break
+            idx = int(bd_choice) - 1
+            if 0 <= idx < len(bds):
+                selected_bd = bds[idx]
+                break
+        except ValueError: pass
+        print(f"  {RED}Pilihan tidak valid.{RESET}")
+
+    if selected_bd:
+        df_main = df_main[df_main["BD"].astype(str).str.strip().str.lower() == selected_bd.lower()]
+        print(f"  {GREEN}[INFO] Memfilter data untuk BD: {selected_bd}{RESET}")
+
+    # 3. Task selection
+    print(f"\n  {BOLD}Pilih Task:{RESET}")
     print(f"    {GREEN}[1]{RESET} Baseline")
     print(f"    {CYAN}[2]{RESET} Weekly")
     print(f"    {MAGENTA}[3]{RESET} Virtual Brand (VB)")
@@ -650,14 +693,9 @@ def interactive_mode():
 
     if task_choice == "1":
         print(f"\n  {GREEN}[INFO] Mengaktifkan Mode Baseline.{RESET}")
-        import pandas as pd
-        import requests
-        import io
-
         print(f"\n  {CYAN}[INFO] Mengunduh daftar outlet terbaru dari Google Sheets...{RESET}")
-        CSV_URL = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=880434015"
         try:
-            resp = requests.get(CSV_URL, timeout=30)
+            resp = requests.get(CSV_URL_BASELINE, timeout=30)
             resp.raise_for_status()
             df = pd.read_csv(io.StringIO(resp.text))
         except Exception as e:
@@ -665,7 +703,14 @@ def interactive_mode():
             sys.exit(1)
             
         df_live = df.copy()
+        if selected_bd:
+            df_live = df_live[df_live["BD"].astype(str).str.strip().str.lower() == selected_bd.lower()]
+            
         outlets = sorted(df_live["Nama Outlet"].dropna().unique())
+        if not outlets:
+            print(f"  {RED}[ERROR] Tidak ada outlet untuk BD '{selected_bd}' di daftar Baseline.{RESET}")
+            sys.exit(1)
+            
         print(f"\n  {BOLD}Pilih Outlet untuk Baseline (Menarik seluruh cabang Grab, Shopee, & GoFood sekaligus):{RESET}")
         for idx, o_name in enumerate(outlets):
             print(f"    {GREEN}[{idx + 1}]{RESET} {o_name}")
@@ -772,26 +817,27 @@ def interactive_mode():
         branch = []
         shopee_merchant = []
 
-        if scope_choice == "2":
-            import pandas as pd
-            import requests
-            import io
+        if scope_choice == "1":
+            if selected_bd:
+                # Filter df_main outlets & merchants to only selected BD
+                df_bd = df_main
+                outlet = sorted(df_bd["Nama Outlet"].dropna().unique())
+                shopee_rows = df_bd[df_bd["Aplikasi"].str.contains("Shopee", na=False, case=False)]
+                merchants_list = []
+                for _, r in shopee_rows.iterrows():
+                    val = r.get("Merchant Name", "")
+                    if pd.notna(val) and str(val).strip() != "-" and str(val).strip() != "":
+                        merchants_list.append(str(val).strip().rstrip('_').strip())
+                seen = set()
+                shopee_merchant = [x for x in merchants_list if not (x in seen or seen.add(x))]
 
-            print(f"\n  {CYAN}[INFO] Mengunduh daftar merchant terbaru dari Google Sheets...{RESET}")
-            CSV_URL_MAIN = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=0"
+        elif scope_choice == "2":
             CSV_URL_VB = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYSUnKOqk29LCktTxdb0wPLbWMbRaWRP3eC_UA4AwYod1FW6zDMhtLMC5ghIvot2B8upCDfBsn-TCP/pub?gid=565510790&single=true&output=csv"
             
-            try:
-                resp_main = requests.get(CSV_URL_MAIN, timeout=30)
-                resp_main.raise_for_status()
-                df_main = pd.read_csv(io.StringIO(resp_main.text))
-            except Exception as e:
-                print(f"  {RED}[ERROR] Gagal mengunduh Google Sheets utama: {e}{RESET}")
-                sys.exit(1)
-                
             df_vb = pd.DataFrame()
             if task_choice == "3" and ("shopee" in platform or platform == "all"):
                 try:
+                    print(f"\n  {CYAN}[INFO] Mengunduh daftar merchant VB dari Google Sheets...{RESET}")
                     resp_vb = requests.get(CSV_URL_VB, timeout=30)
                     resp_vb.raise_for_status()
                     df_vb = pd.read_csv(io.StringIO(resp_vb.text))
@@ -804,6 +850,7 @@ def interactive_mode():
                 if task_choice == "3":
                     CSV_URL_VB_GRAB = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYSUnKOqk29LCktTxdb0wPLbWMbRaWRP3eC_UA4AwYod1FW6zDMhtLMC5ghIvot2B8upCDfBsn-TCP/pub?gid=978201567&single=true&output=csv"
                     try:
+                        print(f"\n  {CYAN}[INFO] Mengunduh daftar merchant Grab VB dari Google Sheets...{RESET}")
                         resp_grab_vb = requests.get(CSV_URL_VB_GRAB, timeout=30)
                         resp_grab_vb.raise_for_status()
                         df_grab_vb = pd.read_csv(io.StringIO(resp_grab_vb.text))
@@ -870,7 +917,7 @@ def interactive_mode():
                         # Multiple outlets chosen -> all branches for those outlets
                         branch = []
                 else:
-                    print(f"  {RED}[ERROR] Tidak ada outlet Grab yang berstatus Live di Google Sheets.{RESET}")
+                    print(f"  {RED}[ERROR] Tidak ada outlet Grab yang cocok/berstatus Live di Google Sheets.{RESET}")
                     sys.exit(1)
 
             # --- FILTER CUSTOM SHOPEE ---
@@ -900,7 +947,7 @@ def interactive_mode():
                         except ValueError: pass
                         print(f"  {RED}Pilihan tidak valid.{RESET}")
                 else:
-                    print(f"  {RED}[ERROR] Tidak ada merchant Shopee di Google Sheets.{RESET}")
+                    print(f"  {RED}[ERROR] Tidak ada merchant Shopee yang cocok di Google Sheets.{RESET}")
                     sys.exit(1)
 
             # --- FILTER CUSTOM GOFOOD ---
@@ -933,7 +980,7 @@ def interactive_mode():
                         except ValueError: pass
                         print(f"  {RED}Pilihan tidak valid.{RESET}")
                 else:
-                    print(f"  {RED}[ERROR] Tidak ada outlet GoFood yang berstatus Live di Google Sheets.{RESET}")
+                    print(f"  {RED}[ERROR] Tidak ada outlet GoFood yang cocok/berstatus Live di Google Sheets.{RESET}")
                     sys.exit(1)
 
     # ─ Date input ─
@@ -1025,9 +1072,11 @@ def interactive_mode():
     
     print(f"\n  {CYAN}{'─'*50}{RESET}")
     print(f"  Platform : {BOLD}{platform_label}{RESET}")
+    if selected_bd:
+        print(f"  BD Filter: {BOLD}{selected_bd}{RESET}")
     if scope_choice == "2":
         if outlet:
-            print(f"  Grab Outlet : {BOLD}{outlet} ({branch}){RESET}")
+            print(f"  Grab/GoFood Outlet : {BOLD}{outlet} ({branch}){RESET}")
         if shopee_merchant:
             print(f"  Shopee Merchant : {BOLD}{shopee_merchant}{RESET}")
     else:
@@ -1043,7 +1092,7 @@ def interactive_mode():
         print(f"\n  {YELLOW}Dibatalkan.{RESET}")
         sys.exit(0)
 
-    return task_choice, platform, start_date, end_date, outlet, branch, shopee_merchant, is_headless, no_sheet
+    return task_choice, platform, start_date, end_date, outlet, branch, shopee_merchant, is_headless, no_sheet, selected_bd
 
 
 # ── Discord Webhook Notifier ───────────────────────────────────────────
@@ -1143,6 +1192,7 @@ Examples:
     # Dipanggil dari bridge/run_pipeline.js — bypass interactive mode.
     # Ketika dijalankan manual dari terminal, blok ini diabaikan sepenuhnya.
     bd = None
+    selected_bd = None
     if os.environ.get("OFD_DISCORD_MODE") == "1":
         task_choice     = os.environ.get("OFD_TASK_CHOICE", "2")
         platform        = os.environ.get("OFD_PLATFORM", args.platform or "all")
@@ -1164,7 +1214,7 @@ Examples:
         banner()
     # ── Normal CLI Mode ─────────────────────────────────────────────────
     elif args.platform is None or args.start is None or args.end is None:
-        task_choice, platform, start_date, end_date, outlet, branch, shopee_merchant, is_headless, no_sheet = interactive_mode()
+        task_choice, platform, start_date, end_date, outlet, branch, shopee_merchant, is_headless, no_sheet, selected_bd = interactive_mode()
     else:
         task_choice = args.task or "2"
         platform   = args.platform.lower()
@@ -1240,7 +1290,7 @@ Examples:
             m_str = "|".join(shopee_merchant) if shopee_merchant else None
             name_key = "Shopee"
             if task_choice == "1":
-                results[name_key] = run_shopee_baseline(start_date, end_date, merchant_filter=m_str, bd_filter=args.bd or bd)
+                results[name_key] = run_shopee_baseline(start_date, end_date, merchant_filter=m_str, bd_filter=args.bd or bd or selected_bd)
             elif task_choice == "2":
                 results[name_key] = run_shopee(start_date, end_date, merchant_filter=m_str)
 
