@@ -88,9 +88,9 @@ client.on('interactionCreate', async interaction => {
             }
         } else if (interaction.customId.startsWith('rerun_')) {
             const parts = interaction.customId.split('_');
-            const platform = parts[1].toLowerCase(); 
+            const platform = parts[1].toLowerCase();
             const taskId = parts[2];
-            
+
             const cachedData = recentTasks.get(taskId);
             if (!cachedData) {
                 return interaction.reply({
@@ -101,7 +101,7 @@ client.on('interactionCreate', async interaction => {
 
             // Create a copy of formData and isolate the platform
             const formData = { ...cachedData };
-            
+
             // Map the platform shortcut back to form data aplikator
             if (platform === 'grab') formData.aplikator = 'GrabFood';
             else if (platform === 'shopee') formData.aplikator = 'ShopeeFood';
@@ -120,9 +120,9 @@ client.on('interactionCreate', async interaction => {
             const { execSync } = require('child_process');
             try {
                 execSync('find . -type f -name "*cache*.csv" -delete', { cwd: path.join(__dirname, '..') });
-            } catch (e) {}
+            } catch (e) { }
 
-            await interaction.reply({ 
+            await interaction.reply({
                 content: `🔄 Sedang mengantre proses **Re-Run** untuk **${formData.aplikator}** (Outlet: ${formData.outlet})... Caches telah dihapus. Pantau *progress* di bawah ini.`
             });
 
@@ -149,9 +149,9 @@ client.on('interactionCreate', async interaction => {
             const buildEmbed = () => {
                 return new EmbedBuilder()
                     .setColor(0xFFA500)
-                    .setTitle(`🔄 Re-Run Pipeline: ${formData.aplikator}`)
+                    .setTitle(`🔄 Re-Run KKS: ${formData.aplikator}`)
                     .setDescription(
-                        `Pipeline **${formData.tagihan.toUpperCase()}** sedang diproses ulang.\n\n` +
+                        `KKS **${formData.tagihan.toUpperCase()}** sedang diproses ulang.\n\n` +
                         `${makeProgressBar(phaseNumber, totalPhases)}\n` +
                         `> 📍 **Outlet:** ${formData.outlet.substring(0, 100)}\n` +
                         `> 👤 **BD:** ${bdDisplay}\n` +
@@ -179,7 +179,7 @@ client.on('interactionCreate', async interaction => {
 
             let lastUpdate = Date.now();
             let isTrulyFailed = false;
-            
+
             // Run pipeline
             const pipeline = runPipeline(formData, async (logLine) => {
                 const lower = logLine.toLowerCase();
@@ -209,16 +209,16 @@ client.on('interactionCreate', async interaction => {
 
                 if (Date.now() - lastUpdate > 3000) {
                     lastUpdate = Date.now();
-                    await statusMsg.edit({ embeds: [buildEmbed()], components: [cancelRow] }).catch(() => {});
+                    await statusMsg.edit({ embeds: [buildEmbed()], components: [cancelRow] }).catch(() => { });
                 }
             });
-            
+
             activeReRuns.set(taskId, pipeline.proc);
 
             pipeline.promise.then(async (result) => {
                 const isCancelled = pipeline.proc ? pipeline.proc.cancelled : false;
                 activeReRuns.delete(taskId);
-                
+
                 modalCmd.releaseJob(jobKey);
 
                 if (isCancelled) {
@@ -228,7 +228,7 @@ client.on('interactionCreate', async interaction => {
                 if (result.success) {
                     let embeds = [];
                     let components = [];
-                    
+
                     if (result.notifData) {
                         const { outlet, start_date, end_date, aplikator, pdf_name, omzet_gr, omzet_sf, order_gr, order_sf, omzet_go, order_go } = result.notifData;
                         const embed = new EmbedBuilder()
@@ -249,9 +249,9 @@ client.on('interactionCreate', async interaction => {
 
                         const omzetStr = omzetLines.join('\n') || '-';
                         const orderStr = orderLines.join('\n') || '-';
-                        
+
                         const pdfUrl = result.notifData.pdf_url || (result.output.replace(/\x1B\[[0-9;]*m/g, '').match(/URL:\s*(https:\/\/drive\.google\.com\/file\/d\/[^\s\r\n]+)/) || [])[1];
-                        
+
                         let desc = `Laporan untuk **${outlet}** telah diperbarui melalui Re-Run.\n\n`;
                         if (pdfUrl) {
                             desc += `🔗 **[Klik di sini untuk membuka PDF Laporan](${pdfUrl})**`;
@@ -275,7 +275,7 @@ client.on('interactionCreate', async interaction => {
                         );
 
                         embeds.push(embed);
-                        
+
                         if (result.failedPlatforms && result.failedPlatforms.length > 0) {
                             const warningEmbed = new EmbedBuilder()
                                 .setTitle('⚠️ MASIH ADA DATA KOSONG')
@@ -340,16 +340,16 @@ client.on('interactionCreate', async interaction => {
         } else if (interaction.customId.startsWith('cancel_rerun_')) {
             const taskId = interaction.customId.replace('cancel_rerun_', '');
             const proc = activeReRuns.get(taskId);
-            
+
             if (proc && !proc.killed) {
                 proc.cancelled = true;
                 try {
                     process.kill(-proc.pid, 'SIGKILL'); // Kill process group forcefully
                 } catch (e) {
-                    try { proc.kill('SIGKILL'); } catch (err) {}
+                    try { proc.kill('SIGKILL'); } catch (err) { }
                 }
                 activeReRuns.delete(taskId);
-                
+
                 await interaction.update({
                     content: '⏹️ **Proses Re-Run dibatalkan secara paksa.**',
                     embeds: [],
@@ -381,7 +381,7 @@ client.on('shardError', error => {
 const startBot = async () => {
     try {
         console.log('Sedang mencoba menghubungkan ke Discord...');
-        
+
         // Ensure warmer is unpaused on startup to recover from any previous crashes
         try {
             const http = require('http');
@@ -396,7 +396,7 @@ const startBot = async () => {
             }, (res) => {
                 console.log(`[STARTUP] Checked warmer status: HTTP ${res.statusCode}`);
             });
-            req.on('error', () => {});
+            req.on('error', () => { });
             req.end();
         } catch (e) {
             console.warn('[STARTUP] Failed to check warmer container status via Docker socket:', e.message);
