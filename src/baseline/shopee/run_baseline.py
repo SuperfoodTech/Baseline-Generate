@@ -183,7 +183,7 @@ def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=
     import os
     from datetime import datetime
     
-    url = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=880434015"
+    url = "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=0"
     cache_path = "data/master_merchants_cache.csv"
     os.makedirs("data", exist_ok=True)
     
@@ -303,7 +303,7 @@ def get_shopee_baseline_credentials(merchant_name, max_age_hours=24, bd_filter=N
     cache_creds = "data/shopee_credentials_cache.csv"
     os.makedirs("data", exist_ok=True)
     
-    url_merchants = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=880434015"
+    url_merchants = "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=0"
     url_creds = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYSUnKOqk29LCktTxdb0wPLbWMbRaWRP3eC_UA4AwYod1FW6zDMhtLMC5ghIvot2B8upCDfBsn-TCP/pub?gid=565510790&single=true&output=csv"
     
     def check_and_download(url, cache_path):

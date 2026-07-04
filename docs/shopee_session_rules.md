@@ -24,6 +24,11 @@ When the session is degraded (e.g. `Unknown Merchant` is detected by the UI name
 * Allow the Chrome profile's session management to automatically log back in (using the preserved device fingerprints) without requesting credentials/OTP.
 * If the UI logout fails, **abort the recovery immediately**. Do not use manual cookie deletion fallback.
 
+### 4. No Automated Fresh Login (Credential Login)
+Background/automated scripts must never perform a fresh credential-based login (typing username/password and submitting) if a session is missing or expired.
+* The core browser wrappers `get_session` and `_deliberate_logout_and_relogin` must abort immediately and log an error rather than falling back to credential entry.
+* If a session is lost or expired, the script must fail gracefully. Manual intervention (re-logging in via the interactive dashboard scripts) is required to restore the session.
+
 ---
 
 ## 🛠️ Code Reference
