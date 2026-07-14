@@ -23,29 +23,7 @@ const CLI_PATH = path.join(TASK_WEEKLY_DIR, 'menu', 'cli.py');
  * @returns {Promise<boolean>}
  */
 function controlWarmer(action, onLog = console.log) {
-    return new Promise((resolve) => {
-        const { exec } = require('child_process');
-        const cmdMap = {
-            'pause': 'sudo systemctl stop shopee-warmer',
-            'unpause': 'sudo systemctl start shopee-warmer'
-        };
-        const cmd = cmdMap[action];
-        if (!cmd) {
-            onLog(`⚠️ [WARMER] Action tidak dikenal: ${action}`);
-            return resolve(false);
-        }
-
-        onLog(`🔌 [WARMER] Executing: ${cmd}...`);
-        exec(cmd, (err, stdout, stderr) => {
-            if (err) {
-                onLog(`⚠️ [WARMER] Gagal melakukan ${action} pada shopee-warmer.service: ${err.message}`);
-                resolve(false);
-            } else {
-                onLog(`✅ [WARMER] Service shopee-warmer berhasil di-${action === 'pause' ? 'hentikan' : 'aktifkan kembali'}.`);
-                resolve(true);
-            }
-        });
-    });
+    return Promise.resolve(true);
 }
 
 /**

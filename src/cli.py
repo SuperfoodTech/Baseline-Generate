@@ -157,8 +157,11 @@ def _resolve_output_dir(platform_name: str, start_date: str, end_date: str) -> s
     Build an absolute output path under:
       task-weekly/src/laporan/{platform}/{start_date}_to_{end_date}
     """
-    base = os.path.dirname(os.path.abspath(__file__))
-    out = os.path.join(base, "laporan", platform_name, f"{start_date}_to_{end_date}")
+    if os.name == "nt":
+        base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "laporan")
+    else:
+        base = "/mnt/volume_web_scraping/baseline"
+    out = os.path.join(base, platform_name, f"{start_date}_to_{end_date}")
     os.makedirs(out, exist_ok=True)
     return out
 
@@ -1309,6 +1312,10 @@ Examples:
 
     date_folder = f"{start_date}_to_{end_date}"
     base_dir = os.path.dirname(os.path.abspath(__file__))
+    if os.name == "nt":
+        laporan_base_dir = os.path.join(base_dir, "laporan")
+    else:
+        laporan_base_dir = "/mnt/volume_web_scraping/baseline"
     
     # ── Merge Baseline Outputs ──
     if task_choice == "1":
@@ -1333,11 +1340,11 @@ Examples:
             if len(filename_prefix) > 50:
                 filename_prefix = "BASELINE_CUSTOM_MULTIPLE_OUTLETS"
             
-            grab_paths_to_check.append(os.path.join(base_dir, "laporan", "grab_baseline", date_folder, f"{filename_prefix}.xlsx"))
+            grab_paths_to_check.append(os.path.join(laporan_base_dir, "grab_baseline", date_folder, f"{filename_prefix}.xlsx"))
             
             # Fallback glob pattern for any BASELINE_CUSTOM_{outlet_safe}_*.xlsx
             import glob
-            glob_pattern = os.path.join(base_dir, "laporan", "grab_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}*.xlsx")
+            glob_pattern = os.path.join(laporan_base_dir, "grab_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}*.xlsx")
             for gp in glob.glob(glob_pattern):
                 if gp not in grab_paths_to_check:
                     grab_paths_to_check.append(gp)
@@ -1360,17 +1367,17 @@ Examples:
             shopee_safe = str(m_str or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
             if len(shopee_safe) > 50:
                 shopee_safe = "MULTIPLE_MERCHANTS"
-            shopee_paths_to_check.append(os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}.xlsx"))
-            shopee_paths_to_check.append(os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}_.xlsx"))
+            shopee_paths_to_check.append(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}.xlsx"))
+            shopee_paths_to_check.append(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}_.xlsx"))
             
             # Fallback glob pattern for any BASELINE_CUSTOM_{shopee_safe}*.xlsx
-            glob_pattern_sf = os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}*.xlsx")
+            glob_pattern_sf = os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}*.xlsx")
             for gp in glob.glob(glob_pattern_sf):
                 if gp not in shopee_paths_to_check:
                     shopee_paths_to_check.append(gp)
                     
             # Check for BASELINE_MASTER_SHOPEE.xlsx
-            shopee_paths_to_check.append(os.path.join(base_dir, "laporan", "shopee_baseline", date_folder, "BASELINE_MASTER_SHOPEE.xlsx"))
+            shopee_paths_to_check.append(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, "BASELINE_MASTER_SHOPEE.xlsx"))
                     
             shopee_path = None
             for p_check in shopee_paths_to_check:
@@ -1395,14 +1402,14 @@ Examples:
             o_str_go = "|".join(outlet) if outlet else None
             outlet_safe_go = str(o_str_go or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
             if outlet_safe_go:
-                gofood_paths_to_check.append(os.path.join(base_dir, "laporan", "gofood_baseline", date_folder, f"BASELINE_CUSTOM_GOFOOD_{outlet_safe_go}_{start_date}_to_{end_date}.xlsx"))
+                gofood_paths_to_check.append(os.path.join(laporan_base_dir, "gofood_baseline", date_folder, f"BASELINE_CUSTOM_GOFOOD_{outlet_safe_go}_{start_date}_to_{end_date}.xlsx"))
                 import glob
-                glob_pattern_gf = os.path.join(base_dir, "laporan", "gofood_baseline", date_folder, f"BASELINE_CUSTOM_GOFOOD_{outlet_safe_go}*.xlsx")
+                glob_pattern_gf = os.path.join(laporan_base_dir, "gofood_baseline", date_folder, f"BASELINE_CUSTOM_GOFOOD_{outlet_safe_go}*.xlsx")
                 for gp in glob.glob(glob_pattern_gf):
                     if gp not in gofood_paths_to_check:
                         gofood_paths_to_check.append(gp)
 
-            gofood_paths_to_check.append(os.path.join(base_dir, "laporan", "gofood_baseline", date_folder, f"BASELINE_GOFOOD_{start_date}_to_{end_date}.xlsx"))
+            gofood_paths_to_check.append(os.path.join(laporan_base_dir, "gofood_baseline", date_folder, f"BASELINE_GOFOOD_{start_date}_to_{end_date}.xlsx"))
             
             gofood_path = None
             for p_check in gofood_paths_to_check:
@@ -1426,7 +1433,7 @@ Examples:
                 
             if frames:
                 combined_df = pd.concat(frames, ignore_index=True)
-                final_baseline_dir = os.path.join(base_dir, "laporan", "baseline", date_folder)
+                final_baseline_dir = os.path.join(laporan_base_dir, "baseline", date_folder)
                 os.makedirs(final_baseline_dir, exist_ok=True)
                 final_path = os.path.join(final_baseline_dir, f"BASELINE_GABUNGAN_{outlet_safe}.xlsx")
                 
@@ -1602,7 +1609,7 @@ Examples:
         else:
             out_folder = name.lower()
             
-        out_path = os.path.join(base_dir, "laporan", out_folder, date_folder)
+        out_path = os.path.join(laporan_base_dir, out_folder, date_folder)
         print(f"  {name:10s} : {status}")
         print(f"  {'':10s}   {DIM}→ {out_path}{RESET}")
     print(f"\n{CYAN}{'═'*58}{RESET}\n")
