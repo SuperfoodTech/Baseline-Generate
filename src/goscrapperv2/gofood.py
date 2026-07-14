@@ -89,7 +89,7 @@ def fetch_gofood_accounts_from_sheet(task="2"):
     """
     url = SHEET_PUBLISHED_URL
     if task == "1":
-        url = "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=0"
+        url = "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=71044642"
     
     url += f"&t={int(time.time())}"
 

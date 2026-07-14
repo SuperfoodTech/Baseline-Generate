@@ -186,7 +186,7 @@ def _resolve_shopee_merchant(outlet_name: str, branch_name: str = None, task_cho
     if task_choice == "1":
         GSHEETS_URL = (
             "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk"
-            "/export?format=csv&gid=0"
+            "/export?format=csv&gid=71044642"
         )
         cache_path = os.path.join(base, "baseline", "shopee", "data", "master_merchants_cache.csv")
     else:
@@ -645,7 +645,7 @@ def interactive_mode():
     # 1. Download Master Merchants sheet to get unique BDs
     print(f"  {CYAN}[INFO] Mengunduh daftar merchant untuk BD filter dari Google Sheets...{RESET}")
     CSV_URL_MAIN = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=0"
-    CSV_URL_BASELINE = "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=0"
+    CSV_URL_BASELINE = "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=71044642"
     
     try:
         resp = requests.get(CSV_URL_MAIN, timeout=30)
@@ -1456,7 +1456,7 @@ Examples:
                         print(f"  {DIM}Silakan deploy apps_script_pdf.js dan masukkan URL-nya ke variabel webhook_url di cli.py{RESET}")
                     else:
                         # 1. Fetch Owner dari Baseline sheet (gid=0)
-                        CSV_URL = "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=0"
+                        CSV_URL = "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=71044642"
                         owner_name = "-"
                         outlet_val = outlet[0] if isinstance(outlet, (list, tuple)) and len(outlet) > 0 else outlet
                         try:

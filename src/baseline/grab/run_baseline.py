@@ -127,7 +127,7 @@ def robust_read_csv(path_or_url, expected_cols=None, **kwargs):
             log.error(f"Fallback robust parsing failed: {fallback_err}")
             raise parse_err
 
-CSV_URL = "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=0"
+CSV_URL = "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=71044642"
 
 async def run_all(date_start: str = None, date_end: str = None, output_dir: str = None, user_filter: str = None, outlet_filter: str = None, branch_filter: str = None):
     # Reload env just in case
