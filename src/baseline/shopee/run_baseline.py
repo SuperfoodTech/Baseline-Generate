@@ -340,8 +340,15 @@ def get_shopee_baseline_credentials(merchant_name, max_age_hours=24, bd_filter=N
         ]
         
         if matched_rows.empty:
-            log.warning(f"⚠️ [CREDENTIALS] Merchant '{merchant_name}' not found in Master list. Using default credentials.")
-            return default_creds
+            msg = "minta tim tech untuk mengisi username dan kata sandi staff"
+            log.error(f"❌ [CREDENTIALS] Merchant '{merchant_name}' tidak ditemukan di Master list. {msg}.")
+            send_discord_error(
+                platform="Shopee",
+                merchant=merchant_name,
+                error_type="CREDENTIALS_MISSING",
+                message=msg
+            )
+            return None
             
         # Apply BD filter if provided to resolve duplicate merchants/credentials
         if bd_filter:
@@ -355,18 +362,29 @@ def get_shopee_baseline_credentials(merchant_name, max_age_hours=24, bd_filter=N
             if not bd_matched_rows.empty:
                 matched_rows = bd_matched_rows
             else:
-                log.error(f"❌ [CREDENTIALS] BD filter '{bd_filter}' yielded no matches for merchant '{merchant_name}' in Master list.")
-                return default_creds
+                msg = "minta tim tech untuk mengisi username dan kata sandi staff"
+                log.error(f"❌ [CREDENTIALS] BD filter '{bd_filter}' yielded no matches for merchant '{merchant_name}' in Master list. {msg}.")
+                send_discord_error(
+                    platform="Shopee",
+                    merchant=merchant_name,
+                    error_type="CREDENTIALS_MISSING",
+                    message=msg
+                )
+                return None
             
         username = str(matched_rows.iloc[0].get('s username akses staff', '')).strip()
         password = str(matched_rows.iloc[0].get('s kata sandi akses staff', '')).strip()
         
         if not username or pd.isna(username) or username == "" or username == "-" or username.lower() == "nan":
-            log.info(f"ℹ️ [CREDENTIALS] No username assigned to merchant '{merchant_name}'. Using default credentials.")
-            return default_creds
-            
-        if not password or pd.isna(password):
-            password = default_creds.get("password")
+            msg = "minta tim tech untuk mengisi username dan kata sandi staff"
+            log.error(f"❌ [CREDENTIALS] Username staff tidak ditemukan untuk merchant '{merchant_name}'. {msg}.")
+            send_discord_error(
+                platform="Shopee",
+                merchant=merchant_name,
+                error_type="CREDENTIALS_MISSING",
+                message=msg
+            )
+            return None
             
         # Look up phone number and fallback password from df_creds
         norm_username = _normalize(username)
@@ -374,14 +392,43 @@ def get_shopee_baseline_credentials(merchant_name, max_age_hours=24, bd_filter=N
         
         matched_cred = df_creds[df_creds['norm_username'] == norm_username]
         if matched_cred.empty:
-            log.warning(f"⚠️ [CREDENTIALS] Username '{username}' has no mapped credentials in Credentials sheet. Trying default phone.")
-            phone = default_creds.get("phone")
-        else:
-            row_cred = matched_cred.iloc[0]
-            phone = str(row_cred.get('phone', '')).strip()
-            # Fallback password lookup from credentials sheet if missing or default in merchants sheet
-            if not password or pd.isna(password) or password == "" or password == "-":
-                password = str(row_cred.get('password', '')).strip()
+            msg = "minta tim tech untuk mengisi username dan kata sandi staff"
+            log.error(f"❌ [CREDENTIALS] Username '{username}' tidak terdaftar di Credentials sheet. {msg}.")
+            send_discord_error(
+                platform="Shopee",
+                merchant=merchant_name,
+                error_type="CREDENTIALS_MISSING",
+                message=msg
+            )
+            return None
+            
+        row_cred = matched_cred.iloc[0]
+        phone = str(row_cred.get('phone', '')).strip()
+        # Fallback password lookup from credentials sheet if missing or default in merchants sheet
+        if not password or pd.isna(password) or password == "" or password == "-":
+            password = str(row_cred.get('password', '')).strip()
+            
+        if not password or pd.isna(password) or password == "" or password == "-" or password.lower() == "nan":
+            msg = "minta tim tech untuk mengisi username dan kata sandi staff"
+            log.error(f"❌ [CREDENTIALS] Password staff tidak ditemukan untuk merchant '{merchant_name}'. {msg}.")
+            send_discord_error(
+                platform="Shopee",
+                merchant=merchant_name,
+                error_type="CREDENTIALS_MISSING",
+                message=msg
+            )
+            return None
+            
+        if not phone or pd.isna(phone) or phone == "" or phone == "-" or phone.lower() == "nan":
+            msg = "minta tim tech untuk mengisi username dan kata sandi staff"
+            log.error(f"❌ [CREDENTIALS] Nomor HP staff tidak ditemukan untuk merchant '{merchant_name}'. {msg}.")
+            send_discord_error(
+                platform="Shopee",
+                merchant=merchant_name,
+                error_type="CREDENTIALS_MISSING",
+                message=msg
+            )
+            return None
             
         if phone.startswith("+"):
             phone = phone[1:]
@@ -646,17 +693,25 @@ def run_pipeline():
     if args.skip_download:
         log.info("⏭️ [SKIP] Bypassing browser download phase (Phases 1 & 2) as --skip-download is enabled.")
     else:
-        # Group target merchants by resolved credentials username
         merchants_by_user = {}
         for m_name in target_merchants:
-            creds = get_shopee_baseline_credentials(m_name, bd_filter=args.bd)
-            u = creds["username"]
-            if u not in merchants_by_user:
-                merchants_by_user[u] = {
-                    "creds": creds,
-                    "merchants": []
-                }
-            merchants_by_user[u]["merchants"].append(m_name)
+            try:
+                creds = get_shopee_baseline_credentials(m_name, bd_filter=args.bd)
+                if creds is None:
+                    continue
+                u = creds["username"]
+                if u not in merchants_by_user:
+                    merchants_by_user[u] = {
+                        "creds": creds,
+                        "merchants": []
+                    }
+                merchants_by_user[u]["merchants"].append(m_name)
+            except Exception as e:
+                log.error(f"❌ Gagal memproses kredensial untuk merchant '{m_name}': {e}")
+                continue
+        if not merchants_by_user:
+            log.error("❌ No merchants with valid credentials to process. Aborting.")
+            return
             
         log.info(f"🚀 [PARALLEL] Processing {len(merchants_by_user)} credentials groups concurrently (max 4 workers)...")
         from concurrent.futures import ThreadPoolExecutor, as_completed
