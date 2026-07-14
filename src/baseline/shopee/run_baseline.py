@@ -190,12 +190,12 @@ def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=
     df = None
     try:
         log.info("🌐 [DATA] Downloading fresh merchant list from Google Sheets...")
-        df = robust_read_csv(url, expected_cols=9)
+        df = robust_read_csv(url, expected_cols=15)
         df.to_csv(cache_path, index=False)
     except Exception as download_err:
         log.warning(f"⚠️ [DATA] Failed to download fresh merchant list: {download_err}. Trying cache...")
         if os.path.exists(cache_path):
-            df = robust_read_csv(cache_path, expected_cols=9)
+            df = robust_read_csv(cache_path, expected_cols=15)
         else:
             log.error(f"❌ [DATA] No cache available and download failed.")
             return []
@@ -322,7 +322,7 @@ def get_shopee_baseline_credentials(merchant_name, max_age_hours=24, bd_filter=N
         check_and_download(url_merchants, cache_merchants)
         check_and_download(url_creds, cache_creds)
         
-        df_merchants = robust_read_csv(cache_merchants, expected_cols=9)
+        df_merchants = robust_read_csv(cache_merchants, expected_cols=15)
         df_creds = robust_read_csv(cache_creds, expected_cols=4)
         
         def _normalize(name):
