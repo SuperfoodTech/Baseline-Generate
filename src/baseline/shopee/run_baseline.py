@@ -206,7 +206,7 @@ def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=
             
             if bd_filter:
                 resolved_users, resolved_bds = resolve_bd_to_names_and_usernames(bd_filter, max_age_hours)
-                mask_user = sf_df['nama pengguna'].astype(str).str.strip().str.lower().isin(resolved_users)
+                mask_user = sf_df['S Username Akses Staff'].astype(str).str.strip().str.lower().isin(resolved_users)
                 mask_bd = pd.Series(False, index=sf_df.index)
                 if 'bd' in sf_df.columns:
                     mask_bd = sf_df['bd'].astype(str).str.strip().str.lower().isin(resolved_bds)
@@ -346,7 +346,7 @@ def get_shopee_baseline_credentials(merchant_name, max_age_hours=24, bd_filter=N
         # Apply BD filter if provided to resolve duplicate merchants/credentials
         if bd_filter:
             resolved_users, resolved_bds = resolve_bd_to_names_and_usernames(bd_filter, max_age_hours)
-            mask_user = matched_rows['nama pengguna'].astype(str).str.strip().str.lower().isin(resolved_users)
+            mask_user = matched_rows['S Username Akses Staff'].astype(str).str.strip().str.lower().isin(resolved_users)
             mask_bd = pd.Series(False, index=matched_rows.index)
             if 'bd' in matched_rows.columns:
                 mask_bd = matched_rows['bd'].astype(str).str.strip().str.lower().isin(resolved_bds)
@@ -358,8 +358,8 @@ def get_shopee_baseline_credentials(merchant_name, max_age_hours=24, bd_filter=N
                 log.error(f"❌ [CREDENTIALS] BD filter '{bd_filter}' yielded no matches for merchant '{merchant_name}' in Master list.")
                 return default_creds
             
-        username = str(matched_rows.iloc[0].get('nama pengguna', '')).strip()
-        password = str(matched_rows.iloc[0].get('kata sandi', '')).strip()
+        username = str(matched_rows.iloc[0].get('S Username Akses Staff', '')).strip()
+        password = str(matched_rows.iloc[0].get('S Kata Sandi Akses Staff', '')).strip()
         
         if not username or pd.isna(username) or username == "" or username == "-":
             log.info(f"ℹ️ [CREDENTIALS] No username assigned to merchant '{merchant_name}'. Using default credentials.")
