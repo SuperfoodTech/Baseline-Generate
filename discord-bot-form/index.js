@@ -219,7 +219,7 @@ client.on('interactionCreate', async interaction => {
                 }
             });
 
-            activeReRuns.set(taskId, pipeline.proc);
+            activeReRuns.set(taskId, { proc: pipeline.proc, statusMsg });
 
             pipeline.promise.then(async (result) => {
                 const isCancelled = pipeline.proc ? pipeline.proc.cancelled : false;
@@ -351,7 +351,9 @@ client.on('interactionCreate', async interaction => {
             });
         } else if (interaction.customId.startsWith('cancel_rerun_')) {
             const taskId = interaction.customId.replace('cancel_rerun_', '');
-            const proc = activeReRuns.get(taskId);
+            const entry = activeReRuns.get(taskId);
+            const proc = entry ? entry.proc : null;
+            const cancelledStatusMsg = entry ? entry.statusMsg : null;
 
             if (proc && !proc.killed) {
                 proc.cancelled = true;
@@ -361,6 +363,25 @@ client.on('interactionCreate', async interaction => {
                     try { proc.kill('SIGKILL'); } catch (err) { }
                 }
                 activeReRuns.delete(taskId);
+
+                // Edit embed status bubble untuk hapus tombol dan tampilkan pesan cancel
+                if (cancelledStatusMsg) {
+                    try {
+                        await cancelledStatusMsg.edit({
+                            embeds: [
+                                new EmbedBuilder()
+                                    .setColor(0xFF0000)
+                                    .setTitle('⏹️ Re-Run Dibatalkan')
+                                    .setDescription(`Proses Re-Run telah dihentikan secara paksa oleh **${interaction.user.username}**.`)
+                                    .setTimestamp()
+                                    .setFooter({ text: 'Sistem Re-Run Performance' })
+                            ],
+                            components: []
+                        });
+                    } catch (e) {
+                        console.error('[CANCEL] Failed to edit statusMsg on cancel_rerun:', e);
+                    }
+                }
 
                 await interaction.update({
                     content: '⏹️ **Proses Re-Run dibatalkan secara paksa.**',
