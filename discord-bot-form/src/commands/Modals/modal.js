@@ -762,14 +762,20 @@ module.exports = {
 
                             const omzetLines = [];
                             const orderLines = [];
-                            const lowerApp = aplikator.toLowerCase();
+                            const lowerApp = (aplikator || '').toLowerCase();
 
-                            omzetLines.push(`GoFood: **${omzet_go || 'Rp 0'}**`);
-                            orderLines.push(`GoFood: **${order_go || '0'}**`);
-                            omzetLines.push(`GrabFood: **${omzet_gr || 'Rp 0'}**`);
-                            orderLines.push(`GrabFood: **${order_gr || '0'}**`);
-                            omzetLines.push(`ShopeeFood: **${omzet_sf || 'Rp 0'}**`);
-                            orderLines.push(`ShopeeFood: **${order_sf || '0'}**`);
+                            if (lowerApp.includes('gofood') || lowerApp.includes('all')) {
+                                omzetLines.push(`GoFood: **${omzet_go || 'Rp 0'}**`);
+                                orderLines.push(`GoFood: **${order_go || '0'}**`);
+                            }
+                            if (lowerApp.includes('grab') || lowerApp.includes('all')) {
+                                omzetLines.push(`GrabFood: **${omzet_gr || 'Rp 0'}**`);
+                                orderLines.push(`GrabFood: **${order_gr || '0'}**`);
+                            }
+                            if (lowerApp.includes('shopee') || lowerApp.includes('all')) {
+                                omzetLines.push(`ShopeeFood: **${omzet_sf || 'Rp 0'}**`);
+                                orderLines.push(`ShopeeFood: **${order_sf || '0'}**`);
+                            }
 
                             const omzetStr = omzetLines.join('\n') || '-';
                             const orderStr = orderLines.join('\n') || '-';
