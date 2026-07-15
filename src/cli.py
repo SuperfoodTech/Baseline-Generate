@@ -1350,16 +1350,18 @@ Examples:
                     grab_paths_to_check.append(gp)
 
             grab_path = None
-            for p_check in grab_paths_to_check:
-                if os.path.exists(p_check):
-                    grab_path = p_check
-                    break
+            if "grab" in platform or platform == "all":
+                for p_check in grab_paths_to_check:
+                    if os.path.exists(p_check):
+                        grab_path = p_check
+                        break
                     
             if grab_path:
                 print(f"  [INFO] Menemukan file Grab baseline: {grab_path}")
                 frames.append(pd.read_excel(grab_path))
             else:
-                print(f"  [INFO] File Grab baseline tidak ditemukan untuk: {outlet_safe}")
+                if "grab" in platform or platform == "all":
+                    print(f"  [INFO] File Grab baseline tidak ditemukan untuk: {outlet_safe}")
             
             # Find Shopee Baseline output
             shopee_paths_to_check = []
@@ -1380,10 +1382,11 @@ Examples:
             shopee_paths_to_check.append(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, "BASELINE_MASTER_SHOPEE.xlsx"))
                     
             shopee_path = None
-            for p_check in shopee_paths_to_check:
-                if os.path.exists(p_check):
-                    shopee_path = p_check
-                    break
+            if "shopee" in platform or platform == "all":
+                for p_check in shopee_paths_to_check:
+                    if os.path.exists(p_check):
+                        shopee_path = p_check
+                        break
                     
             if shopee_path:
                 print(f"  [INFO] Menemukan file Shopee baseline: {shopee_path}")
@@ -1394,7 +1397,8 @@ Examples:
                 if not sf_df.empty:
                     frames.append(sf_df)
             else:
-                print(f"  [INFO] File Shopee baseline tidak ditemukan untuk: {shopee_safe}")
+                if "shopee" in platform or platform == "all":
+                    print(f"  [INFO] File Shopee baseline tidak ditemukan untuk: {shopee_safe}")
 
             # Find GoFood Baseline output
             gofood_paths_to_check = []
@@ -1412,10 +1416,11 @@ Examples:
             gofood_paths_to_check.append(os.path.join(laporan_base_dir, "gofood_baseline", date_folder, f"BASELINE_GOFOOD_{start_date}_to_{end_date}.xlsx"))
             
             gofood_path = None
-            for p_check in gofood_paths_to_check:
-                if os.path.exists(p_check):
-                    gofood_path = p_check
-                    break
+            if "gofood" in platform or platform == "all":
+                for p_check in gofood_paths_to_check:
+                    if os.path.exists(p_check):
+                        gofood_path = p_check
+                        break
                     
             if gofood_path:
                 print(f"  [INFO] Menemukan file GoFood baseline: {gofood_path}")
@@ -1429,7 +1434,8 @@ Examples:
                 if not gf_df.empty:
                     frames.append(gf_df)
             else:
-                print(f"  [INFO] File GoFood baseline tidak ditemukan untuk: {start_date} s/d {end_date}")
+                if "gofood" in platform or platform == "all":
+                    print(f"  [INFO] File GoFood baseline tidak ditemukan untuk: {start_date} s/d {end_date}")
                 
             if frames:
                 combined_df = pd.concat(frames, ignore_index=True)
