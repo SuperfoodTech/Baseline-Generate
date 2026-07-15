@@ -106,6 +106,9 @@ client.on('interactionCreate', async interaction => {
             if (platform === 'grab') formData.aplikator = 'GrabFood';
             else if (platform === 'shopee') formData.aplikator = 'ShopeeFood';
             else if (platform === 'gofood') formData.aplikator = 'GoFood';
+            else if (platform === 'failed') {
+                // Keep the cached failed applicators list as is
+            }
             else formData.aplikator = platform;
 
             const jobKey = modalCmd.buildJobKey(formData.outlet, formData.aplikator, formData.tanggalMulai, formData.tanggalSelesai);
@@ -194,7 +197,10 @@ client.on('interactionCreate', async interaction => {
                 }
 
                 let matchedIndex = -1;
-                if (lower.includes(platform) && (lower.includes('pipeline') || lower.includes('automation') || lower.includes('fetching') || lower.includes('scrapperv2'))) {
+                const isPlatformLog = (platform === 'failed')
+                    ? (lower.includes('grab') || lower.includes('shopee') || lower.includes('gofood'))
+                    : lower.includes(platform);
+                if (isPlatformLog && (lower.includes('pipeline') || lower.includes('automation') || lower.includes('fetching') || lower.includes('scrapperv2'))) {
                     matchedIndex = 0;
                 } else if (lower.includes('penggabungan') || lower.includes('gabung') || lower.includes('merging')) {
                     matchedIndex = 1;
@@ -298,7 +304,8 @@ client.on('interactionCreate', async interaction => {
                                     const newRow = new ActionRowBuilder();
                                     row.components.forEach(btn => {
                                         if (btn.customId === interaction.customId) {
-                                            newRow.addComponents(ButtonBuilder.from(btn).setDisabled(true).setLabel(`✅ Berhasil: ${platform.toUpperCase()}`));
+                                            const labelText = (platform === 'failed') ? '✅ Re-Run Selesai' : `✅ Berhasil: ${platform.toUpperCase()}`;
+                                            newRow.addComponents(ButtonBuilder.from(btn).setDisabled(true).setLabel(labelText));
                                         } else {
                                             newRow.addComponents(ButtonBuilder.from(btn));
                                         }

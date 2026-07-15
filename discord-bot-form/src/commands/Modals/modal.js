@@ -838,20 +838,25 @@ module.exports = {
                         }
 
                         if (result.notifData && failedPlatforms.length > 0) {
-                            const taskId = Math.random().toString(36).substring(2, 10);
-                            recentTasks.set(taskId, formData);
+                            const reRunData = { ...formData };
+                            reRunData.aplikator = failedPlatforms.map(p => {
+                                if (p.toLowerCase() === 'grab') return 'GrabFood';
+                                if (p.toLowerCase() === 'shopee') return 'ShopeeFood';
+                                if (p.toLowerCase() === 'gofood') return 'GoFood';
+                                return p;
+                            }).join(', ');
 
-                            failedPlatforms.forEach(plat => {
-                                // Discord max 5 buttons per ActionRow, so ensure we don't overflow
-                                if (actionRow.components.length < 5) {
-                                    actionRow.addComponents(
-                                        new ButtonBuilder()
-                                            .setCustomId(`rerun_${plat.toLowerCase()}_${taskId}`)
-                                            .setLabel(`🔄 Re-Run ${plat}`)
-                                            .setStyle(ButtonStyle.Secondary)
-                                    );
-                                }
-                            });
+                            const taskId = Math.random().toString(36).substring(2, 10);
+                            recentTasks.set(taskId, reRunData);
+
+                            if (actionRow.components.length < 5) {
+                                actionRow.addComponents(
+                                    new ButtonBuilder()
+                                        .setCustomId(`rerun_failed_${taskId}`)
+                                        .setLabel(`🔄 Re-Run Aplikator Gagal (${failedPlatforms.join(', ')})`)
+                                        .setStyle(ButtonStyle.Secondary)
+                                );
+                            }
                         }
 
                         if (actionRow.components.length > 0) {
