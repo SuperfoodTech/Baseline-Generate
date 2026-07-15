@@ -232,6 +232,22 @@ client.on('interactionCreate', async interaction => {
                 }
 
                 if (result.success) {
+                    let failedPlatforms = [];
+                    if (result.resultData && result.resultData.results) {
+                        for (const [platform, success] of Object.entries(result.resultData.results)) {
+                            if (!success) {
+                                failedPlatforms.push(platform);
+                            }
+                        }
+                    } else if (result.notifData) {
+                        const { aplikator, omzet_gr, omzet_sf, omzet_go } = result.notifData;
+                        const lowerApp = (aplikator || '').toLowerCase();
+                        if ((lowerApp.includes('grab') || lowerApp.includes('all')) && (!omzet_gr || omzet_gr === 'Rp 0')) failedPlatforms.push('Grab');
+                        if ((lowerApp.includes('shopee') || lowerApp.includes('all')) && (!omzet_sf || omzet_sf === 'Rp 0')) failedPlatforms.push('Shopee');
+                        if ((lowerApp.includes('gofood') || lowerApp.includes('all')) && (!omzet_go || omzet_go === 'Rp 0')) failedPlatforms.push('GoFood');
+                    }
+                    result.failedPlatforms = failedPlatforms;
+
                     let embeds = [];
                     let components = [];
 
@@ -264,14 +280,40 @@ client.on('interactionCreate', async interaction => {
                         const pdfUrl = result.notifData.pdf_url || (result.output.replace(/\x1B\[[0-9;]*m/g, '').match(/URL:\s*(https:\/\/drive\.google\.com\/file\/d\/[^\s\r\n]+)/) || [])[1];
 
                         let desc = `Laporan untuk **${outlet}** telah diperbarui melalui Re-Run.\n\n`;
+                        const actionRow = new ActionRowBuilder();
                         if (pdfUrl) {
                             desc += `🔗 **[Klik di sini untuk membuka PDF Laporan](${pdfUrl})**`;
-                            const actionRow = new ActionRowBuilder().addComponents(
+                            actionRow.addComponents(
                                 new ButtonBuilder()
                                     .setLabel('📄 Buka PDF Laporan')
                                     .setStyle(ButtonStyle.Link)
                                     .setURL(pdfUrl)
                             );
+                        }
+
+                        if (failedPlatforms.length > 0) {
+                            const reRunData = { ...formData };
+                            reRunData.aplikator = failedPlatforms.map(p => {
+                                if (p.toLowerCase() === 'grab') return 'GrabFood';
+                                if (p.toLowerCase() === 'shopee') return 'ShopeeFood';
+                                if (p.toLowerCase() === 'gofood') return 'GoFood';
+                                return p;
+                            }).join(', ');
+
+                            const newTaskId = Math.random().toString(36).substring(2, 10);
+                            recentTasks.set(newTaskId, reRunData);
+
+                            if (actionRow.components.length < 5) {
+                                actionRow.addComponents(
+                                    new ButtonBuilder()
+                                        .setCustomId(`rerun_failed_${newTaskId}`)
+                                        .setLabel(`🔄 Re-Run Aplikator Gagal (${failedPlatforms.join(', ')})`)
+                                        .setStyle(ButtonStyle.Secondary)
+                                );
+                            }
+                        }
+
+                        if (actionRow.components.length > 0) {
                             components.push(actionRow);
                         }
 
@@ -287,14 +329,46 @@ client.on('interactionCreate', async interaction => {
 
                         embeds.push(embed);
 
-                        if (result.failedPlatforms && result.failedPlatforms.length > 0) {
+                        if (failedPlatforms.length > 0) {
                             const warningEmbed = new EmbedBuilder()
                                 .setTitle('⚠️ MASIH ADA DATA KOSONG')
-                                .setDescription(`Setelah Re-Run, data transaksi untuk **${result.failedPlatforms.join(', ')}** masih gagal didapatkan (Terbaca Rp 0).`)
+                                .setDescription(`Setelah Re-Run, data transaksi untuk **${failedPlatforms.join(', ')}** masih gagal didapatkan (Terbaca Rp 0).`)
                                 .setColor(0xFF0000);
                             embeds.push(warningEmbed);
                         }
+                    } else {
+                        const embed = new EmbedBuilder()
+                            .setTitle('⚠️ Re-Run Selesai dengan Peringatan')
+                            .setDescription(`Re-Run KKS **Baseline Performance** selesai, tetapi ada beberapa peringatan:\n\n> Sebagian data mungkin tidak lengkap. Periksa laporan yang dihasilkan.`)
+                            .setColor(0xFFAA00)
+                            .setTimestamp()
+                            .setFooter({ text: 'Sistem Re-Run Performance' });
+
+                        embeds.push(embed);
+
+                        const actionRow = new ActionRowBuilder();
+                        if (failedPlatforms.length > 0) {
+                            const reRunData = { ...formData };
+                            reRunData.aplikator = failedPlatforms.map(p => {
+                                if (p.toLowerCase() === 'grab') return 'GrabFood';
+                                if (p.toLowerCase() === 'shopee') return 'ShopeeFood';
+                                if (p.toLowerCase() === 'gofood') return 'GoFood';
+                                return p;
+                            }).join(', ');
+
+                            const newTaskId = Math.random().toString(36).substring(2, 10);
+                            recentTasks.set(newTaskId, reRunData);
+
+                            actionRow.addComponents(
+                                new ButtonBuilder()
+                                    .setCustomId(`rerun_failed_${newTaskId}`)
+                                    .setLabel(`🔄 Re-Run Aplikator Gagal (${failedPlatforms.join(', ')})`)
+                                    .setStyle(ButtonStyle.Secondary)
+                            );
+                            components.push(actionRow);
+                        }
                     }
+                }
 
                     // Disable tombol Re-Run di pesan original karena sudah sukses HANYA JIKA TIDAK GAGAL
                     if (!isTrulyFailed) {

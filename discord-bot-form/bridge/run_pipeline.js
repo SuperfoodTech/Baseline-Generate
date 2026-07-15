@@ -251,11 +251,22 @@ function runPipeline(formData, onLog = () => { }) {
                 }
             }
 
+            let resultData = null;
+            const resultMatch = output.match(/DISCORD_RESULT_JSON:\s*(\{.*\})/);
+            if (resultMatch) {
+                try {
+                    resultData = JSON.parse(resultMatch[1]);
+                } catch (e) {
+                    console.error('Failed to parse DISCORD_RESULT_JSON:', e);
+                }
+            }
+
             await cleanupAndResolve({
                 success: exitCode === 0,
                 exitCode: exitCode ?? -1,
                 output: output.trim(),
-                notifData: notifData
+                notifData: notifData,
+                resultData: resultData
             });
         });
 

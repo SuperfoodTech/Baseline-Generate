@@ -733,7 +733,13 @@ module.exports = {
                 if (result.success) {
                     // Cek nilai nol untuk re-run
                     let failedPlatforms = [];
-                    if (result.notifData) {
+                    if (result.resultData && result.resultData.results) {
+                        for (const [platform, success] of Object.entries(result.resultData.results)) {
+                            if (!success) {
+                                failedPlatforms.push(platform);
+                            }
+                        }
+                    } else if (result.notifData) {
                         const { aplikator, omzet_gr, omzet_sf, omzet_go } = result.notifData;
                         const lowerApp = (aplikator || '').toLowerCase();
                         if ((lowerApp.includes('grab') || lowerApp.includes('all')) && (!omzet_gr || omzet_gr === 'Rp 0')) failedPlatforms.push('Grab');
@@ -837,7 +843,7 @@ module.exports = {
                             );
                         }
 
-                        if (result.notifData && failedPlatforms.length > 0) {
+                        if (failedPlatforms.length > 0) {
                             const reRunData = { ...formData };
                             reRunData.aplikator = failedPlatforms.map(p => {
                                 if (p.toLowerCase() === 'grab') return 'GrabFood';

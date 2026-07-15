@@ -422,6 +422,19 @@ def run_grab_baseline(start_date: str, end_date: str, user_filter: str = None, o
 
     output_dir = _resolve_output_dir("grab_baseline", start_date, end_date)
 
+    # Clear directory to avoid leftover files from previous runs
+    if os.path.isdir(output_dir):
+        import shutil
+        for filename in os.listdir(output_dir):
+            file_path = os.path.join(output_dir, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print(f"Failed to delete {file_path}: {e}")
+
     import subprocess
     
     python_exe = _resolve_python_executable()
@@ -506,6 +519,19 @@ def run_shopee_baseline(start_date: str, end_date: str, merchant_filter: str = N
 
     output_dir = _resolve_output_dir("shopee_baseline", start_date, end_date)
 
+    # Clear directory to avoid leftover files from previous runs
+    if os.path.isdir(output_dir):
+        import shutil
+        for filename in os.listdir(output_dir):
+            file_path = os.path.join(output_dir, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print(f"Failed to delete {file_path}: {e}")
+
     import subprocess
     
     python_exe = _resolve_python_executable()
@@ -589,6 +615,19 @@ def run_gofood(start_date: str, end_date: str, outlet_filter: str = None, branch
         output_dir = _resolve_output_dir("gofood_baseline", start_date, end_date)
     else:
         output_dir = _resolve_output_dir("gofood", start_date, end_date)
+
+    # Clear directory to avoid leftover files from previous runs
+    if os.path.isdir(output_dir):
+        import shutil
+        for filename in os.listdir(output_dir):
+            file_path = os.path.join(output_dir, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print(f"Failed to delete {file_path}: {e}")
 
     import subprocess
     
@@ -1437,11 +1476,16 @@ Examples:
                 if "gofood" in platform or platform == "all":
                     print(f"  [INFO] File GoFood baseline tidak ditemukan untuk: {start_date} s/d {end_date}")
                 
+            # Delete old merged file if exists to guarantee it is only present if new frames were found
+            final_baseline_dir = os.path.join(laporan_base_dir, "baseline", date_folder)
+            final_path = os.path.join(final_baseline_dir, f"BASELINE_GABUNGAN_{outlet_safe}.xlsx")
+            if os.path.exists(final_path):
+                try: os.unlink(final_path)
+                except: pass
+
             if frames:
                 combined_df = pd.concat(frames, ignore_index=True)
-                final_baseline_dir = os.path.join(laporan_base_dir, "baseline", date_folder)
                 os.makedirs(final_baseline_dir, exist_ok=True)
-                final_path = os.path.join(final_baseline_dir, f"BASELINE_GABUNGAN_{outlet_safe}.xlsx")
                 
                 with pd.ExcelWriter(final_path, engine="openpyxl") as writer:
                     combined_df.to_excel(writer, index=False, sheet_name="Baseline Summary")
@@ -1617,8 +1661,18 @@ Examples:
             
         out_path = os.path.join(laporan_base_dir, out_folder, date_folder)
         print(f"  {name:10s} : {status}")
-        print(f"  {'':10s}   {DIM}→ {out_path}{RESET}")
     print(f"\n{CYAN}{'═'*58}{RESET}\n")
+
+    # Print DISCORD_RESULT_JSON for Discord bot to know which platforms failed/succeeded
+    try:
+        import json
+        simplified_results = {}
+        for name_key, success in results.items():
+            key = name_key.split('_')[0]
+            simplified_results[key] = bool(success)
+        print(f"DISCORD_RESULT_JSON: {json.dumps({'results': simplified_results})}")
+    except Exception as e:
+        print(f"Failed to generate DISCORD_RESULT_JSON: {e}")
 
 
 if __name__ == "__main__":
