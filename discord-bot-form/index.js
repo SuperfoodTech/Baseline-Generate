@@ -368,7 +368,6 @@ client.on('interactionCreate', async interaction => {
                             components.push(actionRow);
                         }
                     }
-                }
 
                     // Disable tombol Re-Run di pesan original karena sudah sukses HANYA JIKA TIDAK GAGAL
                     if (!isTrulyFailed) {
