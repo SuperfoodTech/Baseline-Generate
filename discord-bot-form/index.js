@@ -181,20 +181,11 @@ client.on('interactionCreate', async interaction => {
             });
 
             let lastUpdate = Date.now();
-            let isTrulyFailed = false;
 
             // Run pipeline
             const pipeline = runPipeline(formData, async (logLine) => {
                 const lower = logLine.toLowerCase();
                 let newPhase = null;
-
-                // DETEKSI KEGAGALAN DARI LOG (Grab, Shopee, GoFood)
-                if (lower.includes('failed') || lower.includes('error') || lower.includes('❌') || lower.includes('✗')) {
-                    // Filter false positives jika ada
-                    if (!lower.includes('0 errors') && !lower.includes('no error')) {
-                        isTrulyFailed = true;
-                    }
-                }
 
                 let matchedIndex = -1;
                 const isPlatformLog = (platform === 'failed')
@@ -369,8 +360,8 @@ client.on('interactionCreate', async interaction => {
                         }
                     }
 
-                    // Disable tombol Re-Run di pesan original karena sudah sukses HANYA JIKA TIDAK GAGAL
-                    if (!isTrulyFailed) {
+                    // Disable tombol Re-Run di pesan original jika TIDAK ada platform yang gagal
+                    if (failedPlatforms.length === 0) {
                         if (interaction.message && interaction.message.components) {
                             try {
                                 const newComponents = interaction.message.components.map(row => {
@@ -390,13 +381,6 @@ client.on('interactionCreate', async interaction => {
                                 console.error('Gagal update pesan original Re-Run:', err);
                             }
                         }
-                    } else {
-                        // Jika selesai tapi log menyatakan gagal, biarkan tombol aktif dan tambahkan info
-                        const warningEmbed = new EmbedBuilder()
-                            .setTitle('⚠️ ADA KEGAGALAN TERDETEKSI DI LOG')
-                            .setDescription(`Meskipun pipeline selesai, sistem mendeteksi adanya error/kegagalan spesifik di log aplikator. Tombol Re-Run pada pesan awal tetap dibiarkan aktif untuk dicoba lagi.`)
-                            .setColor(0xFFA500);
-                        embeds.push(warningEmbed);
                     }
 
                     await statusMsg.edit({
