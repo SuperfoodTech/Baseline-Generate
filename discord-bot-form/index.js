@@ -210,7 +210,7 @@ client.on('interactionCreate', async interaction => {
                 }
             });
 
-            activeReRuns.set(taskId, pipeline.proc);
+            activeReRuns.set(taskId, pipeline); // simpan handle, bukan pipeline.proc (proc bisa null saat ini)
 
             pipeline.promise.then(async (result) => {
                 const isCancelled = pipeline.proc ? pipeline.proc.cancelled : false;
@@ -408,7 +408,8 @@ client.on('interactionCreate', async interaction => {
             });
         } else if (interaction.customId.startsWith('cancel_rerun_')) {
             const taskId = interaction.customId.replace('cancel_rerun_', '');
-            const proc = activeReRuns.get(taskId);
+            const handle = activeReRuns.get(taskId);
+            const proc = handle ? handle.proc : null;
 
             if (proc && !proc.killed) {
                 proc.cancelled = true;
