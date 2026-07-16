@@ -458,12 +458,17 @@ def run_grab_baseline(start_date: str, end_date: str, user_filter: str = None, o
     print()
 
     result = subprocess.run(cmd, cwd=grab_baseline_dir)
-    
-    if result.returncode == 0:
+
+    # Verify actual output files were produced (scraper may exit 0 even on login failure)
+    output_files = [f for f in os.listdir(output_dir) if f.endswith('.xlsx')] if os.path.isdir(output_dir) else []
+    if result.returncode == 0 and output_files:
         print(f"\n{GREEN}✓ Grab Baseline completed successfully.{RESET}")
         return True
     else:
-        print(f"\n{RED}✗ Grab Baseline exited with code {result.returncode}.{RESET}")
+        if result.returncode == 0 and not output_files:
+            print(f"\n{RED}✗ Grab Baseline: subprocess exited 0 but no output file found (scraper likely failed internally).{RESET}")
+        else:
+            print(f"\n{RED}✗ Grab Baseline exited with code {result.returncode}.{RESET}")
         return False
 
 
@@ -553,12 +558,17 @@ def run_shopee_baseline(start_date: str, end_date: str, merchant_filter: str = N
     print()
 
     result = subprocess.run(cmd, cwd=shopee_baseline_dir)
-    
-    if result.returncode == 0:
+
+    # Verify actual output files were produced (scraper may exit 0 even on login failure)
+    output_files = [f for f in os.listdir(output_dir) if f.endswith('.xlsx')] if os.path.isdir(output_dir) else []
+    if result.returncode == 0 and output_files:
         print(f"\n{GREEN}✓ Shopee Baseline completed successfully.{RESET}")
         return True
     else:
-        print(f"\n{RED}✗ Shopee Baseline exited with code {result.returncode}.{RESET}")
+        if result.returncode == 0 and not output_files:
+            print(f"\n{RED}✗ Shopee Baseline: subprocess exited 0 but no output file found (scraper likely failed internally).{RESET}")
+        else:
+            print(f"\n{RED}✗ Shopee Baseline exited with code {result.returncode}.{RESET}")
         return False
 
 
@@ -660,12 +670,17 @@ def run_gofood(start_date: str, end_date: str, outlet_filter: str = None, branch
     print()
 
     result = subprocess.run(cmd, cwd=gofood_dir)
-    
-    if result.returncode == 0:
+
+    # Verify actual output files were produced (scraper may exit 0 even on login failure)
+    output_files = [f for f in os.listdir(output_dir) if f.endswith('.xlsx')] if os.path.isdir(output_dir) else []
+    if result.returncode == 0 and output_files:
         print(f"\n{GREEN}✓ GoFood login dan scrape data berhasil.{RESET}")
         return True
     else:
-        print(f"\n{RED}✗ GoFood login/scrape data keluar dengan kode {result.returncode}.{RESET}")
+        if result.returncode == 0 and not output_files:
+            print(f"\n{RED}✗ GoFood: subprocess exited 0 but no output file found (scraper likely failed internally).{RESET}")
+        else:
+            print(f"\n{RED}✗ GoFood login/scrape data keluar dengan kode {result.returncode}.{RESET}")
         return False
 
 
