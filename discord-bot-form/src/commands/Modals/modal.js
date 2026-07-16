@@ -859,7 +859,7 @@ module.exports = {
                                 actionRow.addComponents(
                                     new ButtonBuilder()
                                         .setCustomId(`rerun_failed_${taskId}`)
-                                        .setLabel(`🔄 Re-Run Aplikator Gagal (${failedPlatforms.join(', ')})`)
+                                        .setLabel(`🔄 Re-Run`)
                                         .setStyle(ButtonStyle.Secondary)
                                 );
                             }

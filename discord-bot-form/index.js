@@ -307,7 +307,7 @@ client.on('interactionCreate', async interaction => {
                                 actionRow.addComponents(
                                     new ButtonBuilder()
                                         .setCustomId(`rerun_failed_${newTaskId}`)
-                                        .setLabel(`🔄 Re-Run Aplikator Gagal (${failedPlatforms.join(', ')})`)
+                                        .setLabel(`🔄 Re-Run`)
                                         .setStyle(ButtonStyle.Secondary)
                                 );
                             }
@@ -362,7 +362,7 @@ client.on('interactionCreate', async interaction => {
                             actionRow.addComponents(
                                 new ButtonBuilder()
                                     .setCustomId(`rerun_failed_${newTaskId}`)
-                                    .setLabel(`🔄 Re-Run Aplikator Gagal (${failedPlatforms.join(', ')})`)
+                                    .setLabel(`🔄 Re-Run`)
                                     .setStyle(ButtonStyle.Secondary)
                             );
                             components.push(actionRow);
