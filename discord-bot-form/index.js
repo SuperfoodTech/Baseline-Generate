@@ -419,11 +419,25 @@ client.on('interactionCreate', async interaction => {
                 }
                 activeReRuns.delete(taskId);
 
-                await interaction.update({
-                    content: '⏹️ **Proses Re-Run dibatalkan secara paksa.**',
-                    embeds: [],
-                    components: []
-                });
+                try {
+                    await interaction.update({
+                        content: '⏹️ **Proses Re-Run dibatalkan secara paksa.**',
+                        embeds: [],
+                        components: []
+                    });
+                } catch (err) {
+                    console.error('Gagal update pesan cancel_rerun_:', err);
+                }
+            } else {
+                // Proses tidak ditemukan atau sudah selesai — tetap respons Discord agar tidak "Interaksi gagal"
+                try {
+                    await interaction.reply({
+                        content: '⚠️ Proses tidak ditemukan atau sudah selesai berjalan.',
+                        ephemeral: true
+                    });
+                } catch (err) {
+                    console.error('Gagal reply cancel_rerun_ (proc not found):', err);
+                }
             }
         }
     }
