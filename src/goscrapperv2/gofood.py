@@ -89,7 +89,7 @@ def fetch_gofood_accounts_from_sheet(task="2"):
     """
     url = SHEET_PUBLISHED_URL
     if task == "1":
-        url = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=880434015"
+        url = "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=71044642"
     
     url += f"&t={int(time.time())}"
 
@@ -195,10 +195,10 @@ def fetch_gofood_accounts_from_sheet(task="2"):
                 email_duck = str(row[idx_email_duck]).strip()
 
             emails = []
-            if email_duck and email_duck != "-":
-                emails.append(email_duck)
-            if email_fm and email_fm != "-" and email_fm != email_duck:
+            if email_fm and email_fm != "-":
                 emails.append(email_fm)
+            if email_duck and email_duck != "-" and email_duck != email_fm:
+                emails.append(email_duck)
                 
             if not emails and len(row) > 24:
                 fallback_email = str(row[24]).strip()
@@ -1095,9 +1095,9 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
 
     payload_orders = (
         f'{{"search_type":"query_then_fetch","ignore_unavailable":true,"index":{indices_json}}}\n'
-        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:&gt;={range_from_ms} AND time:&lt;={range_to_ms}{merchant_filter} AND NOT id:FP* AND _exists_:data.status AND data.status:COMPLETED"}}]}}}},"aggs":{{"2":{{"date_histogram":{{"field":"time","min_doc_count":0,"extended_bounds":{{"min":{range_from_ms},"max":{range_to_ms}}},"format":"epoch_millis","time_zone":"Asia/Jakarta","interval":"1d"}},"aggs":{{}}}}}}}}\n'
+        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:>={range_from_ms} AND time:<={range_to_ms}{merchant_filter} AND NOT id:FP* AND _exists_:data.status AND data.status:COMPLETED"}}]}}}},"aggs":{{"2":{{"date_histogram":{{"field":"time","min_doc_count":0,"extended_bounds":{{"min":{range_from_ms},"max":{range_to_ms}}},"format":"epoch_millis","time_zone":"Asia/Jakarta","interval":"1d"}},"aggs":{{}}}}}}}}\n'
         f'{{"search_type":"query_then_fetch","ignore_unavailable":true,"index":{indices_json}}}\n'
-        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:&gt;={range_from_ms} AND time:&lt;={range_to_ms}{merchant_filter} AND NOT id:FP*"}}]}}}},"aggs":{{"2":{{"date_histogram":{{"field":"time","min_doc_count":0,"extended_bounds":{{"min":{range_from_ms},"max":{range_to_ms}}},"format":"epoch_millis","time_zone":"Asia/Jakarta","interval":"1d"}},"aggs":{{}}}}}}}}\n'
+        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:>={range_from_ms} AND time:<={range_to_ms}{merchant_filter} AND NOT id:FP*"}}]}}}},"aggs":{{"2":{{"date_histogram":{{"field":"time","min_doc_count":0,"extended_bounds":{{"min":{range_from_ms},"max":{range_to_ms}}},"format":"epoch_millis","time_zone":"Asia/Jakarta","interval":"1d"}},"aggs":{{}}}}}}}}\n'
     )
 
     headers_orders = headers.copy()
@@ -1225,24 +1225,24 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
     indices_past_json = json.dumps(indices_past)
 
     if active_store:
-        merchant_filter = f' AND data.merchant_id:(\\"{active_store}\\")'
+        merchant_filter = f' AND merchant_id:(\\"{active_store}\\")'
     else:
         merchant_filter = ''
 
     # Reconstruct the full 6-query payload from the curl command
     payload_batal = (
         f'{{"search_type":"query_then_fetch","ignore_unavailable":true,"index":{indices_current_json}}}\n'
-        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:&gt;={range_from_ms} AND time:&lt;={range_to_ms}{merchant_filter} AND NOT id:FP* AND _exists_:data.restaurant_accepted_timestamp"}}}}]}}}}}}\n'
+        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:>={range_from_ms} AND time:<={range_to_ms}{merchant_filter} AND NOT id:FP* AND _exists_:data.restaurant_accepted_timestamp"}}}}]}}}}}}\n'
         f'{{"search_type":"query_then_fetch","ignore_unavailable":true,"index":{indices_current_json}}}\n'
-        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:&gt;={range_from_ms} AND time:&lt;={range_to_ms}{merchant_filter} AND NOT id:FP*"}}}}]}}}}}}\n'
+        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:>={range_from_ms} AND time:<={range_to_ms}{merchant_filter} AND NOT id:FP*"}}}}]}}}}}}\n'
         f'{{"search_type":"query_then_fetch","ignore_unavailable":true,"index":{indices_past_json}}}\n'
-        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:&gt;={range_from_comp_ms} AND time:&lt;={range_to_comp_ms}{merchant_filter} AND NOT id:FP* AND _exists_:data.restaurant_accepted_timestamp"}}}}]}}}}}}\n'
+        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:>={range_from_comp_ms} AND time:<={range_to_comp_ms}{merchant_filter} AND NOT id:FP* AND _exists_:data.restaurant_accepted_timestamp"}}}}]}}}}}}\n'
         f'{{"search_type":"query_then_fetch","ignore_unavailable":true,"index":{indices_past_json}}}\n'
-        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:&gt;={range_from_comp_ms} AND time:&lt;={range_to_comp_ms}{merchant_filter} AND NOT id:FP*"}}}}]}}}}}}\n'
+        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:>={range_from_comp_ms} AND time:<={range_to_comp_ms}{merchant_filter} AND NOT id:FP*"}}}}]}}}}}}\n'
         f'{{"search_type":"query_then_fetch","ignore_unavailable":true,"index":{indices_current_json}}}\n'
-        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:&gt;={range_from_ms} AND time:&lt;={range_to_ms}{merchant_filter} AND NOT id:FP* AND _exists_:data.cancel_reason_code AND data.cancel_reason_code:{cancel_reasons_query}"}}}}]}}}},"aggs":{{"2":{{"date_histogram":{{"field":"time","min_doc_count":0,"extended_bounds":{{"min":{range_from_ms},"max":{range_to_ms}}},"format":"epoch_millis","time_zone":"Asia/Jakarta","interval":"1d"}},"aggs":{{}}}}}}}}\n'
+        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:>={range_from_ms} AND time:<={range_to_ms}{merchant_filter} AND NOT id:FP* AND _exists_:data.cancel_reason_code AND data.cancel_reason_code:{cancel_reasons_query}"}}}}]}}}},"aggs":{{"2":{{"date_histogram":{{"field":"time","min_doc_count":0,"extended_bounds":{{"min":{range_from_ms},"max":{range_to_ms}}},"format":"epoch_millis","time_zone":"Asia/Jakarta","interval":"1d"}},"aggs":{{}}}}}}}}\n'
         f'{{"search_type":"query_then_fetch","ignore_unavailable":true,"index":{indices_past_json}}}\n'
-        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:&gt;={range_from_comp_ms} AND time:&lt;={range_to_comp_ms}{merchant_filter} AND NOT id:FP* AND _exists_:data.cancel_reason_code AND data.cancel_reason_code:{cancel_reasons_query}"}}}}]}}}}}}\n'
+        f'{{"size":0,"query":{{"bool":{{"filter":[{{"query_string":{{"analyze_wildcard":true,"query":"time:>={range_from_comp_ms} AND time:<={range_to_comp_ms}{merchant_filter} AND NOT id:FP* AND _exists_:data.cancel_reason_code AND data.cancel_reason_code:{cancel_reasons_query}"}}}}]}}}}}}\n'
     )
 
     headers_batal = headers.copy()
@@ -1251,7 +1251,7 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
         'x-dashboard-id': '83',
         'x-panel-id': '40',
         'x-ref-ids': 'A;B;C;D;E;F',
-        'x-custom-merchant-id': '', # Keep empty as per curl
+        'x-custom-merchant-id': active_store,
         'x-comp-range-offset': '10d'
     })
 
@@ -1511,7 +1511,7 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
         
         is_last_row = (idx == num_periods - 1)
         rata_rata_order_per_cust = int(omzet / order_sukses) if order_sukses > 0 else 0
-        total_order_row = order_sukses + order_batal
+        total_order_row = order_sukses
         
         row_data = [
             username,
@@ -1549,7 +1549,8 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
         return
 
     # --- 6. EXPORT KE EXCEL PER OUTLET (Raw Data) ---
-    safe_outlet = str(_outlet).strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
+    safe_name_str = f"{_outlet}_{_cabang}_{store_id}" if _cabang and _cabang.lower() != 'tanpa cabang' else f"{_outlet}_{store_id}"
+    safe_outlet = safe_name_str.strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
     if not safe_outlet or safe_outlet == "Tidak_Tersedia":
         safe_outlet = "Unknown_Outlet"
         
@@ -1557,31 +1558,25 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
     raw_gofood_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'laporan', 'gofood', 'raw', date_folder)
     os.makedirs(raw_gofood_dir, exist_ok=True)
     
-    raw_excel_filename = os.path.join(raw_gofood_dir, f"{safe_outlet}.xlsx")
+    base_raw_excel_filename = os.path.join(raw_gofood_dir, f"{safe_outlet}.xlsx")
+    raw_excel_filename = base_raw_excel_filename
+    if os.path.exists(raw_excel_filename):
+        version = 1
+        while os.path.exists(os.path.join(raw_gofood_dir, f"{safe_outlet}_v{version}.xlsx")):
+            version += 1
+        raw_excel_filename = os.path.join(raw_gofood_dir, f"{safe_outlet}_v{version}.xlsx")
+        
     abs_raw_excel_path = os.path.abspath(raw_excel_filename)
+    
     try:
-        if write_header or not os.path.exists(abs_raw_excel_path):
-            wb_raw = openpyxl.Workbook()
-            ws_raw = wb_raw.active
-            headers_excel = [
-                'Nomor HP', 'Outlet Name', 'Cabang', 'Store ID', 'Tanggal', 'Penjualan Kotor', 'Biaya Komisi', 
-                'Pengeluaran Iklan & Diskon', 'Total Potongan Ojol', 'Penjualan Bersih', 
-                'Rata-Rata Order per Cust', 'Order Sukses', 'Order Batal', 'Total Order'
-            ]
-            ws_raw.append(headers_excel)
-        else:
-            try:
-                wb_raw = openpyxl.load_workbook(abs_raw_excel_path)
-                ws_raw = wb_raw.active
-            except Exception as e:
-                wb_raw = openpyxl.Workbook()
-                ws_raw = wb_raw.active
-                headers_excel = [
-                    'Nomor HP', 'Outlet Name', 'Cabang', 'Store ID', 'Tanggal', 'Penjualan Kotor', 'Biaya Komisi', 
-                    'Pengeluaran Iklan & Diskon', 'Total Potongan Ojol', 'Penjualan Bersih', 
-                    'Rata-Rata Order per Cust', 'Order Sukses', 'Order Batal', 'Total Order'
-                ]
-                ws_raw.append(headers_excel)
+        wb_raw = openpyxl.Workbook()
+        ws_raw = wb_raw.active
+        headers_excel = [
+            'Nomor HP', 'Outlet Name', 'Cabang', 'Store ID', 'Tanggal', 'Penjualan Kotor', 'Biaya Komisi', 
+            'Pengeluaran Iklan & Diskon', 'Total Potongan Ojol', 'Penjualan Bersih', 
+            'Rata-Rata Order per Cust', 'Order Sukses', 'Order Batal', 'Total Order'
+        ]
+        ws_raw.append(headers_excel)
                 
         # Data rows
         for idx, (raw_date, label) in enumerate(period_iter):
@@ -1594,7 +1589,7 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
             order_sukses = int(totals[label]['orders'])
             order_batal = int(totals[label]['order_batal'])
             rata_rata_order_per_cust = int(omzet / order_sukses) if order_sukses > 0 else 0
-            total_order_row = order_sukses + order_batal
+            total_order_row = order_sukses
             
             row_data = [
                 username,
@@ -1619,6 +1614,21 @@ def ambil_data_analytics(write_header=True, start_date=None, end_date=None, retu
         
         print(f"✅ Juga di-export ke Excel Raw per outlet:")
         print(f"   {abs_raw_excel_path}")
+
+        # --- Kirim ke GSheet Harian ---
+        if "--no-sheet" not in sys.argv:
+            try:
+                import sys
+                _this_dir = os.path.dirname(os.path.abspath(__file__))
+                if _this_dir not in sys.path:
+                    sys.path.insert(0, _this_dir)
+                from send_data import kirim_ke_google_sheet
+                kirim_ke_google_sheet(excel_path=abs_raw_excel_path)
+            except Exception as e:
+                print(f"⚠️ Gagal memanggil fungsi kirim GSheet harian: {e}")
+        else:
+            print(f"ℹ️ Export ke GSheet dilewati karena flag --no-sheet aktif.")
+            
     except Exception as e:
         print(f"⚠️ Peringatan: Gagal membuat file Excel Raw: {e}")
 
@@ -1800,6 +1810,7 @@ if __name__ == "__main__":
     parser.add_argument("--branch", type=str, default=None, help="Filter specific branch name")
     parser.add_argument("--output-dir", type=str, default=None, help="Directory to save output files")
     parser.add_argument("--no-proxy", action="store_true", help="Nonaktifkan proxy/WARP untuk sesi ini")
+    parser.add_argument("--no-sheet", action="store_true", help="Nonaktifkan pengiriman data ke Google Sheets")
     parser.add_argument("--task", type=str, default="2", help="Task choice: 1 for baseline, 2 for weekly, 3 for VB")
     args_cli = parser.parse_args()
 
@@ -1881,6 +1892,7 @@ if __name__ == "__main__":
                 'phone'      : phone_norm,
                 'phone_raw'  : phone_raw,
                 'email'      : acc.get('email', ''),
+                'emails'     : acc.get('emails', []),
                 'nama_outlet': acc['nama_outlet'],
                 'cabang'     : acc['cabang'],
                 'store_id'   : acc['store_id'],
@@ -1961,6 +1973,10 @@ if __name__ == "__main__":
         nama_outlet   = acc['nama_outlet']
         cabang        = acc['cabang'] or 'Tanpa Cabang'
         store_id      = acc['store_id']
+        if store_id == "None" or store_id == "NaN":
+            store_id = ""
+        explicit_store_id = store_id
+            
         token         = acc['token']
 
         # Resolve store_id from environment if missing (e.g. when parsing Baseline sheet)
@@ -1968,9 +1984,13 @@ if __name__ == "__main__":
             sanitized_resto_name = re.sub(r'[^a-zA-Z0-9]', '', cabang or nama_outlet)
             suffix_email = f"_{phone}_{sanitized_resto_name}"
             store_id = os.getenv(f"STORE_ID{suffix_email}", "")
+            if store_id == "None" or store_id == "NaN":
+                store_id = ""
             if not store_id:
                 suffix_legacy = f"__{sanitized_resto_name}"
                 store_id = os.getenv(f"STORE_ID{suffix_legacy}", "")
+                if store_id == "None" or store_id == "NaN":
+                    store_id = ""
 
         # Check token validity (TEMPORARILY DISABLED TO FORCE LOGIN FLOW)
         token_valid = False
@@ -2020,32 +2040,92 @@ if __name__ == "__main__":
         os.environ['ACTIVE_NOMOR_HP']    = phone
         os.environ['ACTIVE_NAMA_OUTLET'] = nama_outlet
         os.environ['ACTIVE_CABANG']      = cabang
-        os.environ['ACTIVE_STORE_ID']    = store_id
+        
+        targets_to_process = []
+        
+        if not explicit_store_id and token:
+            console.print(f"[dim]Mencari Store ID dari API GoBiz...[/dim]")
+            try:
+                url_search = "https://api.gobiz.co.id/v1/merchants/search"
+                headers_search = {
+                    "Accept": "application/json, text/plain, */*",
+                    "Authentication-Type": "go-id",
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json"
+                }
+                payload_search = {
+                    "from": 0, "size": 1000, 
+                    "_source": ["id","director_name","merchant_name","email","feature_types","phone","outlet_address","outlet_name","outlet_city","payment_settings.GOPAY","tags","bank_account","applications","pops","aspi","business_type","metadata","id_type","merchant_type"]
+                }
+                resp_search = requests.post(url_search, headers=headers_search, json=payload_search, timeout=15)
+                if resp_search.status_code == 200:
+                    data_search = resp_search.json()
+                    hits = data_search.get("hits", [])
+                    
+                    if hits:
+                        console.print(f"[success]✅ Ditemukan {len(hits)} cabang/merchant ID dalam portal ini.[/success]")
+                        for h in hits:
+                            t_id = h.get("id", "")
+                            t_nama = h.get("merchant_name", nama_outlet)
+                            t_cabang = h.get("outlet_name", cabang)
+                            targets_to_process.append({
+                                "store_id": t_id,
+                                "nama_outlet": t_nama,
+                                "cabang": t_cabang
+                            })
+                            
+                            if t_id:
+                                sanitized_resto_name = re.sub(r'[^a-zA-Z0-9]', '', t_cabang or t_nama)
+                                suffix = f"_{phone}_{sanitized_resto_name}"
+                                env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+                                env_lock = _FileLock(f"{env_path}.lock", timeout=15)
+                                with env_lock:
+                                    set_key(env_path, f"STORE_ID{suffix}", str(t_id))
+                else:
+                    console.print(f"[warning]⚠️ API GoBiz merespons dengan HTTP {resp_search.status_code}[/warning]")
+            except Exception as e:
+                console.print(f"[warning]⚠️ Gagal mengambil Store ID dari API: {e}[/warning]")
 
-        console.print(f"\n[bold]{'='*55}[/bold]")
-        console.print(f"[bold cyan]Memproses:[/bold cyan] {nama_outlet} - {cabang} ({phone})")
-        if store_id:
-            console.print(f"[dim]Store ID: {store_id}[/dim]")
-        console.print(f"[bold]{'='*55}[/bold]")
-
-        console.print("\nMemulai pengambilan data analytics...")
-        result = ambil_data_analytics(
-            write_header=(index == 0),
-            start_date=custom_start_date,
-            end_date=custom_end_date,
-            return_data=True,
-            token=token,
-            store_id=store_id,
-            nama_outlet=nama_outlet,
-            phone=phone,
-            cabang=cabang,
-        )
-        if result:
-            label = f"{nama_outlet} - {cabang}" if cabang and cabang != 'Tanpa Cabang' else nama_outlet
-            all_baseline_results.append({
-                'nama_outlet': label,
-                'result': result
+        if not targets_to_process:
+            targets_to_process.append({
+                "store_id": store_id,
+                "nama_outlet": nama_outlet,
+                "cabang": cabang
             })
+
+        for t_idx, target in enumerate(targets_to_process):
+            active_store_id = target["store_id"]
+            active_nama = target["nama_outlet"]
+            active_cabang = target["cabang"]
+
+            os.environ['ACTIVE_STORE_ID']    = active_store_id
+            os.environ['ACTIVE_NAMA_OUTLET'] = active_nama
+            os.environ['ACTIVE_CABANG']      = active_cabang
+
+            console.print(f"\n[bold]{'='*55}[/bold]")
+            console.print(f"[bold cyan]Memproses:[/bold cyan] {active_nama} - {active_cabang} ({phone})")
+            if active_store_id:
+                console.print(f"[dim]Store ID: {active_store_id}[/dim]")
+            console.print(f"[bold]{'='*55}[/bold]")
+
+            console.print("\nMemulai pengambilan data analytics...")
+            result = ambil_data_analytics(
+                write_header=(index == 0 and t_idx == 0),
+                start_date=custom_start_date,
+                end_date=custom_end_date,
+                return_data=True,
+                token=token,
+                store_id=active_store_id,
+                nama_outlet=active_nama,
+                phone=phone,
+                cabang=active_cabang,
+            )
+            if result:
+                label = f"{active_nama} - {active_cabang}" if active_cabang and active_cabang != 'Tanpa Cabang' else active_nama
+                all_baseline_results.append({
+                    'nama_outlet': label,
+                    'result': result
+                })
 
 
     # --- TULIS BASELINE EXCEL GABUNGAN ---

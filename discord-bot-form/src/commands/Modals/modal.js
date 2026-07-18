@@ -212,8 +212,8 @@ module.exports = {
                         embeds: [
                             new EmbedBuilder()
                                 .setColor(0xFF0000)
-                                .setTitle('❌ Pipeline Dibatalkan Secara Paksa')
-                                .setDescription(`Proses pipeline baseline telah dihentikan secara paksa oleh **${interaction.user.username}**.`)
+                                .setTitle('❌ KKS Dibatalkan Secara Paksa')
+                                .setDescription(`Proses KKS baseline telah dihentikan secara paksa oleh **${interaction.user.username}**.`)
                                 .setTimestamp()
                         ],
                         components: []
@@ -466,7 +466,7 @@ module.exports = {
             const reviewEmbed = new EmbedBuilder()
                 .setColor(0x5865F2)
                 .setTitle('📋 Review Data Sebelum Dijalankan')
-                .setDescription('Periksa kembali data di bawah ini. Jika sudah benar, tekan **Jalankan Pipeline**. Proses ini membutuhkan waktu **5–15 menit** dan tidak bisa dibatalkan.')
+                .setDescription('Periksa kembali data di bawah ini. Jika sudah benar, tekan **Jalankan KKS**. Proses ini membutuhkan waktu **5–15 menit** dan tidak bisa dibatalkan.')
                 .addFields(
                     { name: 'Aplikator', value: formData.aplikator, inline: true },
                     { name: 'BD', value: bdDisplay || 'Semua BD', inline: true },
@@ -479,7 +479,7 @@ module.exports = {
             const confirmRow = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId('confirm_run')
-                    .setLabel('✅ Jalankan Pipeline')
+                    .setLabel('✅ Jalankan KKS')
                     .setStyle(ButtonStyle.Success),
                 new ButtonBuilder()
                     .setCustomId('cancel_run')
@@ -503,8 +503,8 @@ module.exports = {
                     embeds: [
                         new EmbedBuilder()
                             .setColor(0xFF0000)
-                            .setTitle('❌ Pipeline Dibatalkan')
-                            .setDescription('Anda membatalkan eksekusi pipeline. Silakan jalankan `/start` kembali jika ingin mengulang.')
+                            .setTitle('❌ KKS Dibatalkan')
+                            .setDescription('Anda membatalkan eksekusi KKS. Silakan jalankan `/start` kembali jika ingin mengulang.')
                             .setTimestamp()
                     ],
                     components: []
@@ -518,7 +518,7 @@ module.exports = {
                     new EmbedBuilder()
                         .setColor(0x00FF00)
                         .setTitle('✅ Pengisian Formulir Berhasil')
-                        .setDescription('Data sudah dikonfirmasi. Pipeline sedang dijalankan di server.\nLihat progres di channel ini!')
+                        .setDescription('Data sudah dikonfirmasi. Generate KKS sedang dijalankan di server.\nLihat progres di channel ini!')
                         .setTimestamp()
                 ],
                 components: []
@@ -544,7 +544,7 @@ module.exports = {
             const { runPipeline } = require('../../../bridge/run_pipeline');
 
             // Status awal — LIVE PROGRESS
-            let currentPhase = '🔄 Memulai pipeline...';
+            let currentPhase = '🔄 Memulai Generate KKS...';
             let phaseNumber = 0;
 
             const selectedApps = selectedAplikatorValues.includes('all')
@@ -593,9 +593,9 @@ module.exports = {
                     embeds: [
                         new EmbedBuilder()
                             .setColor(0xFF6B00)
-                            .setTitle('⚠️ Pipeline Sedang Berjalan')
+                            .setTitle('⚠️ Generate KKS Sedang Berjalan')
                             .setDescription(
-                                `Pipeline untuk **${formData.outlet}** (${formData.aplikator}) sedang diproses oleh **${existingJob?.username || 'pengguna lain'}**.\n\n` +
+                                `KKS untuk **${formData.outlet}** (${formData.aplikator}) sedang diproses oleh **${existingJob?.username || 'pengguna lain'}**.\n\n` +
                                 `⏳ Sudah berjalan selama **${runningDuration} menit**.\n\n` +
                                 `Mohon tunggu hingga proses selesai sebelum menjalankan pipeline yang sama.`
                             )
@@ -627,15 +627,15 @@ module.exports = {
                 embeds: [
                     new EmbedBuilder()
                         .setColor(0xFFA500)
-                        .setTitle('⏳ Pipeline Sedang Berjalan...')
+                        .setTitle('⏳ Generate KKS Sedang Berjalan...')
                         .setDescription(
-                            `Pipeline **Baseline Performance** sedang diproses.\n\n` +
+                            `KKS **Baseline Performance** sedang diproses.\n\n` +
                             `${makeProgressBar(0, totalPhases)}\n` +
                             `> 📍 **Outlet:** ${formData.outlet.substring(0, 100)}\n` +
                             `> 👤 **BD:** ${bdDisplay || 'Semua BD'}\n` +
                             `> 📱 **Platform:** ${formData.aplikator}\n` +
                             `> 📅 **Rentang:** ${formData.tanggalMulai} s/d ${formData.tanggalSelesai}\n\n` +
-                            `🔄 *Memulai pipeline...*\n` +
+                            `🔄 *Memulai Generate KKS...*\n` +
                             `⏱️ Estimasi waktu: **3–10 menit**`
                         )
                         .setFooter({ text: 'Sistem Baseline Performance' })
@@ -657,9 +657,9 @@ module.exports = {
                         embeds: [
                             new EmbedBuilder()
                                 .setColor(0xFFA500)
-                                .setTitle('⏳ Pipeline Sedang Berjalan...')
+                                .setTitle('⏳ Generate KKS Sedang Berjalan...')
                                 .setDescription(
-                                    `Pipeline **Baseline Performance** sedang diproses.\n\n` +
+                                    `KKS **Baseline Performance** sedang diproses.\n\n` +
                                     `${makeProgressBar(phaseNumber, totalPhases)}\n` +
                                     `> 📍 **Outlet:** ${formData.outlet.substring(0, 100)}\n` +
                                     `> 👤 **BD:** ${bdDisplay || 'Semua BD'}\n` +
@@ -733,7 +733,13 @@ module.exports = {
                 if (result.success) {
                     // Cek nilai nol untuk re-run
                     let failedPlatforms = [];
-                    if (result.notifData) {
+                    if (result.resultData && result.resultData.results) {
+                        for (const [platform, success] of Object.entries(result.resultData.results)) {
+                            if (!success) {
+                                failedPlatforms.push(platform);
+                            }
+                        }
+                    } else if (result.notifData) {
                         const { aplikator, omzet_gr, omzet_sf, omzet_go } = result.notifData;
                         const lowerApp = (aplikator || '').toLowerCase();
                         if ((lowerApp.includes('grab') || lowerApp.includes('all')) && (!omzet_gr || omzet_gr === 'Rp 0')) failedPlatforms.push('Grab');
@@ -762,20 +768,26 @@ module.exports = {
 
                             const omzetLines = [];
                             const orderLines = [];
-                            const lowerApp = aplikator.toLowerCase();
+                            const lowerApp = (aplikator || '').toLowerCase();
 
-                            omzetLines.push(`GoFood: **${omzet_go || 'Rp 0'}**`);
-                            orderLines.push(`GoFood: **${order_go || '0'}**`);
-                            omzetLines.push(`GrabFood: **${omzet_gr || 'Rp 0'}**`);
-                            orderLines.push(`GrabFood: **${order_gr || '0'}**`);
-                            omzetLines.push(`ShopeeFood: **${omzet_sf || 'Rp 0'}**`);
-                            orderLines.push(`ShopeeFood: **${order_sf || '0'}**`);
+                            if (lowerApp.includes('gofood') || lowerApp.includes('all')) {
+                                omzetLines.push(`GoFood: **${omzet_go || 'Rp 0'}**`);
+                                orderLines.push(`GoFood: **${order_go || '0'}**`);
+                            }
+                            if (lowerApp.includes('grab') || lowerApp.includes('all')) {
+                                omzetLines.push(`GrabFood: **${omzet_gr || 'Rp 0'}**`);
+                                orderLines.push(`GrabFood: **${order_gr || '0'}**`);
+                            }
+                            if (lowerApp.includes('shopee') || lowerApp.includes('all')) {
+                                omzetLines.push(`ShopeeFood: **${omzet_sf || 'Rp 0'}**`);
+                                orderLines.push(`ShopeeFood: **${order_sf || '0'}**`);
+                            }
 
                             const omzetStr = omzetLines.join('\n') || '-';
                             const orderStr = orderLines.join('\n') || '-';
 
                             let desc = `Laporan untuk **${outlet}** telah selesai diproses.\n\n`;
-                            
+
                             if (finalPdfUrl) {
                                 desc += `🔗 **[Klik di sini untuk membuka PDF Laporan](${finalPdfUrl})**`;
                             }
@@ -792,7 +804,7 @@ module.exports = {
                             );
 
                             const embeds = [embed];
-                            
+
                             if (failedPlatforms.length > 0) {
                                 const warningEmbed = new EmbedBuilder()
                                     .setTitle('⚠️ PERINGATAN KEKOSONGAN DATA')
@@ -800,7 +812,7 @@ module.exports = {
                                     .setColor(0xFF0000);
                                 embeds.push(warningEmbed);
                             }
-                            
+
                             return { embeds, finalPdfUrl };
                         } else {
                             embed.setDescription(
@@ -813,15 +825,15 @@ module.exports = {
 
                     if (hasWarning) {
                         const { embeds, finalPdfUrl } = makeNotifEmbed(
-                            '⚠️ Pipeline Selesai dengan Peringatan',
+                            '⚠️ Generate KKS Selesai dengan Peringatan',
                             0xFFAA00,
-                            `Pipeline **Baseline Performance** selesai, tetapi ada beberapa peringatan:\n\n` +
+                            `Generate KKS **Baseline Performance** selesai, tetapi ada beberapa peringatan:\n\n` +
                             `> Sebagian data mungkin tidak lengkap. Periksa laporan yang dihasilkan.`
                         );
 
                         const components = [];
                         const actionRow = new ActionRowBuilder();
-                        
+
                         if (finalPdfUrl) {
                             actionRow.addComponents(
                                 new ButtonBuilder()
@@ -830,24 +842,29 @@ module.exports = {
                                     .setURL(finalPdfUrl)
                             );
                         }
-                        
-                        if (result.notifData && failedPlatforms.length > 0) {
+
+                        if (failedPlatforms.length > 0) {
+                            const reRunData = { ...formData };
+                            reRunData.aplikator = failedPlatforms.map(p => {
+                                if (p.toLowerCase() === 'grab') return 'GrabFood';
+                                if (p.toLowerCase() === 'shopee') return 'ShopeeFood';
+                                if (p.toLowerCase() === 'gofood') return 'GoFood';
+                                return p;
+                            }).join(', ');
+
                             const taskId = Math.random().toString(36).substring(2, 10);
-                            recentTasks.set(taskId, formData);
-                            
-                            failedPlatforms.forEach(plat => {
-                                // Discord max 5 buttons per ActionRow, so ensure we don't overflow
-                                if (actionRow.components.length < 5) {
-                                    actionRow.addComponents(
-                                        new ButtonBuilder()
-                                            .setCustomId(`rerun_${plat.toLowerCase()}_${taskId}`)
-                                            .setLabel(`🔄 Re-Run ${plat}`)
-                                            .setStyle(ButtonStyle.Secondary)
-                                    );
-                                }
-                            });
+                            recentTasks.set(taskId, reRunData);
+
+                            if (actionRow.components.length < 5) {
+                                actionRow.addComponents(
+                                    new ButtonBuilder()
+                                        .setCustomId(`rerun_failed_${taskId}`)
+                                        .setLabel(`🔄 Re-Run`)
+                                        .setStyle(ButtonStyle.Secondary)
+                                );
+                            }
                         }
-                        
+
                         if (actionRow.components.length > 0) {
                             components.push(actionRow);
                         }
@@ -858,9 +875,9 @@ module.exports = {
                         });
                     } else {
                         const { embeds, finalPdfUrl } = makeNotifEmbed(
-                            '✅ Pipeline Selesai!',
+                            '✅ Generate KKS Selesai!',
                             0x00C853,
-                            `Pipeline **Baseline Performance** berhasil dijalankan.\n` +
+                            `Generate **Baseline Performance** berhasil dijalankan.\n` +
                             `${makeProgressBar(totalPhases, totalPhases)}`
                         );
 
@@ -890,9 +907,9 @@ module.exports = {
                         embeds: [
                             new EmbedBuilder()
                                 .setColor(0xFF0000)
-                                .setTitle('❌ Pipeline Gagal')
+                                .setTitle('❌ Generate KKS Gagal')
                                 .setDescription(
-                                    `Pipeline **Baseline Performance** gagal dijalankan.\n\n` +
+                                    `Generate **Baseline Performance** gagal dijalankan.\n\n` +
                                     `**Exit Code:** \`${result.exitCode}\`\n` +
                                     `\`\`\`\n${errSnippet.substring(0, 1000)}\n\`\`\``
                                 )
@@ -1252,7 +1269,7 @@ module.exports = {
             return Promise.resolve(cachedSheetData);
         }
 
-        const baselineUrl = 'https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=880434015';
+        const baselineUrl = 'https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=71044642';
         const credsUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRYSUnKOqk29LCktTxdb0wPLbWMbRaWRP3eC_UA4AwYod1FW6zDMhtLMC5ghIvot2B8upCDfBsn-TCP/pub?gid=565510790&single=true&output=csv';
 
         return Promise.all([fetchCSV(baselineUrl), fetchCSV(credsUrl)])

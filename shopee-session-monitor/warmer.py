@@ -595,7 +595,8 @@ def warm_account(acc: dict) -> bool:
             # semua dianggap valid karena nama merchant terbaca.
             session_degraded = (
                 not profile_text or
-                profile_text.strip().lower() == "admin"
+                profile_text.strip().lower() == "admin" or
+                "unknown merchant" in profile_text.strip().lower()
             )
 
             if session_degraded:

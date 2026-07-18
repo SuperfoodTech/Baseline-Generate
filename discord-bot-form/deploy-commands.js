@@ -3,9 +3,18 @@ const { REST, Routes } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 
-const clientId = process.env.CLIENT_ID; // Application ID dari Developer Portal
-const guildId = process.env.GUILD_ID;   // (Opsional) Server ID untuk mendaftarkan command secara instan di server tertentu
 const token = process.env.DISCORD_TOKEN;
+let clientId = process.env.CLIENT_ID; // Application ID dari Developer Portal
+if (!clientId && token) {
+    try {
+        const firstPart = token.split('.')[0];
+        clientId = Buffer.from(firstPart, 'base64').toString('utf8');
+        console.log(`[DEPLOY] Extracted CLIENT_ID from token: ${clientId}`);
+    } catch (e) {
+        console.error('Failed to extract CLIENT_ID from token:', e);
+    }
+}
+const guildId = process.env.GUILD_ID;   // (Opsional) Server ID untuk mendaftarkan command secara instan di server tertentu
 
 const commands = [];
 

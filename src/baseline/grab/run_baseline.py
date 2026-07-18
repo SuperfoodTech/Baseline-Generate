@@ -127,7 +127,7 @@ def robust_read_csv(path_or_url, expected_cols=None, **kwargs):
             log.error(f"Fallback robust parsing failed: {fallback_err}")
             raise parse_err
 
-CSV_URL = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=880434015"
+CSV_URL = "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=71044642"
 
 async def run_all(date_start: str = None, date_end: str = None, output_dir: str = None, user_filter: str = None, outlet_filter: str = None, branch_filter: str = None):
     # Reload env just in case
@@ -404,7 +404,8 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     elif "Update Time" in working.columns and "Updated On" not in working.columns:
         working["Updated On"] = pd.to_datetime(working["Update Time"], errors="coerce", format="%d %b %Y %I:%M %p")
     elif "Updated On" in working.columns:
-        working["Updated On"] = pd.to_datetime(working["Updated On"], errors="coerce", format="%d %b %Y %I:%M %p")
+        # Menghilangkan format agar bisa robust untuk berbagai variasi data (misal: "1 Mar 2026")
+        working["Updated On"] = pd.to_datetime(working["Updated On"], errors="coerce")
         
     if "Long Order ID" in working.columns:
         working["Long Order ID"] = working["Long Order ID"].fillna("").astype(str).str.strip()
@@ -426,14 +427,23 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     if "Status" in working.columns:
         working["Status"] = working["Status"].fillna("").astype(str).str.strip().str.casefold()
 
-    valid_long_order_id = working["Long Order ID"].str.match(r"^[A-Za-z0-9-]+$", na=False) if "Long Order ID" in working.columns else pd.Series(True, index=working.index)
+    # Mengikuti rumus sheet User: (O7:O <> "") * REGEXMATCH(O7:O,"[^A-Za-z0-9]")
+    # Yaitu tidak kosong dan mengandung karakter non-alphanumeric (seperti tanda strip)
+    if "Long Order ID" in working.columns:
+        # Menghapus spasi awal/akhir dulu untuk memastikan, lalu cek regex
+        valid_long_id = working["Long Order ID"].astype(str).str.strip()
+        is_valid_order_id = (valid_long_id != "") & valid_long_id.str.contains(r'[^A-Za-z0-9]', regex=True, na=False)
+    else:
+        is_valid_order_id = pd.Series(True, index=working.index)
+        
+    # Rule 3: Tanpa filter category (Semua category diikutkan)
+    is_order_category = pd.Series(True, index=working.index)
     
-    # S3 Insights categories like 'grabfood', 'grabmart' OR Old format 'payment', 'adjustment'
-    is_order_category = working["Category"].str.contains("grabfood", case=False, na=False) | working["Category"].isin(["payment", "adjustment"]) if "Category" in working.columns else pd.Series(True, index=working.index)
+    # Rule 4: Filter status cancelled
     is_not_cancelled = working["Status"].ne("cancelled") if "Status" in working.columns else pd.Series(True, index=working.index)
     
-    # Do NOT filter by valid_long_order_id to keep adjustment rows
-    valid_orders = working.loc[is_order_category & is_not_cancelled].copy()
+    # Apply filters
+    valid_orders = working.loc[is_valid_order_id & is_order_category & is_not_cancelled].copy()
     
     # Parse Number of Transactions if S3 format
     if "Number of Transactions" in valid_orders.columns:
@@ -441,8 +451,9 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
         valid_orders["Number of Transactions"] = valid_orders["Number of Transactions"].astype(str).str.replace(',', '').str.replace('.', '')
         valid_orders["Order_Counter"] = pd.to_numeric(valid_orders["Number of Transactions"], errors="coerce").fillna(0)
     else:
-        # Old format counts valid Long Order IDs
-        valid_orders["Order_Counter"] = valid_orders["Long Order ID"].str.match(r"^[A-Za-z0-9-]+$", na=False).astype(int)
+        # Karena filter valid_orders di atas sudah membuang baris yang tidak memiliki tanda strip,
+        # maka semua baris di sini dipastikan adalah pesanan asli (bukan iklan/adjustment)
+        valid_orders["Order_Counter"] = 1
     
     if "Updated On" in valid_orders.columns:
         valid_orders = valid_orders.loc[valid_orders["Updated On"].notna()].copy()

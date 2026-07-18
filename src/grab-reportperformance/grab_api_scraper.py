@@ -215,6 +215,30 @@ class GrabAPI:
         else:
             logger.warning(f"  [API] merchant-selector returned status {status}: {str(resp.get('data'))[:100]}")
         return None
+    
+    async def get_real_store_id(self,mgid):
+        "GET /user-profile/v1/store-list?merchant_group_id={mgid}&currency={currency}"
+        url = f"{self.base_url}/user-profile/v1/store-list"
+        params = {
+            "merchant_group_id": mgid,
+            "currency": "IDR"
+        }
+        resp = await self.call_api(url, params=params)
+        status = resp.get("status")
+        if status == 200:
+            data = resp.get("data", {})
+            stores = data.get("stores")
+            if stores is None:
+                stores = data.get("data", {}).get("stores", [])
+            if stores:
+                gfid = stores[0].get("gfid")
+                return gfid
+            else:
+                logger.warning(f"  [API] store-list success but no stores found in data: {data}")
+        else:
+            logger.warning(f"  [API] store-list returned status {status}: {str(resp.get('data'))[:100]}")
+        return None
+            
 
     async def start_async_download(self, mgid, start_date, end_date):
         """GET /mex/finances/v1/async-transactions-download
@@ -664,6 +688,7 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
         context = None
         mgid = None
         page = None
+        real_store_id = None
         for auth_attempt in range(2):  # Allow at most 1 re-auth if session is stale
             try:
                 if browser is None and managed_browser is None:
@@ -680,7 +705,13 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
                                 break
                     except Exception:
                         pass
-                    managed_browser = await p_inst.chromium.launch(headless=headless_env)
+                    managed_browser = await p_inst.chromium.launch(
+                        headless=headless_env,
+                        args=[
+                            "--disable-extensions",
+                            "--disable-component-update"
+                        ]
+                    )
                     browser = managed_browser
                     p = p_inst
     
@@ -694,17 +725,23 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
                 if auth_attempt > 0:
                     logger.info(f"  [Action] Re-opening session for {user} (Auth attempt {auth_attempt + 1})...")
     
-                logger.info(f"  [Isolation] Checking session for {user}...")
-                try:
-                    await page.goto("https://merchant.grab.com/dashboard", wait_until="domcontentloaded", timeout=30000)
-                    # Beri jeda sejenak untuk membiarkan Grab melakukan redirect jika session UI expired
-                    await page.wait_for_timeout(3000)
-                except:
-                    pass
+                is_on_login_page = True
+                if storage_state is not None:
+                    logger.info(f"  [Isolation] Checking session for {user}...")
+                    try:
+                        # Gunakan timeout yang lebih pendek (15 detik) agar tidak menggantung terlalu lama saat redirect
+                        await page.goto("https://merchant.grab.com/dashboard", wait_until="domcontentloaded", timeout=15000)
+                        await page.wait_for_timeout(1000)
+                        
+                        # Cek apakah sukses masuk ke dashboard / portal utama
+                        current_url = page.url.lower()
+                        if ("dashboard" in current_url or "portal" in current_url) and "login" not in current_url and "saved-accounts" not in current_url:
+                            is_on_login_page = False
+                    except Exception as e:
+                        logger.warning(f"  [Isolation] Session check timed out or failed: {e}")
+                else:
+                    logger.info(f"  [Isolation] No saved session state found for {user}. Going straight to login...")
     
-                # Cek URL secara fisik. Jika Grab melempar kita ke login page, anggap session mati
-                is_on_login_page = "login" in page.url.lower() or "saved-accounts" in page.url.lower()
-                
                 api = GrabAPI(page, user, pwd)
                 mgid = None
                 
@@ -743,6 +780,13 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
                         await context.storage_state(path=session_path)
     
                 if mgid:
+                    # Fetch Real Store ID (GFID)
+                    try:
+                        logger.info(f"  [API] Fetching Real Store ID (GFID) for MGID {mgid}...")
+                        real_store_id = await api.get_real_store_id(mgid)
+                        logger.info(f"  [API] Found Real Store ID: {real_store_id}")
+                    except Exception as e:
+                        logger.error(f"  [API] Failed to get Real Store ID: {e}")
                     break  # Auth succeeded — exit auth retry loop
     
                 # Auth failed — close context and try once more without saved session
@@ -785,6 +829,15 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
                 await p.stop()
             return None, "Auth failed"
 
+        # Fetch Real Store ID (GFID) if we have mgid but real_store_id is still None (e.g. from active session)
+        if mgid and not real_store_id:
+            try:
+                logger.info(f"  [API] Fetching Real Store ID (GFID) for MGID {mgid} (late fetch)...")
+                real_store_id = await api.get_real_store_id(mgid)
+                logger.info(f"  [API] Found Real Store ID: {real_store_id}")
+            except Exception as e:
+                logger.error(f"  [API] Failed to get Real Store ID during late fetch: {e}")
+
         # --- Native Grab CSV Export as PRIMARY METHOD ---
         logger.info(f"  [Action] Executing Native S3 Download as PRIMARY method for {user}...")
         s3_filename = None
@@ -820,11 +873,33 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
 
                 # Success!
                 s3_filename = filename
+                
+                # Inject Real Store ID into CSV
+                if real_store_id and s3_filename:
+                    try:
+                        import pandas as pd
+                        df = pd.read_csv(s3_filename)
+                        if "real_store_id" in df.columns:
+                            df = df.drop(columns=["real_store_id"])
+                        if "Store ID" in df.columns:
+                            idx = df.columns.get_loc("Store ID")
+                            df.insert(idx + 1, "real_store_id", real_store_id)
+                        else:
+                            df["real_store_id"] = real_store_id
+                        df.to_csv(s3_filename, index=False)
+                        logger.info(f"  [CSV] Injected real_store_id '{real_store_id}' into {s3_filename}")
+                    except Exception as csv_err:
+                        logger.error(f"  [CSV] Failed to inject real_store_id into {s3_filename}: {csv_err}")
+                
                 break
 
             except SessionStuckError as se:
                 logger.warning(f"  [Action] SessionStuck on S3 download for {user}: {se}")
                 last_dl_err = f"Stuck: {se}"
+                # Delete broken session file to force fresh login on next attempt
+                if os.path.exists(session_path):
+                    try: os.remove(session_path)
+                    except: pass
                 break
             except Exception as e:
                 logger.error(f"  [Error] S3 Download attempt failed for {user}: {e}")
@@ -838,22 +913,54 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
             if p: await p.stop()
             return s3_filename, None
             
-        logger.warning(f"  [Action] Primary S3 method failed for {user}: {last_dl_err}. Falling back to Fast API Extraction...")
+        logger.warning(f"  [Action] Primary S3 method failed for {user}: {last_dl_err}.")
 
-        # --- Fast API Extraction (V1+V2) as FALLBACK METHOD ---
-        logger.info(f"  [Action] Executing Fast API Extraction (V1+V2) as fallback method for {user}...")
-        fast_filename, fast_err = await api.execute_fallback(mgid, report_start, report_end)
-        
-        if fast_filename:
-            logger.info(f"  [Action] Fast API Extraction Fallback Success! Returning generated CSV.")
-            if context: await context.close()
-            if managed_browser: await managed_browser.close()
-            if p: await p.stop()
-            return fast_filename, None
+        # If it failed due to a stuck session, don't bother with fallback, it will fail too.
+        if "Stuck:" not in last_dl_err:
+            logger.info(f"  [Action] Executing Fast API Extraction (V1+V2) as fallback method for {user}...")
+            fast_filename = None
+            fast_err = ""
+            try:
+                fast_filename, fast_err = await api.execute_fallback(mgid, report_start, report_end)
+            except SessionStuckError as se:
+                logger.warning(f"  [Action] SessionStuck during fallback for {user}: {se}")
+                fast_err = f"Stuck fallback: {se}"
+                if os.path.exists(session_path):
+                    try: os.remove(session_path)
+                    except: pass
+            except Exception as e:
+                logger.error(f"  [Error] Fallback attempt failed for {user}: {e}")
+                fast_err = f"Fallback Ex: {e}"
             
-        # If fallback also fails, log error, send discord err (on last run_attempt), and retry whole session
-        logger.warning(f"  [Action] Fallback Fast API Extraction failed for {user}: {fast_err}.")
-        last_dl_err += f" | Fallback Err: {fast_err}"
+            if fast_filename:
+                logger.info(f"  [Action] Fast API Extraction Fallback Success! Returning generated CSV.")
+                
+                # Inject Real Store ID into CSV
+                if real_store_id and fast_filename:
+                    try:
+                        import pandas as pd
+                        df = pd.read_csv(fast_filename)
+                        if "real_store_id" in df.columns:
+                            df = df.drop(columns=["real_store_id"])
+                        if "Store ID" in df.columns:
+                            idx = df.columns.get_loc("Store ID")
+                            df.insert(idx + 1, "real_store_id", real_store_id)
+                        else:
+                            df["real_store_id"] = real_store_id
+                        df.to_csv(fast_filename, index=False)
+                        logger.info(f"  [CSV] Injected real_store_id '{real_store_id}' into {fast_filename}")
+                    except Exception as csv_err:
+                        logger.error(f"  [CSV] Failed to inject real_store_id into {fast_filename}: {csv_err}")
+                        
+                if context: await context.close()
+                if managed_browser: await managed_browser.close()
+                if p: await p.stop()
+                return fast_filename, None
+                
+            logger.warning(f"  [Action] Fallback Fast API Extraction failed for {user}: {fast_err}.")
+            last_dl_err += f" | Fallback Err: {fast_err}"
+        else:
+            logger.info(f"  [Action] Skipping fallback because session is stuck.")
         
         if run_attempt >= 1 and is_retry:
             send_discord_error("Grab", user, "DOWNLOAD_FAILED", f"Gagal mengunduh laporan S3 maupun Fallback API: {last_dl_err[:200]}", "")
@@ -863,7 +970,7 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
             await context.close()
             
         if run_attempt < 1:
-            logger.info(f"  [Action] Refreshing session: Re-logging in after fallback failure... (Run attempt {run_attempt + 1})")
+            logger.info(f"  [Action] Refreshing session: Re-logging in after download failure... (Run attempt {run_attempt + 1})")
             continue # Try again from auth
         else:
             if managed_browser:

@@ -183,19 +183,19 @@ def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=
     import os
     from datetime import datetime
     
-    url = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=880434015"
+    url = "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=71044642"
     cache_path = "data/master_merchants_cache.csv"
     os.makedirs("data", exist_ok=True)
     
     df = None
     try:
         log.info("🌐 [DATA] Downloading fresh merchant list from Google Sheets...")
-        df = robust_read_csv(url, expected_cols=9)
+        df = robust_read_csv(url, expected_cols=15)
         df.to_csv(cache_path, index=False)
     except Exception as download_err:
         log.warning(f"⚠️ [DATA] Failed to download fresh merchant list: {download_err}. Trying cache...")
         if os.path.exists(cache_path):
-            df = robust_read_csv(cache_path, expected_cols=9)
+            df = robust_read_csv(cache_path, expected_cols=15)
         else:
             log.error(f"❌ [DATA] No cache available and download failed.")
             return []
@@ -206,7 +206,7 @@ def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=
             
             if bd_filter:
                 resolved_users, resolved_bds = resolve_bd_to_names_and_usernames(bd_filter, max_age_hours)
-                mask_user = sf_df['nama pengguna'].astype(str).str.strip().str.lower().isin(resolved_users)
+                mask_user = sf_df['s username akses staff'].astype(str).str.strip().str.lower().isin(resolved_users)
                 mask_bd = pd.Series(False, index=sf_df.index)
                 if 'bd' in sf_df.columns:
                     mask_bd = sf_df['bd'].astype(str).str.strip().str.lower().isin(resolved_bds)
@@ -258,7 +258,7 @@ def download_file(url, filename, cookies=None, max_retries=3):
     return False
 
 
-def get_shopee_baseline_credentials(merchant_name, max_age_hours=24):
+def get_shopee_baseline_credentials(merchant_name, max_age_hours=24, bd_filter=None):
     """
     Fetches the credentials for a merchant's BD by checking Google Sheets:
     Sheet 1: Master Merchants (to find BD name associated with merchant_name)
@@ -303,7 +303,7 @@ def get_shopee_baseline_credentials(merchant_name, max_age_hours=24):
     cache_creds = "data/shopee_credentials_cache.csv"
     os.makedirs("data", exist_ok=True)
     
-    url_merchants = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=880434015"
+    url_merchants = "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=71044642"
     url_creds = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYSUnKOqk29LCktTxdb0wPLbWMbRaWRP3eC_UA4AwYod1FW6zDMhtLMC5ghIvot2B8upCDfBsn-TCP/pub?gid=565510790&single=true&output=csv"
     
     def check_and_download(url, cache_path):
@@ -322,7 +322,7 @@ def get_shopee_baseline_credentials(merchant_name, max_age_hours=24):
         check_and_download(url_merchants, cache_merchants)
         check_and_download(url_creds, cache_creds)
         
-        df_merchants = robust_read_csv(cache_merchants, expected_cols=9)
+        df_merchants = robust_read_csv(cache_merchants, expected_cols=15)
         df_creds = robust_read_csv(cache_creds, expected_cols=4)
         
         def _normalize(name):
@@ -340,30 +340,95 @@ def get_shopee_baseline_credentials(merchant_name, max_age_hours=24):
         ]
         
         if matched_rows.empty:
-            log.warning(f"⚠️ [CREDENTIALS] Merchant '{merchant_name}' not found in Master list. Using default credentials.")
-            return default_creds
+            msg = "minta tim tech untuk mengisi username dan kata sandi staff"
+            log.error(f"❌ [CREDENTIALS] Merchant '{merchant_name}' tidak ditemukan di Master list. {msg}.")
+            send_discord_error(
+                platform="Shopee",
+                merchant=merchant_name,
+                error_type="CREDENTIALS_MISSING",
+                message=msg
+            )
+            return None
             
-        username = str(matched_rows.iloc[0].get('nama pengguna', '')).strip()
-        password = str(matched_rows.iloc[0].get('kata sandi', '')).strip()
+        # Apply BD filter if provided to resolve duplicate merchants/credentials
+        if bd_filter:
+            resolved_users, resolved_bds = resolve_bd_to_names_and_usernames(bd_filter, max_age_hours)
+            mask_user = matched_rows['s username akses staff'].astype(str).str.strip().str.lower().isin(resolved_users)
+            mask_bd = pd.Series(False, index=matched_rows.index)
+            if 'bd' in matched_rows.columns:
+                mask_bd = matched_rows['bd'].astype(str).str.strip().str.lower().isin(resolved_bds)
+            
+            bd_matched_rows = matched_rows[mask_user | mask_bd]
+            if not bd_matched_rows.empty:
+                matched_rows = bd_matched_rows
+            else:
+                msg = "minta tim tech untuk mengisi username dan kata sandi staff"
+                log.error(f"❌ [CREDENTIALS] BD filter '{bd_filter}' yielded no matches for merchant '{merchant_name}' in Master list. {msg}.")
+                send_discord_error(
+                    platform="Shopee",
+                    merchant=merchant_name,
+                    error_type="CREDENTIALS_MISSING",
+                    message=msg
+                )
+                return None
+            
+        username = str(matched_rows.iloc[0].get('s username akses staff', '')).strip()
+        password = str(matched_rows.iloc[0].get('s kata sandi akses staff', '')).strip()
         
-        if not username or pd.isna(username) or username == "" or username == "-":
-            log.info(f"ℹ️ [CREDENTIALS] No username assigned to merchant '{merchant_name}'. Using default credentials.")
-            return default_creds
+        if not username or pd.isna(username) or username == "" or username == "-" or username.lower() == "nan":
+            msg = "minta tim tech untuk mengisi username dan kata sandi staff"
+            log.error(f"❌ [CREDENTIALS] Username staff tidak ditemukan untuk merchant '{merchant_name}'. {msg}.")
+            send_discord_error(
+                platform="Shopee",
+                merchant=merchant_name,
+                error_type="CREDENTIALS_MISSING",
+                message=msg
+            )
+            return None
             
-        if not password or pd.isna(password):
-            password = default_creds.get("password")
-            
-        # Look up phone number from df_creds
+        # Look up phone number and fallback password from df_creds
         norm_username = _normalize(username)
         df_creds['norm_username'] = df_creds['username'].fillna("").apply(_normalize)
         
         matched_cred = df_creds[df_creds['norm_username'] == norm_username]
         if matched_cred.empty:
-            log.warning(f"⚠️ [CREDENTIALS] Username '{username}' has no mapped credentials in Credentials sheet. Trying default phone.")
-            phone = default_creds.get("phone")
-        else:
-            row_cred = matched_cred.iloc[0]
-            phone = str(row_cred.get('phone', '')).strip()
+            msg = "minta tim tech untuk mengisi username dan kata sandi staff"
+            log.error(f"❌ [CREDENTIALS] Username '{username}' tidak terdaftar di Credentials sheet. {msg}.")
+            send_discord_error(
+                platform="Shopee",
+                merchant=merchant_name,
+                error_type="CREDENTIALS_MISSING",
+                message=msg
+            )
+            return None
+            
+        row_cred = matched_cred.iloc[0]
+        phone = str(row_cred.get('phone', '')).strip()
+        # Fallback password lookup from credentials sheet if missing or default in merchants sheet
+        if not password or pd.isna(password) or password == "" or password == "-":
+            password = str(row_cred.get('password', '')).strip()
+            
+        if not password or pd.isna(password) or password == "" or password == "-" or password.lower() == "nan":
+            msg = "minta tim tech untuk mengisi username dan kata sandi staff"
+            log.error(f"❌ [CREDENTIALS] Password staff tidak ditemukan untuk merchant '{merchant_name}'. {msg}.")
+            send_discord_error(
+                platform="Shopee",
+                merchant=merchant_name,
+                error_type="CREDENTIALS_MISSING",
+                message=msg
+            )
+            return None
+            
+        if not phone or pd.isna(phone) or phone == "" or phone == "-" or phone.lower() == "nan":
+            msg = "minta tim tech untuk mengisi username dan kata sandi staff"
+            log.error(f"❌ [CREDENTIALS] Nomor HP staff tidak ditemukan untuk merchant '{merchant_name}'. {msg}.")
+            send_discord_error(
+                platform="Shopee",
+                merchant=merchant_name,
+                error_type="CREDENTIALS_MISSING",
+                message=msg
+            )
+            return None
             
         if phone.startswith("+"):
             phone = phone[1:]
@@ -628,17 +693,25 @@ def run_pipeline():
     if args.skip_download:
         log.info("⏭️ [SKIP] Bypassing browser download phase (Phases 1 & 2) as --skip-download is enabled.")
     else:
-        # Group target merchants by resolved credentials username
         merchants_by_user = {}
         for m_name in target_merchants:
-            creds = get_shopee_baseline_credentials(m_name)
-            u = creds["username"]
-            if u not in merchants_by_user:
-                merchants_by_user[u] = {
-                    "creds": creds,
-                    "merchants": []
-                }
-            merchants_by_user[u]["merchants"].append(m_name)
+            try:
+                creds = get_shopee_baseline_credentials(m_name, bd_filter=args.bd)
+                if creds is None:
+                    continue
+                u = creds["username"]
+                if u not in merchants_by_user:
+                    merchants_by_user[u] = {
+                        "creds": creds,
+                        "merchants": []
+                    }
+                merchants_by_user[u]["merchants"].append(m_name)
+            except Exception as e:
+                log.error(f"❌ Gagal memproses kredensial untuk merchant '{m_name}': {e}")
+                continue
+        if not merchants_by_user:
+            log.error("❌ No merchants with valid credentials to process. Aborting.")
+            return
             
         log.info(f"🚀 [PARALLEL] Processing {len(merchants_by_user)} credentials groups concurrently (max 4 workers)...")
         from concurrent.futures import ThreadPoolExecutor, as_completed

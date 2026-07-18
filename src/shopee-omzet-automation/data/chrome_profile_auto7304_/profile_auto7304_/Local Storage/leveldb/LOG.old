@@ -1,3 +1,15 @@
-2026/06/11-10:56:09.338 e4c2 Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7304_/profile_auto7304_/Local Storage/leveldb/MANIFEST-000001
-2026/06/11-10:56:09.348 e4c2 Recovering log #16
-2026/06/11-10:56:09.349 e4c2 Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7304_/profile_auto7304_/Local Storage/leveldb/000016.log 
+2026/06/29-17:00:13.027 236e2 Reusing MANIFEST /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7304_/profile_auto7304_/Local Storage/leveldb/MANIFEST-000001
+2026/06/29-17:00:13.038 236e2 Recovering log #59
+2026/06/29-17:00:13.044 236e2 Reusing old log /home/akbarhann/project/task-weekly/src/shopee-omzet-automation/data/chrome_profile_auto7304_/profile_auto7304_/Local Storage/leveldb/000059.log 
+2026/06/29-17:00:25.465 236e6 Level-0 table #62: started
+2026/06/29-17:00:25.467 236e6 Level-0 table #62: 16076 bytes OK
+2026/06/29-17:00:25.470 236e6 Delete type=0 #59
+2026/06/29-17:00:25.472 236e6 Compacting 4@0 + 1@1 files
+2026/06/29-17:00:25.475 236e6 Generated table #63@0: 38 keys, 41972 bytes
+2026/06/29-17:00:25.475 236e6 Compacted 4@0 + 1@1 files => 41972 bytes
+2026/06/29-17:00:25.477 236e6 compacted to: files[ 0 1 0 0 0 0 0 ]
+2026/06/29-17:00:25.478 236e6 Delete type=2 #55
+2026/06/29-17:00:25.478 236e6 Delete type=2 #58
+2026/06/29-17:00:25.478 236e6 Delete type=2 #50
+2026/06/29-17:00:25.478 236e6 Delete type=2 #62
+2026/06/29-17:00:25.478 236e6 Delete type=2 #52

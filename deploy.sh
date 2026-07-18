@@ -1,41 +1,37 @@
 #!/bin/bash
 # =============================================================================
-# deploy.sh — Deploy production TANPA rebuild & TANPA Docker Hub
+# deploy.sh — Deploy production via systemctl (tanpa Docker, tanpa rebuild)
 #
 # Cara pakai:
-#   chmod +x deploy.sh   (sekali saja)
 #   ./deploy.sh
-#
-# Build pertama kali (atau setelah Dockerfile/deps berubah):
-#   docker compose -f docker-compose.production.yml up -d --build
 # =============================================================================
 
 set -e
 
-COMPOSE_FILE="docker-compose.production.yml"
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
 echo -e "${CYAN}============================================${NC}"
-echo -e "${CYAN}  🚀 Deploy Production (tanpa rebuild)${NC}"
+echo -e "${CYAN}  🚀 Deploy Production (systemctl)${NC}"
 echo -e "${CYAN}============================================${NC}"
 echo ""
 
-echo -e "${YELLOW}[1/3] Pulling latest code from git...${NC}"
+echo -e "${YELLOW}[1/3] Pulling latest code, chrome profiles & sessions...${NC}"
 git pull origin main
 
 echo ""
-echo -e "${YELLOW}[2/3] Restarting containers (kode terbaru otomatis terbaca)...${NC}"
-docker compose -f $COMPOSE_FILE restart
+echo -e "${YELLOW}[2/3] Restarting services...${NC}"
+# Bersihkan seluruh sisa zombie chrome/chromedriver di background
+sudo killall -q -9 chrome google-chrome chromedriver chrome-headless-shell || true
+sudo systemctl restart ofd-bot-staging
 
 echo ""
-echo -e "${YELLOW}[3/3] Status container:${NC}"
-docker compose -f $COMPOSE_FILE ps
+echo -e "${YELLOW}[3/3] Status:${NC}"
+sudo systemctl status ofd-bot-staging --no-pager | grep -E "(Active|●)"
 
 echo ""
-echo -e "${GREEN}✅ Deploy selesai! Kode terbaru sudah aktif tanpa rebuild.${NC}"
+echo -e "${GREEN}✅ Deploy selesai! Kode & session terbaru sudah aktif.${NC}"
 echo ""
-echo -e "💡 Jika ada perubahan di Dockerfile atau install package baru, jalankan:"
-echo -e "   ${CYAN}docker compose -f $COMPOSE_FILE up -d --build${NC}"
+echo "  Live logs bot   : sudo journalctl -u ofd-bot-staging -f"

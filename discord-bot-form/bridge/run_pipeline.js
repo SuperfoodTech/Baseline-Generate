@@ -18,8 +18,12 @@ const http = require('http');
 // src/    berada di: task-weekly/src/
 // Jadi dari __dirname (bridge/), naik 2 level ke task-weekly/, lalu masuk src/
 const SRC_DIR = path.resolve(__dirname, '..', '..', 'src');
-const VENV_PY = path.join(SRC_DIR, '.venv', 'bin', 'python');
-const PYTHON_EXE = fs.existsSync(VENV_PY) ? VENV_PY : 'python3';
+const ROOT_DIR = path.resolve(SRC_DIR, '..');
+const VENV_PY_SRC = path.join(SRC_DIR, '.venv', 'bin', 'python');
+const VENV_PY_ROOT = path.join(ROOT_DIR, '.venv', 'bin', 'python');
+const PYTHON_EXE = fs.existsSync(VENV_PY_SRC) 
+    ? VENV_PY_SRC 
+    : (fs.existsSync(VENV_PY_ROOT) ? VENV_PY_ROOT : 'python3');
 const CLI_PATH = path.join(SRC_DIR, 'cli.py');
 
 // ── OFD Job Lock ─────────────────────────────────────────────
@@ -133,41 +137,7 @@ function firstValue(str) {
  * @returns {Promise<boolean>}
  */
 function controlWarmer(action, onLog = console.log) {
-    return new Promise((resolve) => {
-        const options = {
-            socketPath: '/var/run/docker.sock',
-            path: `/v1.41/containers/shopee_session_warmer/${action}`,
-            method: 'POST',
-            headers: {
-                'Host': 'localhost',
-                'Content-Length': 0
-            }
-        };
-
-        const req = http.request(options, (res) => {
-            let data = '';
-            res.on('data', (chunk) => data += chunk);
-            res.on('end', () => {
-                if (res.statusCode === 204 || res.statusCode === 304) {
-                    onLog(`🐳 [DOCKER] Warmer container successfully ${action}d.`);
-                    resolve(true);
-                } else if (res.statusCode === 409) {
-                    onLog(`🐳 [DOCKER] Warmer container is already ${action}d.`);
-                    resolve(true);
-                } else {
-                    onLog(`⚠️ [DOCKER] Failed to ${action} warmer container: HTTP ${res.statusCode}`);
-                    resolve(false);
-                }
-            });
-        });
-
-        req.on('error', (err) => {
-            // Graceful fallback if not running in Docker or socket not mounted
-            resolve(false);
-        });
-
-        req.end();
-    });
+    return Promise.resolve(true);
 }
 
 /**
@@ -185,8 +155,8 @@ function controlWarmer(action, onLog = console.log) {
  * @returns {Promise<{success:boolean, exitCode:number, output:string}>}
  */
 function runPipeline(formData, onLog = () => { }) {
-    let proc;
-    const promise = new Promise(async (resolve) => {
+    const handle = { proc: null, promise: null };
+    handle.promise = new Promise(async (resolve) => {
         const startDate = convertDate(formData.tanggalMulai);
         const endDate = convertDate(formData.tanggalSelesai);
         const platform = detectPlatform(formData.aplikator);
@@ -233,13 +203,13 @@ function runPipeline(formData, onLog = () => { }) {
 
         let output = '';
 
-        proc = spawn(PYTHON_EXE, args, {
+        handle.proc = spawn(PYTHON_EXE, args, {
             cwd: SRC_DIR,
             env,
             detached: true,
         });
 
-        proc.stdout.on('data', (data) => {
+        handle.proc.stdout.on('data', (data) => {
             const line = data.toString();
             output += line;
             process.stdout.write(data); // Stream to docker compose logs live and uncropped
@@ -248,7 +218,7 @@ function runPipeline(formData, onLog = () => { }) {
             if (clean) onLog(clean.substring(0, 200));
         });
 
-        proc.stderr.on('data', (data) => {
+        handle.proc.stderr.on('data', (data) => {
             const str = data.toString();
             output += str;
             process.stderr.write(data); // Stream errors to docker compose logs live and uncropped
@@ -259,11 +229,22 @@ function runPipeline(formData, onLog = () => { }) {
             // Urutan: unpause dulu, baru hapus lock — agar warmer yang baru resume
             // langsung melihat lock sudah hilang dan tidak masuk ke wait loop.
             await controlWarmer('unpause', onLog);
+            
+            // Clean up only the processes belonging to the pipeline's process group
+            if (handle.proc && handle.proc.pid) {
+                try {
+                    onLog(`🧹 [CLEANUP] Cleaning up process group ${handle.proc.pid}...`);
+                    process.kill(-handle.proc.pid, 'SIGKILL');
+                } catch (e) {
+                    // Ignore if group already cleaned up
+                }
+            }
+
             releaseJobLock(onLog);
             resolve(data);
         };
 
-        proc.on('close', async (exitCode) => {
+        handle.proc.on('close', async (exitCode) => {
             let notifData = null;
             const notifMatch = output.match(/DISCORD_NOTIF_JSON:\s*(\{.*\})/);
             if (notifMatch) {
@@ -274,15 +255,26 @@ function runPipeline(formData, onLog = () => { }) {
                 }
             }
 
+            let resultData = null;
+            const resultMatch = output.match(/DISCORD_RESULT_JSON:\s*(\{.*\})/);
+            if (resultMatch) {
+                try {
+                    resultData = JSON.parse(resultMatch[1]);
+                } catch (e) {
+                    console.error('Failed to parse DISCORD_RESULT_JSON:', e);
+                }
+            }
+
             await cleanupAndResolve({
                 success: exitCode === 0,
                 exitCode: exitCode ?? -1,
                 output: output.trim(),
-                notifData: notifData
+                notifData: notifData,
+                resultData: resultData
             });
         });
 
-        proc.on('error', async (err) => {
+        handle.proc.on('error', async (err) => {
             await cleanupAndResolve({
                 success: false,
                 exitCode: -1,
@@ -290,7 +282,7 @@ function runPipeline(formData, onLog = () => { }) {
             });
         });
     });
-    return { promise, proc };
+    return handle;
 }
 
 module.exports = { runPipeline, convertDate, detectPlatform };
