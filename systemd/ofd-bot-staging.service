@@ -1,5 +1,5 @@
 [Unit]
-Description=OFD Discord Bot
+Description=OFD Discord Bot (Staging)
 After=network.target postgresql.service
 Requires=postgresql.service
 
@@ -32,7 +32,7 @@ RestartSec=10
 # Log output
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=ofd-bot
+SyslogIdentifier=ofd-bot-staging
 
 [Install]
 WantedBy=multi-user.target

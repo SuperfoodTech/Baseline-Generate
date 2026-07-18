@@ -18,8 +18,12 @@ const http = require('http');
 // src/    berada di: task-weekly/src/
 // Jadi dari __dirname (bridge/), naik 2 level ke task-weekly/, lalu masuk src/
 const SRC_DIR = path.resolve(__dirname, '..', '..', 'src');
-const VENV_PY = path.join(SRC_DIR, '.venv', 'bin', 'python');
-const PYTHON_EXE = fs.existsSync(VENV_PY) ? VENV_PY : 'python3';
+const ROOT_DIR = path.resolve(SRC_DIR, '..');
+const VENV_PY_SRC = path.join(SRC_DIR, '.venv', 'bin', 'python');
+const VENV_PY_ROOT = path.join(ROOT_DIR, '.venv', 'bin', 'python');
+const PYTHON_EXE = fs.existsSync(VENV_PY_SRC) 
+    ? VENV_PY_SRC 
+    : (fs.existsSync(VENV_PY_ROOT) ? VENV_PY_ROOT : 'python3');
 const CLI_PATH = path.join(SRC_DIR, 'cli.py');
 
 // ── OFD Job Lock ─────────────────────────────────────────────
