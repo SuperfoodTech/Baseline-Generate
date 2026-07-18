@@ -12,8 +12,11 @@ const path = require('path');
 const fs = require('fs');
 
 const TASK_WEEKLY_DIR = path.resolve(__dirname, '..', '..');
-const VENV_PY = path.join(TASK_WEEKLY_DIR, 'src', '.venv', 'bin', 'python');
-const PYTHON_EXE = fs.existsSync(VENV_PY) ? VENV_PY : 'python3';
+const VENV_PY_SRC = path.join(TASK_WEEKLY_DIR, 'src', '.venv', 'bin', 'python');
+const VENV_PY_ROOT = path.join(TASK_WEEKLY_DIR, '.venv', 'bin', 'python');
+const PYTHON_EXE = fs.existsSync(VENV_PY_SRC) 
+    ? VENV_PY_SRC 
+    : (fs.existsSync(VENV_PY_ROOT) ? VENV_PY_ROOT : 'python3');
 const CLI_PATH = path.join(TASK_WEEKLY_DIR, 'menu', 'cli.py');
 
 /**

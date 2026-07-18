@@ -68,6 +68,11 @@ def run_pipeline():
     except Exception:
         pass
 
+    # Override with HEADLESS env var if present
+    env_headless = os.getenv("HEADLESS")
+    if env_headless is not None:
+        headless = env_headless.lower() in ("true", "1", "yes")
+
     # ── 1. Determine Merchants to Process ───────────────────────────────
     merchants_env = os.getenv("SHOPEE_MERCHANTS", "").strip()
     target_merchants = []

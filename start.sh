@@ -3,10 +3,7 @@
 
 clear
 
-# ── STEP 0: MASUK KE DIREKTORI SRC (Hanya jika folder src ada) ──────
-if [ -d "src" ]; then
-    cd src
-fi
+
 
 echo -e "  \e[90m=================================================================\e[0m"
 echo -e "         \e[38;5;196m▄\e[0m\e[38;5;196m█\e[0m\e[38;5;197m█\e[0m\e[38;5;197m█\e[0m\e[38;5;197m█\e[0m\e[38;5;203m█\e[0m\e[38;5;203m█\e[0m\e[38;5;204m▄\e[0m    \e[38;5;210m█\e[0m\e[38;5;210m█\e[0m\e[38;5;210m█\e[0m\e[38;5;215m█\e[0m\e[38;5;215m█\e[0m\e[38;5;216m█\e[0m\e[38;5;216m█\e[0m\e[38;5;216m█\e[0m\e[38;5;217m█\e[0m\e[38;5;217m█\e[0m   \e[38;5;224m█\e[0m\e[38;5;224m█\e[0m\e[38;5;225m█\e[0m\e[38;5;225m█\e[0m\e[38;5;225m█\e[0m\e[38;5;230m█\e[0m\e[38;5;230m█\e[0m\e[38;5;231m█\e[0m\e[38;5;231m▄\e[0m    "
@@ -87,6 +84,12 @@ while true; do
     echo "                   MENJALANKAN INTERAKTIF CLI"
     echo "================================================================="
     echo ""
+    
+    # Enter src directory if it exists to run cli.py
+    if [ -d "src" ]; then
+        cd src
+    fi
+    
     uv run python cli.py
 
     echo ""
@@ -96,8 +99,13 @@ while true; do
     echo ""
     
     echo "[INFO] Mengunggah CSV terbaru ke Drive & push ke Master..."
-    uv run python src/upload_csv_to_drive_and_git.py
+    uv run python upload_csv_to_drive_and_git.py
     echo ""
+    
+    # Go back to root directory
+    if [ -d "../src" ]; then
+        cd ..
+    fi
     
     read -p "Apakah Anda ingin Lanjut (l) atau Keluar (k)? [L/K]: " choice
     case "$choice" in

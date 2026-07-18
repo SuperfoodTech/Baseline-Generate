@@ -10,7 +10,7 @@ const {
     TextInputStyle
 } = require('discord.js');
 const https = require('https');
-const { setLastChannelId } = require('../../errorPoller');
+const { setLastChannelId, clearAlertCache } = require('../../errorPoller');
 const recentTasks = require('../../taskCache');
 
 function fetchCSV(url) {
@@ -540,6 +540,10 @@ module.exports = {
 
             await interaction.channel.send({ embeds: [summaryEmbed] });
 
+            // Re-bind error poller to this channel and reset spam protection cache
+            setLastChannelId(interaction.channelId);
+            clearAlertCache();
+
             // ── Jalankan Pipeline OFD via Bridge ────────────────────────────────
             const { runPipeline } = require('../../../bridge/run_pipeline');
 
@@ -733,10 +737,27 @@ module.exports = {
                 if (result.success) {
                     // Cek nilai nol untuk re-run
                     let failedPlatforms = [];
-                    if (result.resultData && result.resultData.results) {
-                        for (const [platform, success] of Object.entries(result.resultData.results)) {
-                            if (!success) {
-                                failedPlatforms.push(platform);
+                    if (result.resultData) {
+                        if (result.resultData.results) {
+                            for (const [platform, success] of Object.entries(result.resultData.results)) {
+                                if (!success) {
+                                    const norm = platform.toLowerCase().includes('grab') ? 'Grab' :
+                                                 (platform.toLowerCase().includes('shopee') ? 'Shopee' : 'GoFood');
+                                    if (!failedPlatforms.includes(norm)) {
+                                        failedPlatforms.push(norm);
+                                    }
+                                }
+                            }
+                        }
+                        if (result.resultData.partial_failures) {
+                            for (const [platform, failedPortals] of Object.entries(result.resultData.partial_failures)) {
+                                if (failedPortals && failedPortals.length > 0) {
+                                    const norm = platform.toLowerCase().includes('grab') ? 'Grab' :
+                                                 (platform.toLowerCase().includes('shopee') ? 'Shopee' : 'GoFood');
+                                    if (!failedPlatforms.includes(norm)) {
+                                        failedPlatforms.push(norm);
+                                    }
+                                }
                             }
                         }
                     } else if (result.notifData) {
@@ -808,7 +829,7 @@ module.exports = {
                             if (failedPlatforms.length > 0) {
                                 const warningEmbed = new EmbedBuilder()
                                     .setTitle('⚠️ PERINGATAN KEKOSONGAN DATA')
-                                    .setDescription(`Gagal mendapatkan data transaksi untuk **${failedPlatforms.join(', ')}** (Terbaca Rp 0).\n👉 *Silakan klik tombol Re-Run di bawah untuk mengeksekusi ulang secara spesifik.*`)
+                                    .setDescription(`Gagal mendapatkan data transaksi untuk **${failedPlatforms.join(', ')}**.\n👉 *Silakan klik tombol Re-Run di bawah untuk mengeksekusi ulang secara spesifik.*`)
                                     .setColor(0xFF0000);
                                 embeds.push(warningEmbed);
                             }

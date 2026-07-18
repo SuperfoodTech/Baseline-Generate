@@ -22,7 +22,9 @@ const client = new Client({
     ] 
 });
 
-const PYTHON_PATH = path.resolve(__dirname, '../src/.venv/bin/python');
+const VENV_PY_SRC = path.resolve(__dirname, '../src/.venv/bin/python');
+const VENV_PY_ROOT = path.resolve(__dirname, '../.venv/bin/python');
+const PYTHON_PATH = fs.existsSync(VENV_PY_SRC) ? VENV_PY_SRC : (fs.existsSync(VENV_PY_ROOT) ? VENV_PY_ROOT : 'python3');
 // Menggunakan skrip browser check yang baru
 const SCRIPT_PATH = path.resolve(__dirname, '../check_shopee_browsers.py');
 
@@ -286,7 +288,7 @@ client.on('interactionCreate', async interaction => {
 
             // Eksekusi cli.py di background
             const CLI_PATH = path.resolve(__dirname, '../cli.py');
-            const PYTHON_BIN = path.resolve(__dirname, '../src/.venv/bin/python');
+            const PYTHON_BIN = PYTHON_PATH;
             
             // Catatan: Karena nama merchant dispasi diganti '_', kita tidak bisa match persis 100% jika ada spasi asli,
             // namun PoC ini cukup memanggil script secara background.

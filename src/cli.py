@@ -16,6 +16,8 @@ import argparse
 import asyncio
 import sys
 import os
+import subprocess
+import threading
 from datetime import datetime, timedelta
 
 def normalize_date_string(date_str: str) -> str:
@@ -146,9 +148,14 @@ def _resolve_python_executable() -> str:
     otherwise falls back to sys.executable.
     """
     base = os.path.dirname(os.path.abspath(__file__))
+    # Try src/.venv first
     venv_python = os.path.join(base, ".venv", "bin", "python")
     if os.path.isfile(venv_python):
         return venv_python
+    # Try root .venv next
+    root_venv_python = os.path.join(os.path.dirname(base), ".venv", "bin", "python")
+    if os.path.isfile(root_venv_python):
+        return root_venv_python
     return sys.executable
 
 
@@ -156,14 +163,133 @@ def _resolve_output_dir(platform_name: str, start_date: str, end_date: str) -> s
     """
     Build an absolute output path under:
       task-weekly/src/laporan/{platform}/{start_date}_to_{end_date}
+    With a fallback to local 'laporan' directory if the VPS block storage is missing or unwritable.
     """
+    local_base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "laporan")
+    
     if os.name == "nt":
-        base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "laporan")
+        base = local_base
     else:
         base = "/mnt/volume_web_scraping/baseline"
+        
     out = os.path.join(base, platform_name, f"{start_date}_to_{end_date}")
-    os.makedirs(out, exist_ok=True)
-    return out
+    
+    try:
+        # Coba buat direktori di target path
+        os.makedirs(out, exist_ok=True)
+        # Coba tulis file dummy sementara untuk memastikan permission menulis ada
+        test_file = os.path.join(out, ".write_test")
+        with open(test_file, "w") as f:
+            f.write("test")
+        os.unlink(test_file)
+        return out
+    except Exception as e:
+        print(f"\n  {YELLOW}⚠️  [WARNING] Gagal menggunakan block storage '{out}': {e}.{RESET}")
+        print(f"  {YELLOW}👉 Mengalihkan output ke folder lokal...{RESET}\n")
+        
+        # Fallback ke folder local 'laporan'
+        out_local = os.path.join(local_base, platform_name, f"{start_date}_to_{end_date}")
+        os.makedirs(out_local, exist_ok=True)
+        return out_local
+
+
+_active_tasks = {}
+
+class RunningTask:
+    def __init__(self, name, cmd, cwd, log_path, output_dir=None):
+        self.name = name
+        self.cmd = cmd
+        self.cwd = cwd
+        self.log_path = log_path
+        self.output_dir = output_dir
+        self.log_lines = []
+        self.proc = None
+        self.reader_thread = None
+        self.success = False
+
+    def start(self):
+        self.proc = subprocess.Popen(
+            self.cmd,
+            cwd=self.cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1
+        )
+        
+        # Register in active tasks
+        _active_tasks[self.name] = self
+        
+        def read_stream():
+            try:
+                with open(self.log_path, "w", encoding="utf-8") as f:
+                    for line in self.proc.stdout:
+                        self.log_lines.append(line)
+                        f.write(line)
+                        f.flush()
+            except Exception as e:
+                self.log_lines.append(f"[READER ERROR] {e}\n")
+        
+        self.reader_thread = threading.Thread(target=read_stream, daemon=True)
+        self.reader_thread.start()
+
+    def check_finished(self):
+        if self.proc is None:
+            return False
+        ret = self.proc.poll()
+        if ret is not None:
+            if self.reader_thread:
+                self.reader_thread.join(timeout=1.0)
+            
+            self.success = (ret == 0)
+            if self.success and self.output_dir:
+                output_files = [f for f in os.listdir(self.output_dir) if f.endswith('.xlsx')] if os.path.isdir(self.output_dir) else []
+                if not output_files:
+                    self.success = False
+                    err_msg = "\n[VERIFICATION ERROR] No output Excel files (.xlsx) were found in the output directory!"
+                    self.log_lines.append(err_msg)
+                    try:
+                        with open(self.log_path, "a", encoding="utf-8") as f:
+                            f.write(err_msg)
+                    except Exception:
+                        pass
+            return True
+        return False
+
+def _get_log_path(platform_name: str) -> str:
+    import os
+    from datetime import datetime
+    logs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return os.path.join(logs_dir, f"{platform_name}_{timestamp}.log")
+
+def execute_task_sequential(task: RunningTask):
+    import time
+    if not task:
+        return False, "", ""
+    task.start()
+    
+    # Print start marker
+    print(f"  {CYAN}⏳ [RUNNING] {task.name} scraper started (Log: logs/{os.path.basename(task.log_path)}){RESET}")
+    
+    last_printed_idx = 0
+    while not task.check_finished():
+        while last_printed_idx < len(task.log_lines):
+            print(task.log_lines[last_printed_idx], end="")
+            last_printed_idx += 1
+        time.sleep(0.1)
+    while last_printed_idx < len(task.log_lines):
+        print(task.log_lines[last_printed_idx], end="")
+        last_printed_idx += 1
+    return task.success, "".join(task.log_lines), task.log_path
+
+def _run_cmd_captured(cmd: list, cwd: str, platform_name: str, output_dir: str = None) -> tuple[bool, str, str]:
+    log_path = _get_log_path(platform_name)
+    display_name = platform_name.upper()
+    task = RunningTask(display_name, cmd, cwd, log_path, output_dir)
+    success, log_content, path = execute_task_sequential(task)
+    return success, log_content, path
 
 
 def _resolve_shopee_merchant(outlet_name: str, branch_name: str = None, task_choice: str = "2") -> str:
@@ -322,21 +448,12 @@ def _resolve_shopee_merchant(outlet_name: str, branch_name: str = None, task_cho
 # ── Runners ────────────────────────────────────────────────────────────
 
 def run_grab(start_date: str, end_date: str, user_filter: str = None, outlet_filter: str = None, branch_filter: str = None):
-    """
-    Delegates to the existing Grab weekly pipeline.
-    Working directory is set to grab-reportperformance/weekly so that
-    relative paths (browser_data/, downloads/) resolve correctly.
-    Output is routed to task-weekly/src/laporan/grab/{start}_to_{end}.
-    """
     grab_weekly_dir = os.path.join(os.path.dirname(__file__), "grab-reportperformance", "weekly")
-    
     if not os.path.isdir(grab_weekly_dir):
         print(f"{RED}[ERROR]{RESET} Grab weekly directory not found: {grab_weekly_dir}")
-        return False
+        return False, "Directory not found", ""
 
     output_dir = _resolve_output_dir("grab", start_date, end_date)
-
-    import subprocess
     
     python_exe = _resolve_python_executable()
     cmd = [
@@ -373,15 +490,11 @@ def run_grab_vb(start_date: str, end_date: str, user_filter: str = None, outlet_
     Output is routed to task-weekly/src/laporan/grab_vb/{start}_to_{end}.
     """
     grab_vb_dir = os.path.join(os.path.dirname(__file__), "VB", "grab")
-    
     if not os.path.isdir(grab_vb_dir):
         print(f"{RED}[ERROR]{RESET} Grab VB directory not found: {grab_vb_dir}")
-        return False
+        return False, "Directory not found", ""
 
     output_dir = _resolve_output_dir("grab_vb", start_date, end_date)
-
-    import subprocess
-    
     python_exe = _resolve_python_executable()
     cmd = [
         python_exe, "run_baseline.py",
@@ -389,36 +502,19 @@ def run_grab_vb(start_date: str, end_date: str, user_filter: str = None, outlet_
         "--end-date", end_date,
         "--output-dir", output_dir,
     ]
-    if user_filter:
-        cmd.extend(["--user", user_filter])
-    if outlet_filter:
-        cmd.extend(["--outlet", outlet_filter])
-    if branch_filter:
-        cmd.extend(["--branch", branch_filter])
+    if user_filter: cmd.extend(["--user", user_filter])
+    if outlet_filter: cmd.extend(["--outlet", outlet_filter])
+    if branch_filter: cmd.extend(["--branch", branch_filter])
 
-    print(f"\n{MAGENTA}{BOLD}▶ GRAB VB PIPELINE{RESET}")
-    print(f"  {DIM}Directory : {grab_vb_dir}{RESET}")
-    print(f"  {DIM}Output    : {output_dir}{RESET}")
-    print(f"  {DIM}Date Range: {start_date} → {end_date}{RESET}")
-    print()
-
-    result = subprocess.run(cmd, cwd=grab_vb_dir)
-    
-    if result.returncode == 0:
-        print(f"\n{GREEN}✓ Grab VB pipeline completed successfully.{RESET}")
-        return True
-    else:
-        print(f"\n{RED}✗ Grab VB pipeline exited with code {result.returncode}.{RESET}")
-        return False
+    return _run_cmd_captured(cmd, grab_vb_dir, "grab_vb")
 
 
 
 def run_grab_baseline(start_date: str, end_date: str, user_filter: str = None, outlet_filter: str = None, branch_filter: str = None):
     grab_baseline_dir = os.path.join(os.path.dirname(__file__), "baseline", "grab")
-    
     if not os.path.isdir(grab_baseline_dir):
         print(f"{RED}[ERROR]{RESET} Grab baseline directory not found: {grab_baseline_dir}")
-        return False
+        return False, "Directory not found", ""
 
     output_dir = _resolve_output_dir("grab_baseline", start_date, end_date)
 
@@ -435,8 +531,6 @@ def run_grab_baseline(start_date: str, end_date: str, user_filter: str = None, o
             except Exception as e:
                 print(f"Failed to delete {file_path}: {e}")
 
-    import subprocess
-    
     python_exe = _resolve_python_executable()
     cmd = [
         python_exe, "run_baseline.py",
@@ -444,32 +538,11 @@ def run_grab_baseline(start_date: str, end_date: str, user_filter: str = None, o
         "--end-date", end_date,
         "--output-dir", output_dir,
     ]
-    if user_filter:
-        cmd.extend(["--user", user_filter])
-    if outlet_filter:
-        cmd.extend(["--outlet", outlet_filter])
-    if branch_filter:
-        cmd.extend(["--branch", branch_filter])
+    if user_filter: cmd.extend(["--user", user_filter])
+    if outlet_filter: cmd.extend(["--outlet", outlet_filter])
+    if branch_filter: cmd.extend(["--branch", branch_filter])
 
-    print(f"\n{GREEN}{BOLD}▶ GRAB BASELINE PIPELINE{RESET}")
-    print(f"  {DIM}Directory : {grab_baseline_dir}{RESET}")
-    print(f"  {DIM}Output    : {output_dir}{RESET}")
-    print(f"  {DIM}Date Range: {start_date} → {end_date}{RESET}")
-    print()
-
-    result = subprocess.run(cmd, cwd=grab_baseline_dir)
-
-    # Verify actual output files were produced (scraper may exit 0 even on login failure)
-    output_files = [f for f in os.listdir(output_dir) if f.endswith('.xlsx')] if os.path.isdir(output_dir) else []
-    if result.returncode == 0 and output_files:
-        print(f"\n{GREEN}✓ Grab Baseline completed successfully.{RESET}")
-        return True
-    else:
-        if result.returncode == 0 and not output_files:
-            print(f"\n{RED}✗ Grab Baseline: subprocess exited 0 but no output file found (scraper likely failed internally).{RESET}")
-        else:
-            print(f"\n{RED}✗ Grab Baseline exited with code {result.returncode}.{RESET}")
-        return False
+    return _run_cmd_captured(cmd, grab_baseline_dir, "grab_baseline", output_dir=output_dir)
 
 
 def run_shopee(start_date: str, end_date: str, merchant_filter: str = None):
@@ -480,15 +553,11 @@ def run_shopee(start_date: str, end_date: str, merchant_filter: str = None):
     Output is routed to task-weekly/src/laporan/shopee/{start}_to_{end}.
     """
     shopee_dir = os.path.join(os.path.dirname(__file__), "shopee-omzet-automation")
-    
     if not os.path.isdir(shopee_dir):
         print(f"{RED}[ERROR]{RESET} Shopee directory not found: {shopee_dir}")
-        return False
+        return False, "Directory not found", ""
 
     output_dir = _resolve_output_dir("shopee", start_date, end_date)
-
-    import subprocess
-    
     python_exe = _resolve_python_executable()
     cmd = [
         python_exe, "weekly/run_weekly.py",
@@ -499,28 +568,14 @@ def run_shopee(start_date: str, end_date: str, merchant_filter: str = None):
     if merchant_filter:
         cmd.extend(["--merchant", merchant_filter])
 
-    print(f"\n{MAGENTA}{BOLD}▶ SHOPEE PIPELINE{RESET}")
-    print(f"  {DIM}Directory : {shopee_dir}{RESET}")
-    print(f"  {DIM}Output    : {output_dir}{RESET}")
-    print(f"  {DIM}Date Range: {start_date} → {end_date}{RESET}")
-    print()
-
-    result = subprocess.run(cmd, cwd=shopee_dir)
-    
-    if result.returncode == 0:
-        print(f"\n{GREEN}✓ Shopee pipeline completed successfully.{RESET}")
-        return True
-    else:
-        print(f"\n{RED}✗ Shopee pipeline exited with code {result.returncode}.{RESET}")
-        return False
+    return _run_cmd_captured(cmd, shopee_dir, "shopee_weekly")
 
 
 def run_shopee_baseline(start_date: str, end_date: str, merchant_filter: str = None, bd_filter: str = None):
     shopee_baseline_dir = os.path.join(os.path.dirname(__file__), "baseline", "shopee")
-    
     if not os.path.isdir(shopee_baseline_dir):
         print(f"{RED}[ERROR]{RESET} Shopee baseline directory not found: {shopee_baseline_dir}")
-        return False
+        return False, "Directory not found", ""
 
     output_dir = _resolve_output_dir("shopee_baseline", start_date, end_date)
 
@@ -537,8 +592,6 @@ def run_shopee_baseline(start_date: str, end_date: str, merchant_filter: str = N
             except Exception as e:
                 print(f"Failed to delete {file_path}: {e}")
 
-    import subprocess
-    
     python_exe = _resolve_python_executable()
     cmd = [
         python_exe, "run_baseline.py",
@@ -551,38 +604,16 @@ def run_shopee_baseline(start_date: str, end_date: str, merchant_filter: str = N
     if bd_filter:
         cmd.extend(["--bd", bd_filter])
 
-    print(f"\n{MAGENTA}{BOLD}▶ SHOPEE BASELINE PIPELINE{RESET}")
-    print(f"  {DIM}Directory : {shopee_baseline_dir}{RESET}")
-    print(f"  {DIM}Output    : {output_dir}{RESET}")
-    print(f"  {DIM}Date Range: {start_date} → {end_date}{RESET}")
-    print()
-
-    result = subprocess.run(cmd, cwd=shopee_baseline_dir)
-
-    # Verify actual output files were produced (scraper may exit 0 even on login failure)
-    output_files = [f for f in os.listdir(output_dir) if f.endswith('.xlsx')] if os.path.isdir(output_dir) else []
-    if result.returncode == 0 and output_files:
-        print(f"\n{GREEN}✓ Shopee Baseline completed successfully.{RESET}")
-        return True
-    else:
-        if result.returncode == 0 and not output_files:
-            print(f"\n{RED}✗ Shopee Baseline: subprocess exited 0 but no output file found (scraper likely failed internally).{RESET}")
-        else:
-            print(f"\n{RED}✗ Shopee Baseline exited with code {result.returncode}.{RESET}")
-        return False
+    return _run_cmd_captured(cmd, shopee_baseline_dir, "shopee_baseline", output_dir=output_dir)
 
 
 def run_shopee_vb(start_date: str, end_date: str, merchant_filter: str = None):
     shopee_vb_dir = os.path.join(os.path.dirname(__file__), "VB", "shopee")
-    
     if not os.path.isdir(shopee_vb_dir):
         print(f"{RED}[ERROR]{RESET} Shopee VB directory not found: {shopee_vb_dir}")
-        return False
+        return False, "Directory not found", ""
 
     output_dir = _resolve_output_dir("shopee_vb", start_date, end_date)
-
-    import subprocess
-    
     python_exe = _resolve_python_executable()
     cmd = [
         python_exe, "run_baseline.py",
@@ -593,20 +624,7 @@ def run_shopee_vb(start_date: str, end_date: str, merchant_filter: str = None):
     if merchant_filter:
         cmd.extend(["--merchant", merchant_filter])
 
-    print(f"\n{MAGENTA}{BOLD}▶ SHOPEE VB PIPELINE{RESET}")
-    print(f"  {DIM}Directory : {shopee_vb_dir}{RESET}")
-    print(f"  {DIM}Output    : {output_dir}{RESET}")
-    print(f"  {DIM}Date Range: {start_date} → {end_date}{RESET}")
-    print()
-
-    result = subprocess.run(cmd, cwd=shopee_vb_dir)
-    
-    if result.returncode == 0:
-        print(f"\n{GREEN}✓ Shopee VB completed successfully.{RESET}")
-        return True
-    else:
-        print(f"\n{RED}✗ Shopee VB exited with code {result.returncode}.{RESET}")
-        return False
+    return _run_cmd_captured(cmd, shopee_vb_dir, "shopee_vb")
 
 
 def run_gofood(start_date: str, end_date: str, outlet_filter: str = None, branch_filter: str = None, task_choice: str = "2", no_sheet: bool = False, clear_cache: bool = False):
@@ -616,10 +634,9 @@ def run_gofood(start_date: str, end_date: str, outlet_filter: str = None, branch
     relative paths and imports resolve correctly.
     """
     gofood_dir = os.path.join(os.path.dirname(__file__), "goscrapperv2")
-    
     if not os.path.isdir(gofood_dir):
         print(f"{RED}[ERROR]{RESET} GoFood directory not found: {gofood_dir}")
-        return False
+        return False, "Directory not found", ""
 
     if task_choice == "1":
         output_dir = _resolve_output_dir("gofood_baseline", start_date, end_date)
@@ -639,10 +656,7 @@ def run_gofood(start_date: str, end_date: str, outlet_filter: str = None, branch
             except Exception as e:
                 print(f"Failed to delete {file_path}: {e}")
 
-    import subprocess
-    
     python_exe = _resolve_python_executable()
-    # Menjalankan gofood.py untuk otomatis login (jika perlu) dan scrape data
     cmd = [
         python_exe, "gofood.py",
         "--start-date", start_date,
@@ -650,38 +664,12 @@ def run_gofood(start_date: str, end_date: str, outlet_filter: str = None, branch
         "--output-dir", output_dir,
         "--task", task_choice
     ]
-    if outlet_filter:
-        cmd.extend(["--outlet", outlet_filter])
-    if branch_filter:
-        cmd.extend(["--branch", branch_filter])
-    if no_sheet:
-        cmd.append("--no-sheet")
-    if clear_cache:
-        cmd.append("--clear-cache")
+    if outlet_filter: cmd.extend(["--outlet", outlet_filter])
+    if branch_filter: cmd.extend(["--branch", branch_filter])
+    if no_sheet: cmd.append("--no-sheet")
+    if clear_cache: cmd.append("--clear-cache")
 
-    print(f"\n{YELLOW}{BOLD}▶ GOFOOD AUTO LOGIN & SCRAPE PIPELINE{RESET}")
-    print(f"  {DIM}Directory : {gofood_dir}{RESET}")
-    if outlet_filter:
-        print(f"  {DIM}Outlet    : {outlet_filter}{RESET}")
-    if branch_filter:
-        print(f"  {DIM}Cabang    : {branch_filter}{RESET}")
-    print(f"  {DIM}Output Dir: {output_dir}{RESET}")
-    print(f"  {DIM}Date Range: {start_date} → {end_date}{RESET}")
-    print()
-
-    result = subprocess.run(cmd, cwd=gofood_dir)
-
-    # Verify actual output files were produced (scraper may exit 0 even on login failure)
-    output_files = [f for f in os.listdir(output_dir) if f.endswith('.xlsx')] if os.path.isdir(output_dir) else []
-    if result.returncode == 0 and output_files:
-        print(f"\n{GREEN}✓ GoFood login dan scrape data berhasil.{RESET}")
-        return True
-    else:
-        if result.returncode == 0 and not output_files:
-            print(f"\n{RED}✗ GoFood: subprocess exited 0 but no output file found (scraper likely failed internally).{RESET}")
-        else:
-            print(f"\n{RED}✗ GoFood login/scrape data keluar dengan kode {result.returncode}.{RESET}")
-        return False
+    return _run_cmd_captured(cmd, gofood_dir, "gofood", output_dir=output_dir)
 
 
 # ── Interactive Mode ──────────────────────────────────────────────────
@@ -1327,37 +1315,133 @@ Examples:
     results = {}
     start_time = datetime.now()
 
+    from concurrent.futures import ThreadPoolExecutor
+
+    def execute_task(task_type, *args, **kwargs):
+        if task_type == "grab_baseline":
+            return run_grab_baseline(*args, **kwargs)
+        elif task_type == "grab_vb":
+            return run_grab_vb(*args, **kwargs)
+        elif task_type == "grab":
+            return run_grab(*args, **kwargs)
+        elif task_type == "shopee_vb":
+            return run_shopee_vb(*args, **kwargs)
+        elif task_type == "shopee_baseline":
+            return run_shopee_baseline(*args, **kwargs)
+        elif task_type == "shopee":
+            return run_shopee(*args, **kwargs)
+        elif task_type == "gofood":
+            return run_gofood(*args, **kwargs)
+        return False
+
+    tasks_to_run = []
+
+    # 1. Grab Task Setup
     if "grab" in platform or platform == "all":
         o_str = "|".join(outlet) if outlet else None
         b_str = "|".join(branch) if branch else None
         name_key = "Grab"
         if task_choice == "1":
-            results[name_key] = run_grab_baseline(start_date, end_date, user_filter=args.user, outlet_filter=o_str, branch_filter=b_str)
+            tasks_to_run.append((name_key, "grab_baseline", (start_date, end_date), {"user_filter": args.user, "outlet_filter": o_str, "branch_filter": b_str}))
         elif task_choice == "3":
-            results[name_key] = run_grab_vb(start_date, end_date, user_filter=args.user, outlet_filter=o_str, branch_filter=b_str)
+            tasks_to_run.append((name_key, "grab_vb", (start_date, end_date), {"user_filter": args.user, "outlet_filter": o_str, "branch_filter": b_str}))
         else:
-            results[name_key] = run_grab(start_date, end_date, user_filter=args.user, outlet_filter=o_str, branch_filter=b_str)
+            tasks_to_run.append((name_key, "grab", (start_date, end_date), {"user_filter": args.user, "outlet_filter": o_str, "branch_filter": b_str}))
 
+    # 2. Shopee Task Setup
     if "shopee" in platform or platform == "all":
         if task_choice == "3":
-            # For VB, pass all selected merchants as a pipe-separated string to utilize its internal parallel ThreadPoolExecutor
             m_str = "|".join(shopee_merchant) if shopee_merchant else None
-            results["Shopee_VB"] = run_shopee_vb(start_date, end_date, merchant_filter=m_str)
+            tasks_to_run.append(("Shopee_VB", "shopee_vb", (start_date, end_date), {"merchant_filter": m_str}))
         else:
             m_str = "|".join(shopee_merchant) if shopee_merchant else None
             name_key = "Shopee"
             if task_choice == "1":
-                results[name_key] = run_shopee_baseline(start_date, end_date, merchant_filter=m_str, bd_filter=args.bd or bd or selected_bd)
+                tasks_to_run.append((name_key, "shopee_baseline", (start_date, end_date), {"merchant_filter": m_str, "bd_filter": args.bd or bd or selected_bd}))
             elif task_choice == "2":
-                results[name_key] = run_shopee(start_date, end_date, merchant_filter=m_str)
+                tasks_to_run.append((name_key, "shopee", (start_date, end_date), {"merchant_filter": m_str}))
 
+    # 3. GoFood Task Setup
     if ("gofood" in platform or platform == "all") and task_choice != "3":
         outlets_to_run = outlet if outlet else [None]
         branches_to_run = branch if branch else [None]
         for o in outlets_to_run:
             for b in branches_to_run:
                 name_key = f"GoFood_{o}_{b}" if o and b else (f"GoFood_{o}" if o else "GoFood")
-                results[name_key] = run_gofood(start_date, end_date, outlet_filter=o, branch_filter=b, task_choice=task_choice, no_sheet=no_sheet)
+                tasks_to_run.append((name_key, "gofood", (start_date, end_date), {"outlet_filter": o, "branch_filter": b, "task_choice": task_choice, "no_sheet": no_sheet}))
+
+    # 4. Run Tasks in Parallel
+    if tasks_to_run:
+        print(f"\n{CYAN}[PARALLEL] Running {len(tasks_to_run)} scraping tasks concurrently...{RESET}\n")
+        import time
+        
+        # Clear active tasks from previous runs
+        _active_tasks.clear()
+        
+        with ThreadPoolExecutor(max_workers=len(tasks_to_run)) as executor:
+            future_to_name = {
+                executor.submit(execute_task, t_type, *t_args, **t_kwargs): t_name
+                for t_name, t_type, t_args, t_kwargs in tasks_to_run
+            }
+            
+            last_display_time = 0
+            
+            while not all(f.done() for f in future_to_name):
+                now = time.time()
+                # Update display every 3 seconds to avoid terminal spam
+                if now - last_display_time >= 3.0:
+                    last_display_time = now
+                    
+                    # Print multiplexer dashboard
+                    print(f"\n{CYAN}{BOLD}{'═'*60}{RESET}")
+                    print(f"{CYAN}{BOLD}  LIVE DASHBOARD - RUNNING PIPELINES ({datetime.now().strftime('%H:%M:%S')}){RESET}")
+                    print(f"{CYAN}{BOLD}{'═'*60}{RESET}")
+                    
+                    if not _active_tasks:
+                        print("  Waiting for scrapers to initialize...")
+                    else:
+                        for name, task in list(_active_tasks.items()):
+                            finished = task.check_finished()
+                            status = f"{CYAN}⏳ RUNNING{RESET}" if not finished else (f"{GREEN}✅ SUCCESS{RESET}" if task.success else f"{RED}❌ FAILED{RESET}")
+                            print(f"\n📌 Platform: {BOLD}{name}{RESET} ({status})")
+                            print(f"📄 Log File: logs/{os.path.basename(task.log_path)}")
+                            print(f"{DIM}Last 10 lines of log:{RESET}")
+                            print(f"{CYAN}────────────────────────────────────────────────────────────{RESET}")
+                            last_lines = task.log_lines[-10:]
+                            if last_lines:
+                                for line in last_lines:
+                                    print(f"  {line.rstrip()}")
+                            else:
+                                print("  (Waiting for output...)")
+                            print(f"{CYAN}────────────────────────────────────────────────────────────{RESET}")
+                    print(f"\n{CYAN}{'═'*60}{RESET}")
+                
+                time.sleep(0.5)
+                
+            # Print final multiplexer dashboard once all done
+            print(f"\n{CYAN}{BOLD}{'═'*60}{RESET}")
+            print(f"{CYAN}{BOLD}  DASHBOARD - ALL TASKS COMPLETED{RESET}")
+            print(f"{CYAN}{BOLD}{'═'*60}{RESET}")
+            for name, task in list(_active_tasks.items()):
+                status = f"{GREEN}✅ SUCCESS{RESET}" if task.success else f"{RED}❌ FAILED{RESET}"
+                print(f"\n📌 Platform: {BOLD}{name}{RESET} ({status})")
+                print(f"📄 Log File: logs/{os.path.basename(task.log_path)}")
+                print(f"{DIM}Last 10 lines of log:{RESET}")
+                print(f"{CYAN}────────────────────────────────────────────────────────────{RESET}")
+                last_lines = task.log_lines[-10:]
+                if last_lines:
+                    for line in last_lines:
+                        print(f"  {line.rstrip()}")
+                print(f"{CYAN}────────────────────────────────────────────────────────────{RESET}")
+            print(f"\n{CYAN}{'═'*60}{RESET}\n")
+
+            # Grab final results
+            for f, name in future_to_name.items():
+                try:
+                    results[name] = f.result()
+                except Exception as exc:
+                    print(f"{RED}[ERROR] Task '{name}' generated an exception: {exc}{RESET}")
+                    results[name] = (False, f"Exception: {exc}", "")
 
     # ── Summary ──
     elapsed = datetime.now() - start_time
@@ -1366,10 +1450,19 @@ Examples:
 
     date_folder = f"{start_date}_to_{end_date}"
     base_dir = os.path.dirname(os.path.abspath(__file__))
+    local_laporan_dir = os.path.join(base_dir, "laporan")
     if os.name == "nt":
-        laporan_base_dir = os.path.join(base_dir, "laporan")
+        laporan_base_dir = local_laporan_dir
     else:
         laporan_base_dir = "/mnt/volume_web_scraping/baseline"
+        try:
+            os.makedirs(laporan_base_dir, exist_ok=True)
+            test_file = os.path.join(laporan_base_dir, ".write_test")
+            with open(test_file, "w") as f:
+                f.write("test")
+            os.unlink(test_file)
+        except Exception:
+            laporan_base_dir = local_laporan_dir
     
     # ── Merge Baseline Outputs ──
     if task_choice == "1":
@@ -1377,6 +1470,7 @@ Examples:
         try:
             import pandas as pd
             frames = []
+            rerun_mode = os.environ.get("OFD_RERUN_MODE") == "1"
             
             outlet_safe = str(outlet or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
             
@@ -1402,9 +1496,9 @@ Examples:
             for gp in glob.glob(glob_pattern):
                 if gp not in grab_paths_to_check:
                     grab_paths_to_check.append(gp)
-
+ 
             grab_path = None
-            if "grab" in platform or platform == "all":
+            if "grab" in platform or platform == "all" or rerun_mode:
                 for p_check in grab_paths_to_check:
                     if os.path.exists(p_check):
                         grab_path = p_check
@@ -1414,7 +1508,7 @@ Examples:
                 print(f"  [INFO] Menemukan file Grab baseline: {grab_path}")
                 frames.append(pd.read_excel(grab_path))
             else:
-                if "grab" in platform or platform == "all":
+                if "grab" in platform or platform == "all" or (rerun_mode and "grab" in os.environ.get("OFD_APLIKATOR", "").lower()):
                     print(f"  [INFO] File Grab baseline tidak ditemukan untuk: {outlet_safe}")
             
             # Find Shopee Baseline output
@@ -1436,7 +1530,7 @@ Examples:
             shopee_paths_to_check.append(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, "BASELINE_MASTER_SHOPEE.xlsx"))
                     
             shopee_path = None
-            if "shopee" in platform or platform == "all":
+            if "shopee" in platform or platform == "all" or rerun_mode:
                 for p_check in shopee_paths_to_check:
                     if os.path.exists(p_check):
                         shopee_path = p_check
@@ -1451,7 +1545,7 @@ Examples:
                 if not sf_df.empty:
                     frames.append(sf_df)
             else:
-                if "shopee" in platform or platform == "all":
+                if "shopee" in platform or platform == "all" or (rerun_mode and "shopee" in os.environ.get("OFD_APLIKATOR", "").lower()):
                     print(f"  [INFO] File Shopee baseline tidak ditemukan untuk: {shopee_safe}")
 
             # Find GoFood Baseline output
@@ -1470,7 +1564,7 @@ Examples:
             gofood_paths_to_check.append(os.path.join(laporan_base_dir, "gofood_baseline", date_folder, f"BASELINE_GOFOOD_{start_date}_to_{end_date}.xlsx"))
             
             gofood_path = None
-            if "gofood" in platform or platform == "all":
+            if "gofood" in platform or platform == "all" or rerun_mode:
                 for p_check in gofood_paths_to_check:
                     if os.path.exists(p_check):
                         gofood_path = p_check
@@ -1488,7 +1582,7 @@ Examples:
                 if not gf_df.empty:
                     frames.append(gf_df)
             else:
-                if "gofood" in platform or platform == "all":
+                if "gofood" in platform or platform == "all" or (rerun_mode and "gofood" in os.environ.get("OFD_APLIKATOR", "").lower()):
                     print(f"  [INFO] File GoFood baseline tidak ditemukan untuk: {start_date} s/d {end_date}")
                 
             # Delete old merged file if exists to guarantee it is only present if new frames were found
@@ -1580,6 +1674,13 @@ Examples:
                         omzet_gr, omzet_sf, omzet_go = _platform_monthly_avg(combined_df, omzet_month_cols, grab_mask, shopee_mask, go_mask)
                         order_gr, order_sf, order_go = _platform_monthly_avg(combined_df, order_month_cols, grab_mask, shopee_mask, go_mask)
                                 
+                        # Build dynamic actual applicator list based on successfully merged files
+                        merged_apps = []
+                        if grab_path: merged_apps.append("GrabFood")
+                        if shopee_path: merged_apps.append("ShopeeFood")
+                        if gofood_path: merged_apps.append("GoFood")
+                        actual_aplikator = " + ".join(merged_apps) if merged_apps else os.environ.get("OFD_APLIKATOR", "Grab + Shopee")
+
                         def format_rp(val):
                             return f"Rp {int(val):,}".replace(",", ".")
                             
@@ -1621,7 +1722,7 @@ Examples:
                                     "outlet": str(outlet_val),
                                     "start_date": start_date,
                                     "end_date": end_date,
-                                    "aplikator": os.environ.get("OFD_APLIKATOR", "Grab + Shopee"),
+                                    "aplikator": actual_aplikator,
                                     "pdf_url": pdf_url,
                                     "pdf_name": data.get('pdf_name', 'Baseline Report'),
                                     "omzet_gr": format_rp(omzet_gr),
@@ -1632,13 +1733,13 @@ Examples:
                                     "order_go": str(round(order_go))
                                 }
                                 print(f"DISCORD_NOTIF_JSON: {json.dumps(notif_data)}")
-
+ 
                                 # ── Kirim notifikasi PDF ke Discord channel ──
                                 _notify_discord_pdf(
                                     outlet=str(outlet_val),
                                     start_date=start_date,
                                     end_date=end_date,
-                                    aplikator=os.environ.get("OFD_APLIKATOR", "Grab + Shopee"),
+                                    aplikator=actual_aplikator,
                                     pdf_url=pdf_url,
                                     pdf_name=data.get('pdf_name', 'Baseline Report'),
                                     omzet_gr=format_rp(omzet_gr),
@@ -1659,13 +1760,33 @@ Examples:
         except Exception as e:
             print(f"  {RED}✗ Gagal menggabungkan laporan: {e}{RESET}")
 
+    # ── Print Audit Logs Sequentially ──
+    print(f"\n{CYAN}{BOLD}{'═'*58}{RESET}")
+    print(f"{CYAN}{BOLD}  PLATFORM AUDIT LOGS (SEQUENTIAL){RESET}")
+    print(f"{CYAN}{BOLD}{'═'*58}{RESET}")
+    for name, res_val in results.items():
+        if isinstance(res_val, tuple):
+            success, log_content, log_path = res_val
+            print(f"\n{CYAN}================== [AUDIT LOG: {name.upper()}] =================={RESET}")
+            if log_content.strip():
+                print(log_content.strip())
+            else:
+                print("No output log captured.")
+            print(f"{CYAN}================== [END OF LOG: {name.upper()}] =================={RESET}")
+            if log_path:
+                print(f"📄 Full log saved at: {log_path}\n")
+
     print(f"\n{CYAN}{BOLD}{'═'*58}{RESET}")
     print(f"{CYAN}{BOLD}  SUMMARY{RESET}")
     print(f"{CYAN}{BOLD}{'═'*58}{RESET}")
     print(f"  Date Range : {start_date} → {end_date}")
     print(f"  Duration   : {minutes}m {seconds}s")
     print()
-    for name, success in results.items():
+    for name, res_val in results.items():
+        if isinstance(res_val, tuple):
+            success = res_val[0]
+        else:
+            success = bool(res_val)
         status = f"{GREEN}✓ SUCCESS{RESET}" if success else f"{RED}✗ FAILED{RESET}"
         if task_choice == "1":
             out_folder = name.lower() + "_baseline"
@@ -1682,10 +1803,39 @@ Examples:
     try:
         import json
         simplified_results = {}
-        for name_key, success in results.items():
+        partial_failures = {}
+        for name_key, res_val in results.items():
             key = name_key.split('_')[0]
-            simplified_results[key] = bool(success)
-        print(f"DISCORD_RESULT_JSON: {json.dumps({'results': simplified_results})}")
+            if isinstance(res_val, tuple):
+                success = res_val[0]
+            else:
+                success = bool(res_val)
+
+            if key not in simplified_results:
+                simplified_results[key] = True
+            if not success:
+                simplified_results[key] = False
+            
+            # Map name_key to the corresponding platform_name in _resolve_output_dir using task_choice
+            if task_choice == "1":
+                platform_name = f"{key.lower()}_baseline"
+            elif task_choice == "3":
+                platform_name = f"{key.lower()}_vb"
+            else:
+                platform_name = key.lower()
+                
+            output_dir = _resolve_output_dir(platform_name, start_date, end_date)
+            pf_file = os.path.join(output_dir, "partial_failures.json")
+            if os.path.exists(pf_file):
+                try:
+                    with open(pf_file, "r") as f:
+                        pf_list = json.load(f)
+                        if pf_list:
+                            partial_failures[key] = pf_list
+                except Exception as pf_err:
+                    print(f"Failed to read partial failures for {name_key}: {pf_err}")
+                    
+        print(f"DISCORD_RESULT_JSON: {json.dumps({'results': simplified_results, 'partial_failures': partial_failures})}")
     except Exception as e:
         print(f"Failed to generate DISCORD_RESULT_JSON: {e}")
 

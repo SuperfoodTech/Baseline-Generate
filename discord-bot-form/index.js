@@ -99,8 +99,7 @@ client.on('interactionCreate', async interaction => {
                 });
             }
 
-            // Create a copy of formData and isolate the platform
-            const formData = { ...cachedData };
+            const formData = { ...cachedData, isRerun: true };
 
             // Map the platform shortcut back to form data aplikator
             if (platform === 'grab') formData.aplikator = 'GrabFood';
@@ -224,10 +223,27 @@ client.on('interactionCreate', async interaction => {
 
                 if (result.success) {
                     let failedPlatforms = [];
-                    if (result.resultData && result.resultData.results) {
-                        for (const [platform, success] of Object.entries(result.resultData.results)) {
-                            if (!success) {
-                                failedPlatforms.push(platform);
+                    if (result.resultData) {
+                        if (result.resultData.results) {
+                            for (const [platform, success] of Object.entries(result.resultData.results)) {
+                                if (!success) {
+                                    const norm = platform.toLowerCase().includes('grab') ? 'Grab' :
+                                                 (platform.toLowerCase().includes('shopee') ? 'Shopee' : 'GoFood');
+                                    if (!failedPlatforms.includes(norm)) {
+                                        failedPlatforms.push(norm);
+                                    }
+                                }
+                            }
+                        }
+                        if (result.resultData.partial_failures) {
+                            for (const [platform, failedPortals] of Object.entries(result.resultData.partial_failures)) {
+                                if (failedPortals && failedPortals.length > 0) {
+                                    const norm = platform.toLowerCase().includes('grab') ? 'Grab' :
+                                                 (platform.toLowerCase().includes('shopee') ? 'Shopee' : 'GoFood');
+                                    if (!failedPlatforms.includes(norm)) {
+                                        failedPlatforms.push(norm);
+                                    }
+                                }
                             }
                         }
                     } else if (result.notifData) {
@@ -323,7 +339,7 @@ client.on('interactionCreate', async interaction => {
                         if (failedPlatforms.length > 0) {
                             const warningEmbed = new EmbedBuilder()
                                 .setTitle('⚠️ MASIH ADA DATA KOSONG')
-                                .setDescription(`Setelah Re-Run, data transaksi untuk **${failedPlatforms.join(', ')}** masih gagal didapatkan (Terbaca Rp 0).`)
+                                .setDescription(`Setelah Re-Run, data transaksi untuk **${failedPlatforms.join(', ')}** masih gagal didapatkan.`)
                                 .setColor(0xFF0000);
                             embeds.push(warningEmbed);
                         }

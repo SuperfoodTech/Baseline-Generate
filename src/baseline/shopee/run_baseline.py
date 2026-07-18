@@ -673,7 +673,7 @@ def run_pipeline():
     except Exception:
         pass
 
-    if os.environ.get("HEADLESS") == "true":
+    if os.environ.get("HEADLESS", "").lower() == "true":
         headless = True
 
     # ── 1. Determine Merchants to Process (Data-Driven via G-Sheets) ────
@@ -1056,6 +1056,24 @@ def run_pipeline():
             log.info("="*60)
         else:
             log.info("\n⏭️ [SKIP] SHOPEE_DRIVE_UPLOAD_WEBHOOK_URL tidak ditemukan di .env. Lewati proses unggah otomatis ke Google Drive.")
+
+    # Write partial failures list
+    successful_merchants = []
+    if all_analyzed_data:
+        for df in all_analyzed_data:
+            if "Merchant Name" in df.columns and len(df) > 0:
+                m_name = df["Merchant Name"].iloc[0]
+                if m_name not in successful_merchants:
+                    successful_merchants.append(m_name)
+
+    failed_merchants = [m for m in target_merchants if m not in successful_merchants]
+    try:
+        failed_path = os.path.join(report_dir, "partial_failures.json")
+        with open(failed_path, "w") as pf_file:
+            json.dump(failed_merchants, pf_file)
+        log.info(f"💾 Saved {len(failed_merchants)} partial failures to: {failed_path}")
+    except Exception as e:
+        log.error(f"Failed to write partial_failures.json: {e}")
 
     # Driver cleanup handled in finally block of download phase
     pass

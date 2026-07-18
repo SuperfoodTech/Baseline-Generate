@@ -5,10 +5,11 @@ Requires=postgresql.service
 
 [Service]
 Type=simple
-User=akbar
-WorkingDirectory=/home/akbar/task-weekly/discord-bot-form
-EnvironmentFile=/home/akbar/task-weekly/discord-bot-form/.env
+User=root
+WorkingDirectory=/home/pi/project/staging-baseline/discord-bot-form
+EnvironmentFile=/home/pi/project/staging-baseline/discord-bot-form/.env
 Environment=NODE_ENV=production
+Environment=PATH=/home/pi/.nvm/versions/node/v24.18.0/bin:/usr/local/bin:/usr/bin:/bin
 Environment=TZ=Asia/Jakarta
 Environment=DB_HOST=localhost
 Environment=DB_PORT=5432
@@ -17,13 +18,15 @@ Environment=DB_PASS=superfood_password
 Environment=DB_NAME=srs_db
 Environment=HEADLESS=true
 Environment=PYTHONUNBUFFERED=1
+Environment=HOME=/home/pi
+Environment=USER=pi
 
 # Jalankan npm start
-ExecStart=/usr/bin/npm start
+ExecStart=/home/pi/.nvm/versions/node/v24.18.0/bin/npm start
 
 # Batasi memory — bot spawn child proses Python+Chrome saat ada command
-MemoryMax=1200M
-MemoryHigh=1G
+MemoryMax=4G
+MemoryHigh=3G
 
 # Restart otomatis jika crash
 Restart=always

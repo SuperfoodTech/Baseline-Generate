@@ -239,29 +239,88 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
     log.info(f"  Unique Accounts: {len(unique_users)}")
     log.info("="*60)
     
-    from playwright.async_api import async_playwright
-    
-    async with async_playwright() as p:
-        # Load headless setting and concurrency from config.json walk-up
-        headless_env = True
-        concurrency_limit = 1
-        try:
-            import json
-            for parent in Path(__file__).resolve().parents:
-                config_file = parent / "config.json"
-                if config_file.exists():
-                    with open(config_file, "r") as f:
-                        config_data = json.load(f)
-                        headless_env = config_data.get("headless_grab", True)
-                        concurrency_limit = config_data.get("max_concurrency", 1)
-                    break
-        except Exception:
-            pass
-        browser = await p.chromium.launch(headless=headless_env)
+    # Load headless setting and concurrency from config.json walk-up
+    headless_env = True
+    concurrency_limit = 1
+    try:
+        import json
+        for parent in Path(__file__).resolve().parents:
+            config_file = parent / "config.json"
+            if config_file.exists():
+                with open(config_file, "r") as f:
+                    config_data = json.load(f)
+                    headless_env = config_data.get("headless_grab", True)
+                    concurrency_limit = config_data.get("max_concurrency", 1)
+                break
+    except Exception:
+        pass
+
+    # Force headless if HEADLESS env var is set
+    env_headless = os.environ.get("HEADLESS")
+    if env_headless is not None:
+        if env_headless.lower() in ("true", "1", "yes"):
+            headless_env = True
+        elif env_headless.lower() in ("false", "0", "no"):
+            headless_env = False
+
+    chrome_process = None
+    try:
+        import socket
+        import subprocess
+        use_system_chromium = os.path.exists("/usr/lib/chromium/chromium")
+
+        if use_system_chromium:
+            def get_free_port():
+                s = socket.socket()
+                s.bind(('', 0))
+                port = s.getsockname()[1]
+                s.close()
+                return port
+
+            cdp_port = get_free_port()
+            chrome_args = [
+                "/usr/lib/chromium/chromium",
+                "--no-sandbox",
+                "--no-zygote",
+                "--in-process-gpu",
+                "--disable-gpu",
+                "--disable-dev-shm-usage",
+                "--disable-gpu-sandbox",
+                "--dbus-stub",
+                f"--remote-debugging-port={cdp_port}"
+            ]
+            if headless_env:
+                chrome_args.append("--headless=new")
+                
+            chrome_process = subprocess.Popen(
+                chrome_args,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            await asyncio.sleep(4.0)
+            poll = chrome_process.poll()
+            if poll is not None:
+                log.error(f"ERROR: Chromium process exited immediately with code {poll}!")
+
+            from playwright.async_api import async_playwright
+            p = await async_playwright().start()
+            browser = await p.chromium.connect_over_cdp(f"http://127.0.0.1:{cdp_port}")
+        else:
+            log.info("System Chromium not found at /usr/lib/chromium/chromium. Using default Playwright launch...")
+            from playwright.async_api import async_playwright
+            p = await async_playwright().start()
+            browser = await p.chromium.launch(
+                headless=headless_env,
+                args=[
+                    "--no-sandbox",
+                    "--disable-gpu",
+                    "--disable-dev-shm-usage"
+                ]
+            )
         semaphore = asyncio.Semaphore(concurrency_limit)
         failures = []
 
-        async def process_user(username, info, is_retry=False):
+        async def process_user(username, info, is_retry=True):
             password = info["pwd"]
             related_portals = info["portals"]
             first_outlet = related_portals[0]["outlet"]
@@ -317,22 +376,23 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
         tasks = [process_user(u, info) for u, info in unique_users.items()]
         await asyncio.gather(*tasks)
         
-        # --- Sequential Retry for Failed Accounts ---
-        if failures:
-            log.info("\n" + "="*60)
-            log.info(f"  [RETRY] Attempting to re-run {len(failures)} failed accounts sequentially to resolve network/concurrency issues...")
-            log.info("="*60)
-            
-            retry_failures = list(failures)
-            failures.clear() # Clear so it only contains true failures after retry
-            
-            for f in retry_failures:
-                username = f["user"]
-                info = unique_users[username]
-                log.info(f"\n  [RETRY ACCOUNT] Re-running sequentially for: {username}")
-                await process_user(username, info, is_retry=True)
+        # Process finished without retries
                 
-        await browser.close()
+        try:
+            await browser.close()
+        except Exception:
+            pass
+        try:
+            await p.stop()
+        except Exception:
+            pass
+    finally:
+        if chrome_process:
+            try:
+                chrome_process.terminate()
+                chrome_process.wait()
+            except Exception:
+                pass
 
     log.info("="*60)
     log.info("  ALL PORTALS FINISHED PROCESSING")
@@ -580,9 +640,21 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
             if xlsx_path.exists():
                 _upload_file(xlsx_path)
                 
-        log.info("="*60)
-    else:
-        log.info("\n⏭️ [SKIP] GRAB_DRIVE_UPLOAD_WEBHOOK_URL tidak ditemukan di .env. Lewati proses unggah otomatis ke Google Drive.")
+            log.info("="*60)
+        else:
+            log.info("\n⏭️ [SKIP] GRAB_DRIVE_UPLOAD_WEBHOOK_URL tidak ditemukan di .env. Lewati proses unggah otomatis ke Google Drive.")
+
+    # Write partial failures list
+    failed_users = [f["user"] for f in failures]
+    try:
+        failed_path = laporan_dir / "partial_failures.json"
+        with open(failed_path, "w") as pf_file:
+            json.dump(failed_users, pf_file)
+        log.info(f"💾 Saved {len(failed_users)} partial failures to: {failed_path}")
+    except Exception as e:
+        log.error(f"Failed to write partial_failures.json: {e}")
+
+
 
 
 if __name__ == "__main__":

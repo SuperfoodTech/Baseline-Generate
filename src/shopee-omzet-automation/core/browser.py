@@ -744,11 +744,17 @@ def _init_driver(headless: bool):
             log.warning(f"⚠️ Failed to remove SingletonLock: {e}")
 
     try:
-        # Use native Selenium Manager (faster, more stable, avoids ChromeDriverManager network hangs)
-        driver = webdriver.Chrome(options=options)
+        # Force system Chromium and system chromedriver on Raspberry Pi/ARM64
+        options.binary_location = "/usr/lib/chromium/chromium"
+        service = Service("/usr/bin/chromedriver")
+        driver = webdriver.Chrome(service=service, options=options)
     except Exception as e:
-        log.warning(f"⚠️ Native Chrome init failed: {e}. Trying ChromeDriverManager fallback...")
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        log.warning(f"⚠️ Custom chromedriver init failed: {e}. Trying native fallback...")
+        try:
+            driver = webdriver.Chrome(options=options)
+        except Exception as e2:
+            log.warning(f"⚠️ Native Chrome init failed: {e2}. Trying ChromeDriverManager fallback...")
+            driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     driver.set_page_load_timeout(60)
     return driver
 
