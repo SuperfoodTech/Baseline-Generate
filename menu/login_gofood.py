@@ -607,19 +607,6 @@ def login_outlet(outlet_info, proxy_config=None):
                             logged_in_email = current_email
                             break
 
-                        # Deteksi akun baru yang butuh verifikasi email
-                        try:
-                            error_msg1 = page.locator('text=/Email belum diverifikasi/i')
-                            error_msg2 = page.locator('text=/silahkan login ulang/i')
-                            if (error_msg1.count() > 0 and error_msg1.first.is_visible()) or \
-                               (error_msg2.count() > 0 and error_msg2.first.is_visible()):
-                                print("   ⚠️ Terdeteksi akun baru: 'Email belum diverifikasi'. Mempercepat percobaan ulang...")
-                                max_login_attempts = 3
-                                time.sleep(2.0)
-                                break
-                        except Exception:
-                            pass
-
                         # Deteksi OTP Salah / Kadaluarsa
                         try:
                             otp_err1 = page.locator('text=/kode salah/i')
