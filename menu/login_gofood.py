@@ -649,17 +649,17 @@ def login_outlet(outlet_info, proxy_config=None):
 
                         time.sleep(1.0)
 
-                        if time.time() - start_time > 5:
+                        if time.time() - start_time > 15:
                             try:
                                 if "/auth/login" in page.url:
-                                    print("   ⚠️ (Fallback) Timeout 5 detik: URL masih stuck di halaman login. Mempercepat percobaan ulang...")
+                                    print("   ⚠️ (Fallback) Timeout 15 detik: URL masih stuck di halaman login. Mempercepat percobaan ulang...")
                                     max_login_attempts = 3
                                     break
                             except Exception:
                                 pass
 
-                        if time.time() - start_time > 15:
-                            print("⚠️ Timeout 15 detik menunggu access_token.")
+                        if time.time() - start_time > 25:
+                            print("⚠️ Timeout 25 detik menunggu access_token.")
                             break
 
                 except KeyboardInterrupt:
