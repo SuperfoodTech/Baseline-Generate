@@ -1515,7 +1515,7 @@ Examples:
                     import io
                     
                     # Hardcode URL Web App Anda di sini setelah di-deploy
-                    webhook_url = "https://script.google.com/macros/s/AKfycbyoa77LVJuZtzfhaA9-KGM28lqw37c7t-bs9LMUkkSuU-Mhnb6_rVk-2HUooLbtjjXo/exec"
+                    webhook_url = "https://script.google.com/macros/s/AKfycbyx8qalQnSQpvbFwMEZ2KQHN6y_OI_obhuXyRpClNTpECPAf-ZHqpoiymRNiVQjUd3q/exec"
                     if not webhook_url or "GANTI_DENGAN_URL_ANDA" in webhook_url:
                         print(f"  {YELLOW}⚠️ URL Webhook belum di-hardcode di cli.py.{RESET}")
                         print(f"  {DIM}Silakan deploy apps_script_pdf.js dan masukkan URL-nya ke variabel webhook_url di cli.py{RESET}")
@@ -1607,9 +1607,13 @@ Examples:
                         }
                         
                         print(f"  {CYAN}[INFO] Mengirim data agregasi ke Google Apps Script...{RESET}")
-                        res = requests.post(webhook_url, json=payload, timeout=30)
+                        res = requests.post(webhook_url, json=payload, timeout=90)
                         if res.status_code == 200:
-                            data = res.json()
+                            try:
+                                data = res.json()
+                            except Exception:
+                                data = {}
+                                print(f"  {YELLOW}⚠️ Respons Apps Script bukan JSON: {res.text[:200]}{RESET}")
                             if data.get("success"):
                                 pdf_url = data.get('pdf_url', '')
                                 print(f"  {GREEN}✓ PDF berhasil dibuat!{RESET}")

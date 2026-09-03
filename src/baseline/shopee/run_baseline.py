@@ -847,7 +847,7 @@ def run_pipeline():
                         'Agustus': 'Aug', 'September': 'Sep', 'Oktober': 'Oct', 
                         'November': 'Nov', 'Desember': 'Dec',
                         'Jan': 'Jan', 'Feb': 'Feb', 'Mar': 'Mar', 'Apr': 'Apr',
-                        'Jun': 'Jun', 'Jul': 'Jul', 'Ags': 'Aug', 'Agu': 'Aug',
+                        'Jun': 'Jun', 'Jul': 'Jul', 'Agt': 'Aug', 'Ags': 'Aug', 'Agu': 'Aug',
                         'Sep': 'Sep', 'Okt': 'Oct', 'Nov': 'Nov', 'Des': 'Dec'
                     }
                     temp_dates = df["Waktu Penyelesaian"].astype(str)
@@ -901,7 +901,10 @@ def run_pipeline():
             working["Updated On"] = pd.to_datetime(working["Waktu Penyelesaian"], format="%Y-%m-%d %H:%M", errors="coerce")
             if working["Updated On"].isna().any():
                 failed_mask = working["Updated On"].isna()
-                working.loc[failed_mask, "Updated On"] = pd.to_datetime(working.loc[failed_mask, "Waktu Penyelesaian"], errors="coerce", dayfirst=True)
+                temp_wp = working.loc[failed_mask, "Waktu Penyelesaian"].astype(str)
+                for indo, eng in sorted(indo_months.items(), key=lambda x: len(x[0]), reverse=True):
+                    temp_wp = temp_wp.str.replace(indo, eng, case=False, regex=False)
+                working.loc[failed_mask, "Updated On"] = pd.to_datetime(temp_wp, errors="coerce", format="mixed")
         else:
             working["Updated On"] = pd.NaT
 
