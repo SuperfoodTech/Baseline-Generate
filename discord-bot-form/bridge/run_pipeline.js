@@ -189,6 +189,8 @@ function runPipeline(formData, onLog = () => { }) {
             OFD_CABANG: cabang,
             OFD_BD: bd,
             OFD_APLIKATOR: formData.aplikator || '',
+            OFD_ORIGINAL_APLIKATOR: formData.originalAplikator || formData.aplikator || '',
+            OFD_IS_RERUN: formData.isReRun ? '1' : '0',
             OFD_WEBHOOK_URL: process.env.WEBHOOK_URL || '',
             OFD_CHANNEL_ID: formData.channelId || ''
         };

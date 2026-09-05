@@ -1461,146 +1461,177 @@ Examples:
             b_str = "|".join(branch) if branch else None
             outlet_safe = str(o_str or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
             
-            # ─────────────────────────────────────────────────────────────
-            # 1. Grab Baseline Output (Selalu cari file Grab yang tersedia)
-            # ─────────────────────────────────────────────────────────────
-            grab_paths_to_check = []
-            if b_str:
-                branch_safe = str(b_str).strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
-                filename_prefix = f"BASELINE_CUSTOM_{outlet_safe}_{branch_safe}"
+            # Determine merge scope:
+            # - For Re-Run: use original requested platform scope (e.g. "Semua Platform") so rerun platform merges with existing ones.
+            # - For fresh run: strictly use current requested platform scope so unselected platforms are excluded.
+            is_rerun = os.environ.get("OFD_IS_RERUN", "0") in ("1", "true", "yes")
+            original_app = os.environ.get("OFD_ORIGINAL_APLIKATOR")
+            current_app = os.environ.get("OFD_APLIKATOR")
+            
+            if is_rerun and original_app:
+                scope_target = original_app.lower()
+            elif current_app:
+                scope_target = current_app.lower()
+            elif platform:
+                scope_target = str(platform).lower()
             else:
-                filename_prefix = f"BASELINE_CUSTOM_{outlet_safe}_"
-            
-            if len(filename_prefix) > 50:
-                filename_prefix = "BASELINE_CUSTOM_MULTIPLE_OUTLETS"
-            
-            grab_paths_to_check.append(os.path.join(laporan_base_dir, "grab_baseline", date_folder, f"{filename_prefix}.xlsx"))
-            
-            # Fallback glob pattern for any BASELINE_CUSTOM_{outlet_safe}*.xlsx
-            glob_pattern_gr = os.path.join(laporan_base_dir, "grab_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}*.xlsx")
-            for gp in glob.glob(glob_pattern_gr):
-                if gp not in grab_paths_to_check:
-                    grab_paths_to_check.append(gp)
+                scope_target = "all"
 
-            # Fallback case-insensitive match for outlet_safe
-            for gr_f in glob.glob(os.path.join(laporan_base_dir, "grab_baseline", date_folder, "BASELINE_CUSTOM_*.xlsx")):
-                if gr_f not in grab_paths_to_check and outlet_safe.lower() in os.path.basename(gr_f).lower():
-                    grab_paths_to_check.append(gr_f)
+            include_grab = "grab" in scope_target or scope_target == "all" or "semua" in scope_target
+            include_shopee = "shopee" in scope_target or scope_target == "all" or "semua" in scope_target
+            include_gofood = any(k in scope_target for k in ["gofood", "go food", "go_food", "all", "semua"]) or "go" in scope_target.split()
 
-            # Check for BASELINE_MASTER.xlsx
-            grab_paths_to_check.append(os.path.join(laporan_base_dir, "grab_baseline", date_folder, "BASELINE_MASTER.xlsx"))
-
-            grab_path = None
-            for p_check in grab_paths_to_check:
-                if os.path.exists(p_check):
-                    grab_path = p_check
-                    break
-                    
-            if grab_path:
-                print(f"  [INFO] Menemukan file Grab baseline: {grab_path}")
-                gr_df = pd.read_excel(grab_path)
-                if "BASELINE_MASTER" in os.path.basename(grab_path) and outlet:
-                    o_lower = [str(o).strip().lower() for o in outlet]
-                    if 'Nama Outlet' in gr_df.columns:
-                        gr_df = gr_df[gr_df['Nama Outlet'].astype(str).str.strip().str.lower().isin(o_lower)]
-                    elif 'Merchant' in gr_df.columns:
-                        gr_df = gr_df[gr_df['Merchant'].astype(str).str.strip().str.lower().isin(o_lower)]
-                if not gr_df.empty:
-                    frames.append(gr_df)
-            else:
-                print(f"  [INFO] File Grab baseline tidak ditemukan untuk: {outlet_safe}")
+            print(f"  [SCOPE] is_rerun={is_rerun} | target='{scope_target}' | Grab={include_grab} | Shopee={include_shopee} | GoFood={include_gofood}")
 
             # ─────────────────────────────────────────────────────────────
-            # 2. Shopee Baseline Output (Selalu cari file Shopee yang tersedia)
+            # 1. Grab Baseline Output
             # ─────────────────────────────────────────────────────────────
-            if not shopee_merchant and outlet:
-                shopee_merchant = _resolve_shopee_merchant(outlet, branch_name=branch, task_choice=task_choice)
-                if isinstance(shopee_merchant, str):
-                    shopee_merchant = [shopee_merchant]
-
-            shopee_paths_to_check = []
-            m_str = "|".join(shopee_merchant) if shopee_merchant else None
-            shopee_safe = str(m_str or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
-            if len(shopee_safe) > 50:
-                shopee_safe = "MULTIPLE_MERCHANTS"
-            if shopee_safe:
-                shopee_paths_to_check.append(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}.xlsx"))
-                shopee_paths_to_check.append(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}_.xlsx"))
+            if include_grab:
+                grab_paths_to_check = []
+                if b_str:
+                    branch_safe = str(b_str).strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
+                    filename_prefix = f"BASELINE_CUSTOM_{outlet_safe}_{branch_safe}"
+                else:
+                    filename_prefix = f"BASELINE_CUSTOM_{outlet_safe}_"
                 
-                glob_pattern_sf = os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}*.xlsx")
-                for gp in glob.glob(glob_pattern_sf):
+                if len(filename_prefix) > 50:
+                    filename_prefix = "BASELINE_CUSTOM_MULTIPLE_OUTLETS"
+                
+                grab_paths_to_check.append(os.path.join(laporan_base_dir, "grab_baseline", date_folder, f"{filename_prefix}.xlsx"))
+                
+                # Fallback glob pattern for any BASELINE_CUSTOM_{outlet_safe}*.xlsx
+                glob_pattern_gr = os.path.join(laporan_base_dir, "grab_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}*.xlsx")
+                for gp in glob.glob(glob_pattern_gr):
+                    if gp not in grab_paths_to_check:
+                        grab_paths_to_check.append(gp)
+
+                # Fallback case-insensitive match for outlet_safe
+                for gr_f in glob.glob(os.path.join(laporan_base_dir, "grab_baseline", date_folder, "BASELINE_CUSTOM_*.xlsx")):
+                    if gr_f not in grab_paths_to_check and outlet_safe.lower() in os.path.basename(gr_f).lower():
+                        grab_paths_to_check.append(gr_f)
+
+                # Check for BASELINE_MASTER.xlsx
+                grab_paths_to_check.append(os.path.join(laporan_base_dir, "grab_baseline", date_folder, "BASELINE_MASTER.xlsx"))
+
+                grab_path = None
+                for p_check in grab_paths_to_check:
+                    if os.path.exists(p_check):
+                        grab_path = p_check
+                        break
+                        
+                if grab_path:
+                    print(f"  [INFO] Menemukan file Grab baseline: {grab_path}")
+                    gr_df = pd.read_excel(grab_path)
+                    if "BASELINE_MASTER" in os.path.basename(grab_path) and outlet:
+                        o_lower = [str(o).strip().lower() for o in outlet]
+                        if 'Nama Outlet' in gr_df.columns:
+                            gr_df = gr_df[gr_df['Nama Outlet'].astype(str).str.strip().str.lower().isin(o_lower)]
+                        elif 'Merchant' in gr_df.columns:
+                            gr_df = gr_df[gr_df['Merchant'].astype(str).str.strip().str.lower().isin(o_lower)]
+                    if not gr_df.empty:
+                        frames.append(gr_df)
+                else:
+                    print(f"  [INFO] File Grab baseline tidak ditemukan untuk: {outlet_safe}")
+            else:
+                print(f"  [INFO] Grab baseline dilewati (tidak dipilih dalam lingkup).")
+
+            # ─────────────────────────────────────────────────────────────
+            # 2. Shopee Baseline Output
+            # ─────────────────────────────────────────────────────────────
+            if include_shopee:
+                if not shopee_merchant and outlet:
+                    shopee_merchant = _resolve_shopee_merchant(outlet, branch_name=branch, task_choice=task_choice)
+                    if isinstance(shopee_merchant, str):
+                        shopee_merchant = [shopee_merchant]
+
+                shopee_paths_to_check = []
+                m_str = "|".join(shopee_merchant) if shopee_merchant else None
+                shopee_safe = str(m_str or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
+                if len(shopee_safe) > 50:
+                    shopee_safe = "MULTIPLE_MERCHANTS"
+                if shopee_safe:
+                    shopee_paths_to_check.append(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}.xlsx"))
+                    shopee_paths_to_check.append(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}_.xlsx"))
+                    
+                    glob_pattern_sf = os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}*.xlsx")
+                    for gp in glob.glob(glob_pattern_sf):
+                        if gp not in shopee_paths_to_check:
+                            shopee_paths_to_check.append(gp)
+
+                # Fallback glob with outlet_safe
+                glob_pattern_sf_outlet = os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}*.xlsx")
+                for gp in glob.glob(glob_pattern_sf_outlet):
                     if gp not in shopee_paths_to_check:
                         shopee_paths_to_check.append(gp)
 
-            # Fallback glob with outlet_safe
-            glob_pattern_sf_outlet = os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}*.xlsx")
-            for gp in glob.glob(glob_pattern_sf_outlet):
-                if gp not in shopee_paths_to_check:
-                    shopee_paths_to_check.append(gp)
-
-            # Case-insensitive search in shopee_baseline
-            for sf_f in glob.glob(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, "BASELINE_CUSTOM_*.xlsx")):
-                if sf_f not in shopee_paths_to_check:
-                    f_lower = os.path.basename(sf_f).lower()
-                    if outlet_safe.lower() in f_lower or (shopee_safe and shopee_safe.lower() in f_lower):
-                        shopee_paths_to_check.append(sf_f)
-                    
-            # Check for BASELINE_MASTER_SHOPEE.xlsx
-            shopee_paths_to_check.append(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, "BASELINE_MASTER_SHOPEE.xlsx"))
-                    
-            shopee_path = None
-            for p_check in shopee_paths_to_check:
-                if os.path.exists(p_check):
-                    shopee_path = p_check
-                    break
-                    
-            if shopee_path:
-                print(f"  [INFO] Menemukan file Shopee baseline: {shopee_path}")
-                sf_df = pd.read_excel(shopee_path)
-                if "BASELINE_MASTER_SHOPEE" in shopee_path and (shopee_merchant or outlet):
-                    targets = [str(m).strip().lower() for m in (shopee_merchant or [])] + [str(o).strip().lower() for o in (outlet or [])]
-                    sf_df = sf_df[sf_df['Merchant'].astype(str).str.strip().str.rstrip('_').str.strip().str.lower().isin(targets)]
-                if not sf_df.empty:
-                    frames.append(sf_df)
+                # Case-insensitive search in shopee_baseline
+                for sf_f in glob.glob(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, "BASELINE_CUSTOM_*.xlsx")):
+                    if sf_f not in shopee_paths_to_check:
+                        f_lower = os.path.basename(sf_f).lower()
+                        if outlet_safe.lower() in f_lower or (shopee_safe and shopee_safe.lower() in f_lower):
+                            shopee_paths_to_check.append(sf_f)
+                        
+                # Check for BASELINE_MASTER_SHOPEE.xlsx
+                shopee_paths_to_check.append(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, "BASELINE_MASTER_SHOPEE.xlsx"))
+                        
+                shopee_path = None
+                for p_check in shopee_paths_to_check:
+                    if os.path.exists(p_check):
+                        shopee_path = p_check
+                        break
+                        
+                if shopee_path:
+                    print(f"  [INFO] Menemukan file Shopee baseline: {shopee_path}")
+                    sf_df = pd.read_excel(shopee_path)
+                    if "BASELINE_MASTER_SHOPEE" in shopee_path and (shopee_merchant or outlet):
+                        targets = [str(m).strip().lower() for m in (shopee_merchant or [])] + [str(o).strip().lower() for o in (outlet or [])]
+                        sf_df = sf_df[sf_df['Merchant'].astype(str).str.strip().str.rstrip('_').str.strip().str.lower().isin(targets)]
+                    if not sf_df.empty:
+                        frames.append(sf_df)
+                else:
+                    print(f"  [INFO] File Shopee baseline tidak ditemukan untuk: {shopee_safe or outlet_safe}")
             else:
-                print(f"  [INFO] File Shopee baseline tidak ditemukan untuk: {shopee_safe or outlet_safe}")
+                print(f"  [INFO] Shopee baseline dilewati (tidak dipilih dalam lingkup).")
 
             # ─────────────────────────────────────────────────────────────
-            # 3. GoFood Baseline Output (Selalu cari file GoFood yang tersedia)
+            # 3. GoFood Baseline Output
             # ─────────────────────────────────────────────────────────────
-            gofood_paths_to_check = []
-            o_str_go = "|".join(outlet) if outlet else None
-            outlet_safe_go = str(o_str_go or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
-            if outlet_safe_go:
-                gofood_paths_to_check.append(os.path.join(laporan_base_dir, "gofood_baseline", date_folder, f"BASELINE_CUSTOM_GOFOOD_{outlet_safe_go}_{start_date}_to_{end_date}.xlsx"))
-                glob_pattern_gf = os.path.join(laporan_base_dir, "gofood_baseline", date_folder, f"BASELINE_CUSTOM_GOFOOD_{outlet_safe_go}*.xlsx")
-                for gp in glob.glob(glob_pattern_gf):
-                    if gp not in gofood_paths_to_check:
-                        gofood_paths_to_check.append(gp)
+            if include_gofood:
+                gofood_paths_to_check = []
+                o_str_go = "|".join(outlet) if outlet else None
+                outlet_safe_go = str(o_str_go or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
+                if outlet_safe_go:
+                    gofood_paths_to_check.append(os.path.join(laporan_base_dir, "gofood_baseline", date_folder, f"BASELINE_CUSTOM_GOFOOD_{outlet_safe_go}_{start_date}_to_{end_date}.xlsx"))
+                    glob_pattern_gf = os.path.join(laporan_base_dir, "gofood_baseline", date_folder, f"BASELINE_CUSTOM_GOFOOD_{outlet_safe_go}*.xlsx")
+                    for gp in glob.glob(glob_pattern_gf):
+                        if gp not in gofood_paths_to_check:
+                            gofood_paths_to_check.append(gp)
 
-            # Case-insensitive search in gofood_baseline
-            for gf_f in glob.glob(os.path.join(laporan_base_dir, "gofood_baseline", date_folder, "BASELINE_CUSTOM_GOFOOD_*.xlsx")):
-                if gf_f not in gofood_paths_to_check and outlet_safe_go.lower() in os.path.basename(gf_f).lower():
-                    gofood_paths_to_check.append(gf_f)
+                # Case-insensitive search in gofood_baseline
+                for gf_f in glob.glob(os.path.join(laporan_base_dir, "gofood_baseline", date_folder, "BASELINE_CUSTOM_GOFOOD_*.xlsx")):
+                    if gf_f not in gofood_paths_to_check and outlet_safe_go.lower() in os.path.basename(gf_f).lower():
+                        gofood_paths_to_check.append(gf_f)
 
-            gofood_paths_to_check.append(os.path.join(laporan_base_dir, "gofood_baseline", date_folder, f"BASELINE_GOFOOD_{start_date}_to_{end_date}.xlsx"))
-            
-            gofood_path = None
-            for p_check in gofood_paths_to_check:
-                if os.path.exists(p_check):
-                    gofood_path = p_check
-                    break
-                    
-            if gofood_path:
-                print(f"  [INFO] Menemukan file GoFood baseline: {gofood_path}")
-                gf_df = pd.read_excel(gofood_path)
-                if outlet and "BASELINE_CUSTOM" not in os.path.basename(gofood_path):
-                    o_lower = [str(o).strip().lower() for o in outlet]
-                    gf_df = gf_df[gf_df['Merchant'].astype(str).str.strip().str.lower().isin(o_lower)]
-                if not gf_df.empty:
-                    frames.append(gf_df)
+                gofood_paths_to_check.append(os.path.join(laporan_base_dir, "gofood_baseline", date_folder, f"BASELINE_GOFOOD_{start_date}_to_{end_date}.xlsx"))
+                
+                gofood_path = None
+                for p_check in gofood_paths_to_check:
+                    if os.path.exists(p_check):
+                        gofood_path = p_check
+                        break
+                        
+                if gofood_path:
+                    print(f"  [INFO] Menemukan file GoFood baseline: {gofood_path}")
+                    gf_df = pd.read_excel(gofood_path)
+                    if outlet and "BASELINE_CUSTOM" not in os.path.basename(gofood_path):
+                        o_lower = [str(o).strip().lower() for o in outlet]
+                        gf_df = gf_df[gf_df['Merchant'].astype(str).str.strip().str.lower().isin(o_lower)]
+                    if not gf_df.empty:
+                        frames.append(gf_df)
+                else:
+                    print(f"  [INFO] File GoFood baseline tidak ditemukan untuk: {start_date} s/d {end_date}")
             else:
-                print(f"  [INFO] File GoFood baseline tidak ditemukan untuk: {start_date} s/d {end_date}")
+                print(f"  [INFO] GoFood baseline dilewati (tidak dipilih dalam lingkup).")
                 
             # Delete old merged file if exists to guarantee it is only present if new frames were found
             final_baseline_dir = os.path.join(laporan_base_dir, "baseline", date_folder)

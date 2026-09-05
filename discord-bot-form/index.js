@@ -106,6 +106,8 @@ client.on('interactionCreate', async interaction => {
 
             // Create a copy of formData and isolate the platform
             const formData = { ...cachedData };
+            formData.originalAplikator = cachedData.originalAplikator || cachedData.aplikator;
+            formData.isReRun = true;
 
             // Map the platform shortcut back to form data aplikator
             if (platform === 'grab') formData.aplikator = 'GrabFood';
@@ -289,6 +291,8 @@ client.on('interactionCreate', async interaction => {
 
                         if (failedPlatforms.length > 0) {
                             const reRunData = { ...formData };
+                            reRunData.originalAplikator = formData.originalAplikator || formData.aplikator;
+                            reRunData.isReRun = true;
                             reRunData.aplikator = failedPlatforms.map(p => {
                                 if (p.toLowerCase() === 'grab') return 'GrabFood';
                                 if (p.toLowerCase() === 'shopee') return 'ShopeeFood';
@@ -345,6 +349,8 @@ client.on('interactionCreate', async interaction => {
                         const actionRow = new ActionRowBuilder();
                         if (failedPlatforms.length > 0) {
                             const reRunData = { ...formData };
+                            reRunData.originalAplikator = formData.originalAplikator || formData.aplikator;
+                            reRunData.isReRun = true;
                             reRunData.aplikator = failedPlatforms.map(p => {
                                 if (p.toLowerCase() === 'grab') return 'GrabFood';
                                 if (p.toLowerCase() === 'shopee') return 'ShopeeFood';

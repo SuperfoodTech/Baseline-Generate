@@ -876,6 +876,8 @@ module.exports = {
 
                         if (failedPlatforms.length > 0) {
                             const reRunData = { ...formData };
+                            reRunData.originalAplikator = formData.originalAplikator || formData.aplikator;
+                            reRunData.isReRun = true;
                             reRunData.aplikator = failedPlatforms.map(p => {
                                 if (p.toLowerCase() === 'grab') return 'GrabFood';
                                 if (p.toLowerCase() === 'shopee') return 'ShopeeFood';
