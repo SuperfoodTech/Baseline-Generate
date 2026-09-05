@@ -13,11 +13,26 @@ const https = require('https');
 const { setLastChannelId } = require('../../errorPoller');
 const recentTasks = require('../../taskCache');
 
-function fetchCSV(url) {
+const fs = require('fs');
+const path = require('path');
+
+function fetchCSV(url, maxRedirects = 5, timeoutMs = 15000) {
+    const cacheDir = path.join(__dirname, '..', '..', '..', 'data');
+    if (!fs.existsSync(cacheDir)) {
+        try { fs.mkdirSync(cacheDir, { recursive: true }); } catch (e) { }
+    }
+    const safeFilename = 'cache_' + Buffer.from(url).toString('base64url').substring(0, 32) + '.csv';
+    const cacheFilePath = path.join(cacheDir, safeFilename);
+
     return new Promise((resolve, reject) => {
+        let redirectsCount = 0;
         const fetchUrl = (currentUrl) => {
-            https.get(currentUrl, (res) => {
+            if (redirectsCount > maxRedirects) {
+                return reject(new Error(`Terlalu banyak redirect (maks ${maxRedirects})`));
+            }
+            const req = https.get(currentUrl, { family: 4, headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
                 if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                    redirectsCount++;
                     return fetchUrl(res.headers.location);
                 }
                 if (res.statusCode !== 200) {
@@ -25,10 +40,26 @@ function fetchCSV(url) {
                 }
                 let data = '';
                 res.on('data', (chunk) => data += chunk);
-                res.on('end', () => resolve(data));
-            }).on('error', (err) => reject(err));
+                res.on('end', () => {
+                    try { fs.writeFileSync(cacheFilePath, data, 'utf-8'); } catch (e) { }
+                    resolve(data);
+                });
+            });
+            req.on('error', (err) => {
+                if (fs.existsSync(cacheFilePath)) {
+                    console.log(`[CACHE] Loading fallback CSV from ${cacheFilePath} due to error: ${err.message}`);
+                    try {
+                        const cached = fs.readFileSync(cacheFilePath, 'utf-8');
+                        return resolve(cached);
+                    } catch (e) { }
+                }
+                reject(err);
+            });
+            req.setTimeout(timeoutMs, () => {
+                req.destroy(new Error(`Koneksi timeout setelah ${timeoutMs / 1000} detik saat mengambil Google Sheets`));
+            });
         };
-        fetchUrl(url + '&t=' + Date.now());
+        fetchUrl(url + (url.includes('?') ? '&' : '?') + 't=' + Date.now());
     });
 }
 
@@ -36,7 +67,7 @@ const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MF
 
 let cachedSheetData = null;
 let lastCacheTime = 0;
-const CACHE_DURATION = 3 * 1000; // 3 detik cache
+const CACHE_DURATION = 10 * 60 * 1000; // 10 menit cache
 
 // ── Job Lock — mencegah 2 user menjalankan pipeline yang sama secara bersamaan ──
 // Key: "<outlet>|<platform>|<startDate>|<endDate>"

@@ -58,31 +58,56 @@ def setup_logger():
 
 log = setup_logger()
 
+import urllib3.util.connection as urllib3_cn
+urllib3_cn.HAS_IPV6 = False
+
 def robust_read_csv(path_or_url, expected_cols=None, **kwargs):
     """
     Reads a CSV file or URL robustly.
     1. Normalizes all column headers to lowercase and strips whitespace.
     2. Gracefully handles unquoted commas by parsing line-by-line and merging extra columns.
+    3. Caches HTTP/HTTPS downloads locally for offline/network-fault fallback.
     """
     import csv
     import io
     import pandas as pd
     import requests
 
+    cache_dir = Path(__file__).resolve().parent / "data"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_dir / "grab_merchants_cache.csv"
+
     content = ""
-    try:
-        if isinstance(path_or_url, str) and (path_or_url.startswith("http://") or path_or_url.startswith("https://")):
+    is_remote = isinstance(path_or_url, str) and (path_or_url.startswith("http://") or path_or_url.startswith("https://"))
+    if is_remote:
+        try:
             import time
             cache_buster = f"&t={int(time.time())}" if "?" in path_or_url else f"?t={int(time.time())}"
-            resp = requests.get(path_or_url + cache_buster, timeout=30)
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            resp = requests.get(path_or_url + cache_buster, headers=headers, timeout=(5, 15))
             resp.raise_for_status()
             content = resp.text
-        else:
+            try:
+                cache_file.write_text(content, encoding="utf-8")
+            except Exception as ce:
+                log.warning(f"⚠️ Failed to update local cache: {ce}")
+        except Exception as e:
+            log.warning(f"⚠️ Failed to read remote source {path_or_url}: {e}. Checking local cache...")
+            if cache_file.exists():
+                log.info(f"📂 [CACHE] Loading fallback merchant data from {cache_file}")
+                content = cache_file.read_text(encoding="utf-8", errors="replace")
+            else:
+                log.error(f"❌ Failed to read remote source and no local cache exists.")
+                raise e
+    else:
+        try:
             with open(path_or_url, "r", encoding="utf-8", errors="replace") as f:
                 content = f.read()
-    except Exception as e:
-        log.error(f"Failed to read source {path_or_url}: {e}")
-        raise e
+        except Exception as e:
+            log.error(f"Failed to read local file {path_or_url}: {e}")
+            raise e
 
     try:
         df = pd.read_csv(io.StringIO(content), **kwargs)
@@ -257,7 +282,24 @@ async def run_all(date_start: str = None, date_end: str = None, output_dir: str 
                     break
         except Exception:
             pass
-        browser = await p.chromium.launch(headless=headless_env)
+
+        # If running in environment without DISPLAY or in server mode, force headless=True
+        if not os.environ.get("DISPLAY") or os.environ.get("HEADLESS", "").lower() in ("true", "1", "yes") or os.environ.get("OFD_DISCORD_MODE") == "1":
+            headless_env = True
+
+        browser = await p.chromium.launch(
+            headless=headless_env,
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--disable-software-rasterizer",
+                "--disk-cache-size=10485760",
+                "--disable-extensions",
+                "--disable-component-update"
+            ]
+        )
         semaphore = asyncio.Semaphore(concurrency_limit)
         failures = []
 

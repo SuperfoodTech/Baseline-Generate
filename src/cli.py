@@ -18,6 +18,9 @@ import sys
 import os
 from datetime import datetime, timedelta
 
+import urllib3.util.connection as urllib3_cn
+urllib3_cn.HAS_IPV6 = False
+
 def normalize_date_string(date_str: str) -> str:
     """
     Parses a date string in various formats (DD-MM-YYYY, YYYY-MM-DD, etc.)
@@ -142,13 +145,19 @@ def banner():
 
 def _resolve_python_executable() -> str:
     """
-    Returns path to local .venv/bin/python if it exists,
+    Returns path to local .venv/bin/python or project root .venv/bin/python if it exists,
     otherwise falls back to sys.executable.
     """
     base = os.path.dirname(os.path.abspath(__file__))
-    venv_python = os.path.join(base, ".venv", "bin", "python")
-    if os.path.isfile(venv_python):
-        return venv_python
+    candidates = [
+        os.path.join(base, ".venv", "bin", "python"),
+        os.path.join(os.path.dirname(base), ".venv", "bin", "python"),
+        os.path.join(base, "venv", "bin", "python"),
+        os.path.join(os.path.dirname(base), "venv", "bin", "python"),
+    ]
+    for cand in candidates:
+        if os.path.isfile(cand):
+            return cand
     return sys.executable
 
 
@@ -170,18 +179,15 @@ def _resolve_shopee_merchant(outlet_name: str, branch_name: str = None, task_cho
     """
     Lookup 'Merchant Name' Shopee dari Google Sheets berdasarkan 'Nama Outlet'
     dan opsional 'Cabang'.
-
-    Logika:
-      1. Jika branch_name diberikan → cari baris dengan Nama Outlet + Cabang cocok
-         (cabang di Discord form = kolom 'Cabang' di GSheets)
-         Ambil Merchant Name dari baris tersebut.
-      2. Jika tidak ada match dengan cabang, atau branch_name tidak diberikan
-         → fallback ke lookup Nama Outlet saja (ambil merchant pertama)
-      3. Jika tidak ada match sama sekali → fallback ke outlet_name asli
-
-    Returns:
-        str: Merchant Name yang bersih (tanpa trailing underscore/spasi)
     """
+    if isinstance(outlet_name, (list, tuple)):
+        outlet_name = str(outlet_name[0]) if len(outlet_name) > 0 else ""
+    if isinstance(branch_name, (list, tuple)):
+        branch_name = str(branch_name[0]) if len(branch_name) > 0 else None
+        
+    if not outlet_name:
+        return ""
+
     base = os.path.dirname(os.path.abspath(__file__))
     if task_choice == "1":
         GSHEETS_URL = (
@@ -1152,6 +1158,78 @@ def interactive_mode():
     return task_choice, platform, start_date, end_date, outlet, branch, shopee_merchant, is_headless, no_sheet, selected_bd
 
 
+# ── PDF Webhook Caller (Hedged Request / Speculative Fallback) ───────
+
+def _call_pdf_webhook_hedged(primary_url, fallback_url, payload, hedge_delay=12, timeout=45):
+    """
+    Kirim request ke primary_url (Hedged Request / Opsi B).
+    Jika dalam `hedge_delay` detik primary belum selesai atau jika primary error,
+    picu fallback_url secara paralel. Mengambil hasil pertama yang sukses.
+    """
+    import concurrent.futures
+    import time
+    import requests
+
+    def _call_single(url, label):
+        t0 = time.time()
+        try:
+            res = requests.post(url, json=payload, timeout=timeout)
+            elapsed = time.time() - t0
+            if res.status_code == 200:
+                try:
+                    data = res.json()
+                except Exception:
+                    return False, f"[{label} - {elapsed:.1f}s] Respons bukan JSON: {res.text[:120]}"
+                if data.get("success"):
+                    return True, (data, label, elapsed)
+                else:
+                    return False, f"[{label} - {elapsed:.1f}s] Error Apps Script: {data.get('error')}"
+            else:
+                return False, f"[{label} - {elapsed:.1f}s] HTTP Error {res.status_code}"
+        except Exception as e:
+            elapsed = time.time() - t0
+            return False, f"[{label} - {elapsed:.1f}s] Exception: {str(e)}"
+
+    if not fallback_url or fallback_url == primary_url:
+        print(f"  {CYAN}[INFO] Mengirim data agregasi ke Google Apps Script...{RESET}")
+        ok, res = _call_single(primary_url, "Primary")
+        if ok:
+            return res[0], res[1], res[2], None
+        return None, "Primary", 0, res
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        print(f"  {CYAN}[INFO] Mengirim data agregasi ke Webhook Utama (Hedge timeout: {hedge_delay}s)...{RESET}")
+        fut_primary = executor.submit(_call_single, primary_url, "Primary")
+        
+        primary_done, _ = concurrent.futures.wait([fut_primary], timeout=hedge_delay)
+        if primary_done:
+            ok, res = fut_primary.result()
+            if ok:
+                data, label, elapsed = res
+                return data, label, elapsed, None
+            else:
+                print(f"  {YELLOW}⚠️ {res} -> Segera mengalihkan ke Webhook Cadangan...{RESET}")
+        else:
+            print(f"  {YELLOW}⚠️ Webhook utama belum selesai dalam {hedge_delay}s -> Memulai Webhook Cadangan secara spekulatif (Hedged)...{RESET}")
+
+        fut_fallback = executor.submit(_call_single, fallback_url, "Fallback")
+        pending = {fut_primary, fut_fallback}
+        errors = []
+        
+        while pending:
+            done, pending = concurrent.futures.wait(pending, return_when=concurrent.futures.FIRST_COMPLETED)
+            for fut in done:
+                ok, res = fut.result()
+                if ok:
+                    data, label, elapsed = res
+                    return data, label, elapsed, None
+                else:
+                    errors.append(res)
+                    print(f"  {YELLOW}⚠️ {res}{RESET}")
+
+        return None, None, 0, " | ".join(errors)
+
+
 # ── Discord Webhook Notifier ───────────────────────────────────────────
 
 def _notify_discord_pdf(outlet, start_date, end_date, aplikator,
@@ -1373,18 +1451,20 @@ Examples:
     
     # ── Merge Baseline Outputs ──
     if task_choice == "1":
-        print(f"\n{YELLOW}{BOLD}▶ PENGGABUNGAN LAPORAN BASELINE{RESET}")
+        print(f"\n{YELLOW}{BOLD}▶ PENGGABUNGAN LAPORAN BASELINE (MULTI-PLATFORM MERGE){RESET}")
         try:
             import pandas as pd
+            import glob
             frames = []
             
-            outlet_safe = str(outlet or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
-            
-            # Find Grab Baseline output
-            grab_paths_to_check = []
             o_str = "|".join(outlet) if outlet else None
             b_str = "|".join(branch) if branch else None
             outlet_safe = str(o_str or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
+            
+            # ─────────────────────────────────────────────────────────────
+            # 1. Grab Baseline Output (Selalu cari file Grab yang tersedia)
+            # ─────────────────────────────────────────────────────────────
+            grab_paths_to_check = []
             if b_str:
                 branch_safe = str(b_str).strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
                 filename_prefix = f"BASELINE_CUSTOM_{outlet_safe}_{branch_safe}"
@@ -1396,100 +1476,131 @@ Examples:
             
             grab_paths_to_check.append(os.path.join(laporan_base_dir, "grab_baseline", date_folder, f"{filename_prefix}.xlsx"))
             
-            # Fallback glob pattern for any BASELINE_CUSTOM_{outlet_safe}_*.xlsx
-            import glob
-            glob_pattern = os.path.join(laporan_base_dir, "grab_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}*.xlsx")
-            for gp in glob.glob(glob_pattern):
+            # Fallback glob pattern for any BASELINE_CUSTOM_{outlet_safe}*.xlsx
+            glob_pattern_gr = os.path.join(laporan_base_dir, "grab_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}*.xlsx")
+            for gp in glob.glob(glob_pattern_gr):
                 if gp not in grab_paths_to_check:
                     grab_paths_to_check.append(gp)
 
+            # Fallback case-insensitive match for outlet_safe
+            for gr_f in glob.glob(os.path.join(laporan_base_dir, "grab_baseline", date_folder, "BASELINE_CUSTOM_*.xlsx")):
+                if gr_f not in grab_paths_to_check and outlet_safe.lower() in os.path.basename(gr_f).lower():
+                    grab_paths_to_check.append(gr_f)
+
+            # Check for BASELINE_MASTER.xlsx
+            grab_paths_to_check.append(os.path.join(laporan_base_dir, "grab_baseline", date_folder, "BASELINE_MASTER.xlsx"))
+
             grab_path = None
-            if "grab" in platform or platform == "all":
-                for p_check in grab_paths_to_check:
-                    if os.path.exists(p_check):
-                        grab_path = p_check
-                        break
+            for p_check in grab_paths_to_check:
+                if os.path.exists(p_check):
+                    grab_path = p_check
+                    break
                     
             if grab_path:
                 print(f"  [INFO] Menemukan file Grab baseline: {grab_path}")
-                frames.append(pd.read_excel(grab_path))
+                gr_df = pd.read_excel(grab_path)
+                if "BASELINE_MASTER" in os.path.basename(grab_path) and outlet:
+                    o_lower = [str(o).strip().lower() for o in outlet]
+                    if 'Nama Outlet' in gr_df.columns:
+                        gr_df = gr_df[gr_df['Nama Outlet'].astype(str).str.strip().str.lower().isin(o_lower)]
+                    elif 'Merchant' in gr_df.columns:
+                        gr_df = gr_df[gr_df['Merchant'].astype(str).str.strip().str.lower().isin(o_lower)]
+                if not gr_df.empty:
+                    frames.append(gr_df)
             else:
-                if "grab" in platform or platform == "all":
-                    print(f"  [INFO] File Grab baseline tidak ditemukan untuk: {outlet_safe}")
-            
-            # Find Shopee Baseline output
+                print(f"  [INFO] File Grab baseline tidak ditemukan untuk: {outlet_safe}")
+
+            # ─────────────────────────────────────────────────────────────
+            # 2. Shopee Baseline Output (Selalu cari file Shopee yang tersedia)
+            # ─────────────────────────────────────────────────────────────
+            if not shopee_merchant and outlet:
+                shopee_merchant = _resolve_shopee_merchant(outlet, branch_name=branch, task_choice=task_choice)
+                if isinstance(shopee_merchant, str):
+                    shopee_merchant = [shopee_merchant]
+
             shopee_paths_to_check = []
             m_str = "|".join(shopee_merchant) if shopee_merchant else None
             shopee_safe = str(m_str or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
             if len(shopee_safe) > 50:
                 shopee_safe = "MULTIPLE_MERCHANTS"
-            shopee_paths_to_check.append(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}.xlsx"))
-            shopee_paths_to_check.append(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}_.xlsx"))
-            
-            # Fallback glob pattern for any BASELINE_CUSTOM_{shopee_safe}*.xlsx
-            glob_pattern_sf = os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}*.xlsx")
-            for gp in glob.glob(glob_pattern_sf):
+            if shopee_safe:
+                shopee_paths_to_check.append(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}.xlsx"))
+                shopee_paths_to_check.append(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}_.xlsx"))
+                
+                glob_pattern_sf = os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}*.xlsx")
+                for gp in glob.glob(glob_pattern_sf):
+                    if gp not in shopee_paths_to_check:
+                        shopee_paths_to_check.append(gp)
+
+            # Fallback glob with outlet_safe
+            glob_pattern_sf_outlet = os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}*.xlsx")
+            for gp in glob.glob(glob_pattern_sf_outlet):
                 if gp not in shopee_paths_to_check:
                     shopee_paths_to_check.append(gp)
+
+            # Case-insensitive search in shopee_baseline
+            for sf_f in glob.glob(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, "BASELINE_CUSTOM_*.xlsx")):
+                if sf_f not in shopee_paths_to_check:
+                    f_lower = os.path.basename(sf_f).lower()
+                    if outlet_safe.lower() in f_lower or (shopee_safe and shopee_safe.lower() in f_lower):
+                        shopee_paths_to_check.append(sf_f)
                     
             # Check for BASELINE_MASTER_SHOPEE.xlsx
             shopee_paths_to_check.append(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, "BASELINE_MASTER_SHOPEE.xlsx"))
                     
             shopee_path = None
-            if "shopee" in platform or platform == "all":
-                for p_check in shopee_paths_to_check:
-                    if os.path.exists(p_check):
-                        shopee_path = p_check
-                        break
+            for p_check in shopee_paths_to_check:
+                if os.path.exists(p_check):
+                    shopee_path = p_check
+                    break
                     
             if shopee_path:
                 print(f"  [INFO] Menemukan file Shopee baseline: {shopee_path}")
                 sf_df = pd.read_excel(shopee_path)
-                if "BASELINE_MASTER_SHOPEE" in shopee_path and shopee_merchant:
-                    m_lower = [str(m).strip().lower() for m in shopee_merchant]
-                    sf_df = sf_df[sf_df['Merchant'].astype(str).str.strip().str.rstrip('_').str.strip().str.lower().isin(m_lower)]
+                if "BASELINE_MASTER_SHOPEE" in shopee_path and (shopee_merchant or outlet):
+                    targets = [str(m).strip().lower() for m in (shopee_merchant or [])] + [str(o).strip().lower() for o in (outlet or [])]
+                    sf_df = sf_df[sf_df['Merchant'].astype(str).str.strip().str.rstrip('_').str.strip().str.lower().isin(targets)]
                 if not sf_df.empty:
                     frames.append(sf_df)
             else:
-                if "shopee" in platform or platform == "all":
-                    print(f"  [INFO] File Shopee baseline tidak ditemukan untuk: {shopee_safe}")
+                print(f"  [INFO] File Shopee baseline tidak ditemukan untuk: {shopee_safe or outlet_safe}")
 
-            # Find GoFood Baseline output
+            # ─────────────────────────────────────────────────────────────
+            # 3. GoFood Baseline Output (Selalu cari file GoFood yang tersedia)
+            # ─────────────────────────────────────────────────────────────
             gofood_paths_to_check = []
-            
             o_str_go = "|".join(outlet) if outlet else None
             outlet_safe_go = str(o_str_go or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
             if outlet_safe_go:
                 gofood_paths_to_check.append(os.path.join(laporan_base_dir, "gofood_baseline", date_folder, f"BASELINE_CUSTOM_GOFOOD_{outlet_safe_go}_{start_date}_to_{end_date}.xlsx"))
-                import glob
                 glob_pattern_gf = os.path.join(laporan_base_dir, "gofood_baseline", date_folder, f"BASELINE_CUSTOM_GOFOOD_{outlet_safe_go}*.xlsx")
                 for gp in glob.glob(glob_pattern_gf):
                     if gp not in gofood_paths_to_check:
                         gofood_paths_to_check.append(gp)
 
+            # Case-insensitive search in gofood_baseline
+            for gf_f in glob.glob(os.path.join(laporan_base_dir, "gofood_baseline", date_folder, "BASELINE_CUSTOM_GOFOOD_*.xlsx")):
+                if gf_f not in gofood_paths_to_check and outlet_safe_go.lower() in os.path.basename(gf_f).lower():
+                    gofood_paths_to_check.append(gf_f)
+
             gofood_paths_to_check.append(os.path.join(laporan_base_dir, "gofood_baseline", date_folder, f"BASELINE_GOFOOD_{start_date}_to_{end_date}.xlsx"))
             
             gofood_path = None
-            if "gofood" in platform or platform == "all":
-                for p_check in gofood_paths_to_check:
-                    if os.path.exists(p_check):
-                        gofood_path = p_check
-                        break
+            for p_check in gofood_paths_to_check:
+                if os.path.exists(p_check):
+                    gofood_path = p_check
+                    break
                     
             if gofood_path:
                 print(f"  [INFO] Menemukan file GoFood baseline: {gofood_path}")
                 gf_df = pd.read_excel(gofood_path)
-                
-                # Only filter if it's the general MASTER file.
-                # If it's the custom one, it's already pre-filtered.
                 if outlet and "BASELINE_CUSTOM" not in os.path.basename(gofood_path):
                     o_lower = [str(o).strip().lower() for o in outlet]
                     gf_df = gf_df[gf_df['Merchant'].astype(str).str.strip().str.lower().isin(o_lower)]
                 if not gf_df.empty:
                     frames.append(gf_df)
             else:
-                if "gofood" in platform or platform == "all":
-                    print(f"  [INFO] File GoFood baseline tidak ditemukan untuk: {start_date} s/d {end_date}")
+                print(f"  [INFO] File GoFood baseline tidak ditemukan untuk: {start_date} s/d {end_date}")
                 
             # Delete old merged file if exists to guarantee it is only present if new frames were found
             final_baseline_dir = os.path.join(laporan_base_dir, "baseline", date_folder)
@@ -1500,12 +1611,15 @@ Examples:
 
             if frames:
                 combined_df = pd.concat(frames, ignore_index=True)
+                # Deduplicate by Aplikasi + Merchant if duplicates exist
+                if 'Merchant' in combined_df.columns and 'Aplikasi' in combined_df.columns:
+                    combined_df = combined_df.drop_duplicates(subset=['Aplikasi', 'Merchant'], keep='last')
                 os.makedirs(final_baseline_dir, exist_ok=True)
                 
                 with pd.ExcelWriter(final_path, engine="openpyxl") as writer:
                     combined_df.to_excel(writer, index=False, sheet_name="Baseline Summary")
                     
-                print(f"  {GREEN}✓ File gabungan berhasil dibuat: {final_path}{RESET}")
+                print(f"  {GREEN}✓ File gabungan berhasil dibuat ({len(combined_df)} platform/portal): {final_path}{RESET}")
 
 
                 # ── Generate PDF via Webhook ──
@@ -1514,11 +1628,13 @@ Examples:
                     import requests
                     import io
                     
-                    # Hardcode URL Web App Anda di sini setelah di-deploy
-                    webhook_url = "https://script.google.com/macros/s/AKfycbyx8qalQnSQpvbFwMEZ2KQHN6y_OI_obhuXyRpClNTpECPAf-ZHqpoiymRNiVQjUd3q/exec"
-                    if not webhook_url or "GANTI_DENGAN_URL_ANDA" in webhook_url:
+                    # URL Google Apps Script Web App untuk generate PDF Baseline
+                    primary_webhook_url = os.getenv("BASELINE_PDF_WEBHOOK_URL") or os.getenv("VB_APPS_SCRIPT_URL") or "https://script.google.com/macros/s/AKfycbyx8qalQnSQpvbFwMEZ2KQHN6y_OI_obhuXyRpClNTpECPAf-ZHqpoiymRNiVQjUd3q/exec"
+                    fallback_webhook_url = os.getenv("BASELINE_PDF_WEBHOOK_FALLBACK_URL") or "https://script.google.com/macros/s/AKfycbxvE6DCpbcx-YbRb32noo6QlQhezx1M68NJnhD4h36-j68hL5JY1cPYhGJ95cClscmX/exec"
+                    
+                    if not primary_webhook_url or "GANTI_DENGAN_URL_ANDA" in primary_webhook_url:
                         print(f"  {YELLOW}⚠️ URL Webhook belum di-hardcode di cli.py.{RESET}")
-                        print(f"  {DIM}Silakan deploy apps_script_pdf.js dan masukkan URL-nya ke variabel webhook_url di cli.py{RESET}")
+                        print(f"  {DIM}Silakan deploy apps_script_pdf.js dan masukkan URL-nya ke variabel primary_webhook_url di cli.py{RESET}")
                     else:
                         # 1. Fetch Owner dari Baseline sheet (gid=0)
                         CSV_URL = "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=71044642"
@@ -1606,56 +1722,58 @@ Examples:
                             "total_order": str(round(total_order))
                         }
                         
-                        print(f"  {CYAN}[INFO] Mengirim data agregasi ke Google Apps Script...{RESET}")
-                        res = requests.post(webhook_url, json=payload, timeout=90)
-                        if res.status_code == 200:
-                            try:
-                                data = res.json()
-                            except Exception:
-                                data = {}
-                                print(f"  {YELLOW}⚠️ Respons Apps Script bukan JSON: {res.text[:200]}{RESET}")
-                            if data.get("success"):
-                                pdf_url = data.get('pdf_url', '')
-                                print(f"  {GREEN}✓ PDF berhasil dibuat!{RESET}")
-                                print(f"  {GREEN}  URL: {pdf_url}{RESET}")
-                                
-                                # Print DISCORD_NOTIF_JSON for Node.js bridge/bot
-                                import json
-                                notif_data = {
-                                    "outlet": str(outlet_val),
-                                    "start_date": start_date,
-                                    "end_date": end_date,
-                                    "aplikator": os.environ.get("OFD_APLIKATOR", "Grab + Shopee"),
-                                    "pdf_url": pdf_url,
-                                    "pdf_name": data.get('pdf_name', 'Baseline Report'),
-                                    "omzet_gr": format_rp(omzet_gr),
-                                    "omzet_sf": format_rp(omzet_sf),
-                                    "order_gr": str(round(order_gr)),
-                                    "order_sf": str(round(order_sf)),
-                                    "omzet_go": format_rp(omzet_go),
-                                    "order_go": str(round(order_go))
-                                }
-                                print(f"DISCORD_NOTIF_JSON: {json.dumps(notif_data)}")
+                        data, source_label, elapsed, err_msg = _call_pdf_webhook_hedged(
+                            primary_webhook_url, fallback_webhook_url, payload, hedge_delay=12, timeout=45
+                        )
+                        if data and data.get("success"):
+                            pdf_url = data.get('pdf_url', '')
+                            print(f"  {GREEN}✓ PDF berhasil dibuat via [{source_label}] ({elapsed:.1f}s)!{RESET}")
+                            print(f"  {GREEN}  URL: {pdf_url}{RESET}")
+                            
+                            # Print DISCORD_NOTIF_JSON for Node.js bridge/bot
+                            import json
+                            detected_platforms = []
+                            if grab_mask.any():
+                                detected_platforms.append("GrabFood")
+                            if shopee_mask.any():
+                                detected_platforms.append("ShopeeFood")
+                            if go_mask.any():
+                                detected_platforms.append("GoFood")
+                            active_aplikator = " + ".join(detected_platforms) if detected_platforms else os.environ.get("OFD_APLIKATOR", "Grab + Shopee")
 
-                                # ── Kirim notifikasi PDF ke Discord channel ──
-                                _notify_discord_pdf(
-                                    outlet=str(outlet_val),
-                                    start_date=start_date,
-                                    end_date=end_date,
-                                    aplikator=os.environ.get("OFD_APLIKATOR", "Grab + Shopee"),
-                                    pdf_url=pdf_url,
-                                    pdf_name=data.get('pdf_name', 'Baseline Report'),
-                                    omzet_gr=format_rp(omzet_gr),
-                                    omzet_sf=format_rp(omzet_sf),
-                                    order_gr=str(round(order_gr)),
-                                    order_sf=str(round(order_sf)),
-                                    omzet_go=format_rp(omzet_go),
-                                    order_go=str(round(order_go)),
-                                )
-                            else:
-                                print(f"  {RED}✗ Gagal membuat PDF: {data.get('error')}{RESET}")
+                            notif_data = {
+                                "outlet": str(outlet_val),
+                                "start_date": start_date,
+                                "end_date": end_date,
+                                "aplikator": active_aplikator,
+                                "pdf_url": pdf_url,
+                                "pdf_name": data.get('pdf_name', 'Baseline Report'),
+                                "omzet_gr": format_rp(omzet_gr),
+                                "omzet_sf": format_rp(omzet_sf),
+                                "order_gr": str(round(order_gr)),
+                                "order_sf": str(round(order_sf)),
+                                "omzet_go": format_rp(omzet_go),
+                                "order_go": str(round(order_go))
+                            }
+                            print(f"DISCORD_NOTIF_JSON: {json.dumps(notif_data)}")
+
+                            # ── Kirim notifikasi PDF ke Discord channel ──
+                            _notify_discord_pdf(
+                                outlet=str(outlet_val),
+                                start_date=start_date,
+                                end_date=end_date,
+                                aplikator=active_aplikator,
+                                pdf_url=pdf_url,
+                                pdf_name=data.get('pdf_name', 'Baseline Report'),
+                                omzet_gr=format_rp(omzet_gr),
+                                omzet_sf=format_rp(omzet_sf),
+                                order_gr=str(round(order_gr)),
+                                order_sf=str(round(order_sf)),
+                                omzet_go=format_rp(omzet_go),
+                                order_go=str(round(order_go)),
+                            )
                         else:
-                            print(f"  {RED}✗ Error HTTP {res.status_code} saat menghubungi Webhook{RESET}")
+                            print(f"  {RED}✗ Gagal membuat PDF via Webhook: {err_msg}{RESET}")
                 except Exception as e:
                     print(f"  {RED}✗ Terjadi kesalahan saat memproses Webhook PDF: {e}{RESET}")
             else:

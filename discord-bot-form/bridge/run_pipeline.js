@@ -16,10 +16,20 @@ const http = require('http');
 // ── Path resolver ────────────────────────────────────────────
 // bridge/ berada di: task-weekly/discord-bot-form/bridge/
 // src/    berada di: task-weekly/src/
-// Jadi dari __dirname (bridge/), naik 2 level ke task-weekly/, lalu masuk src/
-const SRC_DIR = path.resolve(__dirname, '..', '..', 'src');
-const VENV_PY = path.join(SRC_DIR, '.venv', 'bin', 'python');
-const PYTHON_EXE = fs.existsSync(VENV_PY) ? VENV_PY : 'python3';
+const ROOT_DIR = path.resolve(__dirname, '..', '..');
+const SRC_DIR = path.join(ROOT_DIR, 'src');
+const CANDIDATE_VENVS = [
+    path.join(ROOT_DIR, '.venv', 'bin', 'python'),
+    path.join(SRC_DIR, '.venv', 'bin', 'python'),
+    path.join(ROOT_DIR, 'venv', 'bin', 'python'),
+];
+let PYTHON_EXE = 'python3';
+for (const venvPath of CANDIDATE_VENVS) {
+    if (fs.existsSync(venvPath)) {
+        PYTHON_EXE = venvPath;
+        break;
+    }
+}
 const CLI_PATH = path.join(SRC_DIR, 'cli.py');
 
 // ── OFD Job Lock ─────────────────────────────────────────────

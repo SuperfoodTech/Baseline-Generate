@@ -19,6 +19,9 @@ import random
 from datetime import datetime
 from pathlib import Path
 
+import urllib3.util.connection as urllib3_cn
+urllib3_cn.HAS_IPV6 = False
+
 import requests
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -708,6 +711,9 @@ def _trigger_and_extract_tokens(driver) -> tuple:
 # ── Driver Initialization ──────────────────────────────────────────────────────
 
 def _init_driver(headless: bool):
+    if not os.environ.get("DISPLAY") or os.environ.get("HEADLESS", "").lower() in ("true", "1", "yes") or os.environ.get("OFD_DISCORD_MODE") == "1":
+        headless = True
+
     options = Options()
     options.add_argument("--log-level=3")
     options.add_argument("--disable-blink-features=AutomationControlled")
@@ -734,6 +740,18 @@ def _init_driver(headless: bool):
         options.add_argument(f"--user-data-dir={profile_dir.resolve()}")
         options.add_argument(f"--profile-directory=profile_{account_name}")
 
+    # 1. System Chromium binary & ChromeDriver detection for Linux / ARM64
+    system_chromium = "/usr/bin/chromium" if os.path.exists("/usr/bin/chromium") else ("/usr/bin/chromium-browser" if os.path.exists("/usr/bin/chromium-browser") else None)
+    system_chromedriver = "/usr/bin/chromedriver" if os.path.exists("/usr/bin/chromedriver") else None
+
+    if system_chromium and not options.binary_location:
+        options.binary_location = system_chromium
+
+    # Memory & stability flags for 24/7 reliability on embedded/server Linux
+    options.add_argument("--disable-software-rasterizer")
+    options.add_argument("--disk-cache-size=10485760")
+    options.add_argument("--js-flags=--max-old-space-size=512")
+
     # Delete SingletonLock if it exists to avoid SessionNotCreatedException on Linux
     singleton_lock = profile_dir / "SingletonLock"
     if singleton_lock.exists() or singleton_lock.is_symlink():
@@ -743,12 +761,25 @@ def _init_driver(headless: bool):
         except Exception as e:
             log.warning(f"⚠️ Failed to remove SingletonLock: {e}")
 
-    try:
-        # Use native Selenium Manager (faster, more stable, avoids ChromeDriverManager network hangs)
-        driver = webdriver.Chrome(options=options)
-    except Exception as e:
-        log.warning(f"⚠️ Native Chrome init failed: {e}. Trying ChromeDriverManager fallback...")
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    driver = None
+    if system_chromedriver:
+        try:
+            driver = webdriver.Chrome(service=Service(system_chromedriver), options=options)
+        except Exception as e:
+            log.warning(f"⚠️ Init with system chromedriver ({system_chromedriver}) failed: {e}")
+
+    if driver is None:
+        try:
+            # Use native Selenium Manager
+            driver = webdriver.Chrome(options=options)
+        except Exception as e:
+            log.warning(f"⚠️ Native Chrome init failed: {e}. Trying ChromeDriverManager fallback...")
+            try:
+                driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+            except Exception as e2:
+                log.error(f"❌ All Chrome driver initialization methods failed: {e2}")
+                raise e2
+
     driver.set_page_load_timeout(60)
     return driver
 

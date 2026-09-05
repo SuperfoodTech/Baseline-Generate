@@ -1,5 +1,9 @@
 import os
 import json
+
+import urllib3.util.connection as urllib3_cn
+urllib3_cn.HAS_IPV6 = False
+
 import requests
 import openpyxl
 import urllib.request
@@ -425,24 +429,28 @@ def get_sheet_entry(mapping, num, current_name=None):
 def ambil_otp_dari_endpoint(url_dasar, action="getOtp", label_email=None):
     """
     Mengambil OTP terbaru dari endpoint Google Apps Script atau langsung dari Google Sheets CSV.
+    Menggunakan requests dengan IPv4 dan timeout cepat.
     """
     if not url_dasar:
         raise ValueError("URL endpoint OTP kosong.")
 
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+
     # Jika URL mengarah langsung ke Google Sheets CSV
     if "docs.google.com/spreadsheets" in url_dasar:
         try:
-            with urlopen(url_dasar, timeout=15) as response:
-                content = response.read().decode("utf-8").strip()
+            resp = requests.get(url_dasar, headers=headers, timeout=(3, 8))
+            if resp.status_code == 200:
+                content = resp.text.strip()
                 lines = content.splitlines()
                 if not lines or len(lines) < 2:
                     return ""
                 reader = csv.reader(lines)
                 rows = list(reader)
-                headers = [h.strip().lower() for h in rows[0]]
+                headers_row = [h.strip().lower() for h in rows[0]]
                 
                 otp_idx = -1
-                for idx, h in enumerate(headers):
+                for idx, h in enumerate(headers_row):
                     if "otp" in h:
                         otp_idx = idx
                         break
@@ -465,11 +473,16 @@ def ambil_otp_dari_endpoint(url_dasar, action="getOtp", label_email=None):
         query_params["label"] = label_email
     url_final = urlunparse(parsed._replace(query=urlencode(query_params)))
 
-    with urlopen(url_final, timeout=15) as response:
-        return response.read().decode("utf-8").strip()
+    try:
+        resp = requests.get(url_final, headers=headers, timeout=(3, 8))
+        if resp.status_code == 200:
+            return resp.text.strip()
+        return ""
+    except Exception as e:
+        return ""
 
 
-def tunggu_otp_terbaru(url_dasar, action="getOtp", label_email=None, interval_detik=3, otp_awal_override=None, timeout_detik=15):
+def tunggu_otp_terbaru(url_dasar, action="getOtp", label_email=None, interval_detik=1.5, otp_awal_override=None, timeout_detik=20):
     """
     Menunggu OTP terbaru yang berbeda dari nilai awal agar tidak memakai OTP sebelumnya.
     otp_awal_override: Jika diisi, gunakan nilai ini sebagai baseline (snapshot sebelum OTP dikirim).
@@ -489,7 +502,7 @@ def tunggu_otp_terbaru(url_dasar, action="getOtp", label_email=None, interval_de
         time.sleep(interval_detik)
         try:
             otp_baru = ambil_otp_dari_endpoint(url_dasar, action=action, label_email=label_email)
-            if otp_baru and otp_baru != otp_awal:
+            if otp_baru and otp_baru != otp_awal and otp_baru.isdigit() and len(otp_baru) in (4, 6):
                 return otp_baru
         except Exception:
             pass
@@ -557,7 +570,12 @@ def login_outlet_gofood_flow(outlet_info):
             args=[
                 '--disable-blink-features=AutomationControlled',
                 '--disable-infobars',
-                '--no-sandbox'
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--disable-software-rasterizer',
+                '--disk-cache-size=10485760'
             ]
         )
         context = browser.new_context(
@@ -587,13 +605,13 @@ def login_outlet_gofood_flow(outlet_info):
                 page = context.new_page()
                 if current_email:
                     console.print(f"\n   ➡️ [Email: {current_email}] Membuka halaman login email langsung... (Percobaan {attempt + 1}/{max_login_attempts})")
-                    page.goto("https://portal.gofoodmerchant.co.id/auth/login/email", wait_until="load")
+                    page.goto("https://portal.gofoodmerchant.co.id/auth/login/email", wait_until="domcontentloaded")
                 else:
                     console.print(f"\n   ➡️ Membuka halaman login... (Percobaan {attempt + 1}/{max_login_attempts})")
-                    page.goto("https://portal.gofoodmerchant.co.id/auth/login", wait_until="load")
+                    page.goto("https://portal.gofoodmerchant.co.id/auth/login", wait_until="domcontentloaded")
 
                 # Langsung input ke email field, abaikan cookie & pop-up
-                time.sleep(1.0)
+                time.sleep(0.5)
                 
                 otp_failed_timeout = False
                 is_banned = False
@@ -604,7 +622,7 @@ def login_outlet_gofood_flow(outlet_info):
                 action_type = "getOtpEmail" if current_email else "getOtp"
                 otp_snapshot_awal = ""
 
-                # --- STEP 4: Ketik email secara human-like ---
+                # --- STEP 4: Ketik email ---
                 if current_email:
                     try:
                         email_input = page.wait_for_selector(
@@ -613,20 +631,15 @@ def login_outlet_gofood_flow(outlet_info):
                         )
                         if email_input:
                             email_input.click()
+                            email_input.fill(current_email)
                             time.sleep(0.3)
-                            email_input.focus()
-                            time.sleep(0.3)
-                            for char in current_email:
-                                email_input.type(char, delay=0)
-                                time.sleep(random.uniform(0.05, 0.15))
-                            time.sleep(0.5)
 
                             submit_btn = page.locator('button:has-text("Lanjut"), button:has-text("Submit"), button:has-text("Masuk"), button[type="submit"]')
                             if submit_btn.count() > 0:
                                 submit_btn.first.click()
                             else:
                                 email_input.press("Enter")
-                            time.sleep(3)
+                            time.sleep(1.5)
 
                             # --- Pre-snapshot OTP sebelum tombol OTP diklik ---
                             if otp_endpoint:
@@ -704,8 +717,8 @@ def login_outlet_gofood_flow(outlet_info):
                                             otp_fields = page.locator(otp_input_selector).all()
                                             if len(otp_fields) > 0:
                                                 otp_fields[0].focus()
-                                                time.sleep(0.5)
-                                                otp_fields[0].type(otp_code, delay=300)
+                                                time.sleep(0.2)
+                                                otp_fields[0].type(otp_code, delay=50)
                                                 console.print("   [success]✅ OTP berhasil diisi otomatis.[/success]")
                                                 
                                                 # Coba klik tombol submit/konfirmasi/masuk OTP
@@ -1979,11 +1992,11 @@ if __name__ == "__main__":
                 if store_id == "None" or store_id == "NaN":
                     store_id = ""
 
-        # Check token validity (TEMPORARILY DISABLED TO FORCE LOGIN FLOW)
+        # Check token validity
         token_valid = False
-        # if token:
-        #     os.environ['BEARER_TOKEN'] = token
-        #     token_valid = ambil_data_dashboard()
+        if token:
+            os.environ['BEARER_TOKEN'] = token
+            token_valid = ambil_data_dashboard()
 
         if not token_valid:
             console.print(f"[warning]⚠️ Sesi tidak valid/kosong untuk {nama_outlet} ({phone}). Melakukan login otomatis...[/warning]")

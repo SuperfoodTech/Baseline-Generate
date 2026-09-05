@@ -33,31 +33,56 @@ log = get_logger("omzet_pipeline")
 ENABLE_GSHEETS_PUSH = False   # Set ke True untuk mengizinkan unggah ke Google Sheets
 ENABLE_POSTGRES_PUSH = False  # Set ke True untuk mengizinkan unggah ke PostgreSQL (Tabel Gajah)
 
+import urllib3.util.connection as urllib3_cn
+urllib3_cn.HAS_IPV6 = False
+
 def robust_read_csv(path_or_url, expected_cols=None, **kwargs):
     """
     Reads a CSV file or URL robustly.
     1. Normalizes all column headers to lowercase and strips whitespace.
     2. Gracefully handles unquoted commas by parsing line-by-line and merging extra columns.
+    3. Caches HTTP/HTTPS downloads locally for offline/network-fault fallback.
     """
     import csv
     import io
     import pandas as pd
     import requests
 
+    cache_dir = Path(__file__).resolve().parent / "data"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_dir / "master_merchants_cache.csv"
+
     content = ""
-    try:
-        if isinstance(path_or_url, str) and (path_or_url.startswith("http://") or path_or_url.startswith("https://")):
+    is_remote = isinstance(path_or_url, str) and (path_or_url.startswith("http://") or path_or_url.startswith("https://"))
+    if is_remote:
+        try:
             import time
             cache_buster = f"&t={int(time.time())}" if "?" in path_or_url else f"?t={int(time.time())}"
-            resp = requests.get(path_or_url + cache_buster, timeout=30)
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            resp = requests.get(path_or_url + cache_buster, headers=headers, timeout=(5, 15))
             resp.raise_for_status()
             content = resp.text
-        else:
+            try:
+                cache_file.write_text(content, encoding="utf-8")
+            except Exception as ce:
+                log.warning(f"⚠️ Failed to update local cache: {ce}")
+        except Exception as e:
+            log.warning(f"⚠️ Failed to read remote source {path_or_url}: {e}. Checking local cache...")
+            if cache_file.exists():
+                log.info(f"📂 [CACHE] Loading fallback merchant data from {cache_file}")
+                content = cache_file.read_text(encoding="utf-8", errors="replace")
+            else:
+                log.error(f"❌ Failed to read remote source and no local cache exists.")
+                raise e
+    else:
+        try:
             with open(path_or_url, "r", encoding="utf-8", errors="replace") as f:
                 content = f.read()
-    except Exception as e:
-        log.error(f"Failed to read source {path_or_url}: {e}")
-        raise e
+        except Exception as e:
+            log.error(f"Failed to read local file {path_or_url}: {e}")
+            raise e
 
     try:
         df = pd.read_csv(io.StringIO(content), **kwargs)
@@ -119,9 +144,11 @@ def resolve_bd_to_names_and_usernames(bd_filter, max_age_hours=24):
     
     creds_cache = "data/shopee_credentials_cache.csv"
     creds_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYSUnKOqk29LCktTxdb0wPLbWMbRaWRP3eC_UA4AwYod1FW6zDMhtLMC5ghIvot2B8upCDfBsn-TCP/pub?gid=565510790&single=true&output=csv"
+    os.makedirs("data", exist_ok=True)
     
     try:
-        resp = requests.get(creds_url, timeout=10)
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+        resp = requests.get(creds_url, headers=headers, timeout=(5, 15))
         resp.raise_for_status()
         with open(creds_cache, "w", encoding="utf-8") as f:
             f.write(resp.text)
@@ -673,7 +700,7 @@ def run_pipeline():
     except Exception:
         pass
 
-    if os.environ.get("HEADLESS") == "true":
+    if not os.environ.get("DISPLAY") or os.environ.get("HEADLESS", "").lower() in ("true", "1", "yes") or os.environ.get("OFD_DISCORD_MODE") == "1":
         headless = True
 
     # ── 1. Determine Merchants to Process (Data-Driven via G-Sheets) ────

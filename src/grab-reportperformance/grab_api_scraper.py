@@ -5,6 +5,10 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 import pandas as pd
+
+import urllib3.util.connection as urllib3_cn
+urllib3_cn.HAS_IPV6 = False
+
 from playwright.async_api import async_playwright
 from dotenv import load_dotenv
 
@@ -708,6 +712,12 @@ async def run_api_download_for_portal(user, pwd, start_date: str = None, end_dat
                     managed_browser = await p_inst.chromium.launch(
                         headless=headless_env,
                         args=[
+                            "--no-sandbox",
+                            "--disable-setuid-sandbox",
+                            "--disable-dev-shm-usage",
+                            "--disable-gpu",
+                            "--disable-software-rasterizer",
+                            "--disk-cache-size=10485760",
                             "--disable-extensions",
                             "--disable-component-update"
                         ]

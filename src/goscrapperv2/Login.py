@@ -2,6 +2,10 @@ import os
 import json
 import csv
 from dotenv import load_dotenv, set_key
+
+import urllib3.util.connection as urllib3_cn
+urllib3_cn.HAS_IPV6 = False
+
 from playwright.sync_api import sync_playwright
 import re
 import time
@@ -189,7 +193,12 @@ def login_dan_ambil_sesi(nomor_hp, nama_resto_final="", mode_otp="manual", otp_e
             args=[
                 '--disable-blink-features=AutomationControlled',
                 '--disable-infobars',
-                '--no-sandbox'
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--disable-software-rasterizer',
+                '--disk-cache-size=10485760'
             ]
         )
         use_proxy = os.getenv("USE_PROXY", "false").lower() in ("true", "1", "yes")

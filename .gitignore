@@ -110,8 +110,6 @@ src/gofood-automation/
 !src/VB/shopee/sessions/
 !src/VB/shopee/sessions/*.json
 
-!src/shopee-omzet-automation/data/chrome_profile_auto73*/
-!src/shopee-omzet-automation/data/chrome_profile_auto73*/**
 !src/shopee-omzet-automation/data/session_auto73*.json
 .git_backup
 
