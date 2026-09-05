@@ -565,18 +565,29 @@ def run_grab_baseline(start_date: str, end_date: str, user_filter: str = None, o
 
     output_dir = _resolve_output_dir("grab_baseline", start_date, end_date)
 
-    # Clear directory to avoid leftover files from previous runs
+    # Clear existing outlet-specific files to avoid leftover files from previous failed runs
     if os.path.isdir(output_dir):
-        import shutil
-        for filename in os.listdir(output_dir):
-            file_path = os.path.join(output_dir, filename)
-            try:
-                if os.path.isfile(file_path) or os.path.islink(file_path):
-                    os.unlink(file_path)
-                elif os.path.isdir(file_path):
-                    shutil.rmtree(file_path)
-            except Exception as e:
-                print(f"Failed to delete {file_path}: {e}")
+        if outlet_filter:
+            o_clean = str(outlet_filter).strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
+            for filename in os.listdir(output_dir):
+                if o_clean.lower() in filename.lower() or filename == "partial_failures.json":
+                    file_path = os.path.join(output_dir, filename)
+                    try:
+                        if os.path.isfile(file_path) or os.path.islink(file_path):
+                            os.unlink(file_path)
+                    except Exception as e:
+                        print(f"Failed to delete {file_path}: {e}")
+        else:
+            import shutil
+            for filename in os.listdir(output_dir):
+                file_path = os.path.join(output_dir, filename)
+                try:
+                    if os.path.isfile(file_path) or os.path.islink(file_path):
+                        os.unlink(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+                except Exception as e:
+                    print(f"Failed to delete {file_path}: {e}")
 
     import subprocess
     
@@ -667,18 +678,32 @@ def run_shopee_baseline(start_date: str, end_date: str, merchant_filter: str = N
 
     output_dir = _resolve_output_dir("shopee_baseline", start_date, end_date)
 
-    # Clear directory to avoid leftover files from previous runs
+    # Clear existing merchant/outlet-specific files to avoid leftover files from previous failed runs
     if os.path.isdir(output_dir):
-        import shutil
-        for filename in os.listdir(output_dir):
-            file_path = os.path.join(output_dir, filename)
-            try:
-                if os.path.isfile(file_path) or os.path.islink(file_path):
-                    os.unlink(file_path)
-                elif os.path.isdir(file_path):
-                    shutil.rmtree(file_path)
-            except Exception as e:
-                print(f"Failed to delete {file_path}: {e}")
+        targets_clean = []
+        if merchant_filter:
+            targets_clean.extend([x.strip().replace(" ", "_").replace("/", "_").replace("\\", "_") for x in str(merchant_filter).split("|") if x.strip()])
+        if targets_clean:
+            for filename in os.listdir(output_dir):
+                f_lower = filename.lower()
+                if any(tc.lower() in f_lower for tc in targets_clean) or filename == "partial_failures.json":
+                    file_path = os.path.join(output_dir, filename)
+                    try:
+                        if os.path.isfile(file_path) or os.path.islink(file_path):
+                            os.unlink(file_path)
+                    except Exception as e:
+                        print(f"Failed to delete {file_path}: {e}")
+        else:
+            import shutil
+            for filename in os.listdir(output_dir):
+                file_path = os.path.join(output_dir, filename)
+                try:
+                    if os.path.isfile(file_path) or os.path.islink(file_path):
+                        os.unlink(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+                except Exception as e:
+                    print(f"Failed to delete {file_path}: {e}")
 
     import subprocess
     
@@ -769,18 +794,29 @@ def run_gofood(start_date: str, end_date: str, outlet_filter: str = None, branch
     else:
         output_dir = _resolve_output_dir("gofood", start_date, end_date)
 
-    # Clear directory to avoid leftover files from previous runs
+    # Clear existing outlet-specific files to avoid leftover files from previous failed runs
     if os.path.isdir(output_dir):
-        import shutil
-        for filename in os.listdir(output_dir):
-            file_path = os.path.join(output_dir, filename)
-            try:
-                if os.path.isfile(file_path) or os.path.islink(file_path):
-                    os.unlink(file_path)
-                elif os.path.isdir(file_path):
-                    shutil.rmtree(file_path)
-            except Exception as e:
-                print(f"Failed to delete {file_path}: {e}")
+        if outlet_filter:
+            o_clean = str(outlet_filter).strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
+            for filename in os.listdir(output_dir):
+                if o_clean.lower() in filename.lower() or filename == "partial_failures.json":
+                    file_path = os.path.join(output_dir, filename)
+                    try:
+                        if os.path.isfile(file_path) or os.path.islink(file_path):
+                            os.unlink(file_path)
+                    except Exception as e:
+                        print(f"Failed to delete {file_path}: {e}")
+        else:
+            import shutil
+            for filename in os.listdir(output_dir):
+                file_path = os.path.join(output_dir, filename)
+                try:
+                    if os.path.isfile(file_path) or os.path.islink(file_path):
+                        os.unlink(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+                except Exception as e:
+                    print(f"Failed to delete {file_path}: {e}")
 
     import subprocess
     
