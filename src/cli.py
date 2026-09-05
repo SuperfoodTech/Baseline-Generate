@@ -325,6 +325,143 @@ def _resolve_shopee_merchant(outlet_name: str, branch_name: str = None, task_cho
     return outlet_name
 
 
+def _is_valid_baseline_available(platform_name: str, outlet, branch, shopee_merchant, start_date: str, end_date: str) -> bool:
+    """
+    Check if a valid, non-empty, and non-zero baseline Excel file already exists
+    for the given platform, outlet, and date range.
+    """
+    try:
+        import pandas as pd
+        import glob
+        
+        date_folder = f"{start_date}_to_{end_date}"
+        if os.name == "nt":
+            laporan_base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "laporan")
+        else:
+            laporan_base_dir = "/mnt/volume_web_scraping/baseline"
+            
+        o_str = "|".join(outlet) if isinstance(outlet, (list, tuple)) else (str(outlet) if outlet else None)
+        b_str = "|".join(branch) if isinstance(branch, (list, tuple)) else (str(branch) if branch else None)
+        outlet_safe = str(o_str or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
+        
+        if platform_name == "grab":
+            grab_paths = []
+            if b_str:
+                branch_safe = str(b_str).strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
+                filename_prefix = f"BASELINE_CUSTOM_{outlet_safe}_{branch_safe}"
+            else:
+                filename_prefix = f"BASELINE_CUSTOM_{outlet_safe}_"
+                
+            if len(filename_prefix) > 50:
+                filename_prefix = "BASELINE_CUSTOM_MULTIPLE_OUTLETS"
+                
+            grab_paths.append(os.path.join(laporan_base_dir, "grab_baseline", date_folder, f"{filename_prefix}.xlsx"))
+            for gp in glob.glob(os.path.join(laporan_base_dir, "grab_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}*.xlsx")):
+                if gp not in grab_paths: grab_paths.append(gp)
+            for gr_f in glob.glob(os.path.join(laporan_base_dir, "grab_baseline", date_folder, "BASELINE_CUSTOM_*.xlsx")):
+                if gr_f not in grab_paths and outlet_safe.lower() in os.path.basename(gr_f).lower():
+                    grab_paths.append(gr_f)
+            grab_paths.append(os.path.join(laporan_base_dir, "grab_baseline", date_folder, "BASELINE_MASTER.xlsx"))
+            
+            for p in grab_paths:
+                if os.path.exists(p) and os.path.getsize(p) > 100:
+                    try:
+                        df = pd.read_excel(p)
+                        if "BASELINE_MASTER" in os.path.basename(p) and outlet:
+                            o_lower = [str(o).strip().lower() for o in (outlet if isinstance(outlet, (list, tuple)) else [outlet])]
+                            if 'Nama Outlet' in df.columns:
+                                df = df[df['Nama Outlet'].astype(str).str.strip().str.lower().isin(o_lower)]
+                            elif 'Merchant' in df.columns:
+                                df = df[df['Merchant'].astype(str).str.strip().str.lower().isin(o_lower)]
+                        if not df.empty:
+                            omzet_cols = [c for c in df.columns if c.startswith("Omzet Bulan ke-") or c == "Rata-rata Omzet"]
+                            order_cols = [c for c in df.columns if c.startswith("Order Bulan ke-") or c == "Rata-rata Order"]
+                            tot_omzet = df[omzet_cols].apply(pd.to_numeric, errors="coerce").fillna(0).sum().sum() if omzet_cols else 0
+                            tot_order = df[order_cols].apply(pd.to_numeric, errors="coerce").fillna(0).sum().sum() if order_cols else 0
+                            if tot_omzet > 0 or tot_order > 0:
+                                return True
+                    except Exception:
+                        pass
+            return False
+
+        elif platform_name == "shopee":
+            if not shopee_merchant and outlet:
+                shopee_merchant = _resolve_shopee_merchant(outlet, branch_name=branch, task_choice="1")
+            if isinstance(shopee_merchant, str):
+                shopee_merchant = [shopee_merchant]
+                
+            shopee_paths = []
+            m_str = "|".join(shopee_merchant) if shopee_merchant else None
+            shopee_safe = str(m_str or "").strip().replace(" ", "_").replace("/", "_").replace("\\", "_").replace("|", "_")
+            if len(shopee_safe) > 50:
+                shopee_safe = "MULTIPLE_MERCHANTS"
+            if shopee_safe:
+                shopee_paths.append(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}.xlsx"))
+                shopee_paths.append(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}_.xlsx"))
+                for gp in glob.glob(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{shopee_safe}*.xlsx")):
+                    if gp not in shopee_paths: shopee_paths.append(gp)
+            for gp in glob.glob(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, f"BASELINE_CUSTOM_{outlet_safe}*.xlsx")):
+                if gp not in shopee_paths: shopee_paths.append(gp)
+            for sf_f in glob.glob(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, "BASELINE_CUSTOM_*.xlsx")):
+                if sf_f not in shopee_paths:
+                    f_lower = os.path.basename(sf_f).lower()
+                    if outlet_safe.lower() in f_lower or (shopee_safe and shopee_safe.lower() in f_lower):
+                        shopee_paths.append(sf_f)
+            shopee_paths.append(os.path.join(laporan_base_dir, "shopee_baseline", date_folder, "BASELINE_MASTER_SHOPEE.xlsx"))
+            
+            for p in shopee_paths:
+                if os.path.exists(p) and os.path.getsize(p) > 100:
+                    try:
+                        df = pd.read_excel(p)
+                        if "BASELINE_MASTER_SHOPEE" in p and (shopee_merchant or outlet):
+                            targets = [str(m).strip().lower() for m in (shopee_merchant or [])] + [str(o).strip().lower() for o in (outlet if isinstance(outlet, (list, tuple)) else [outlet] if outlet else [])]
+                            df = df[df['Merchant'].astype(str).str.strip().str.rstrip('_').str.strip().str.lower().isin(targets)]
+                        if not df.empty:
+                            omzet_cols = [c for c in df.columns if c.startswith("Omzet Bulan ke-") or c == "Rata-rata Omzet"]
+                            order_cols = [c for c in df.columns if c.startswith("Order Bulan ke-") or c == "Rata-rata Order"]
+                            tot_omzet = df[omzet_cols].apply(pd.to_numeric, errors="coerce").fillna(0).sum().sum() if omzet_cols else 0
+                            tot_order = df[order_cols].apply(pd.to_numeric, errors="coerce").fillna(0).sum().sum() if order_cols else 0
+                            if tot_omzet > 0 or tot_order > 0:
+                                return True
+                    except Exception:
+                        pass
+            return False
+
+        elif platform_name == "gofood":
+            gofood_paths = []
+            if outlet_safe:
+                gofood_paths.append(os.path.join(laporan_base_dir, "gofood_baseline", date_folder, f"BASELINE_CUSTOM_GOFOOD_{outlet_safe}_{start_date}_to_{end_date}.xlsx"))
+                for gp in glob.glob(os.path.join(laporan_base_dir, "gofood_baseline", date_folder, f"BASELINE_CUSTOM_GOFOOD_{outlet_safe}*.xlsx")):
+                    if gp not in gofood_paths: gofood_paths.append(gp)
+            for gf_f in glob.glob(os.path.join(laporan_base_dir, "gofood_baseline", date_folder, "BASELINE_CUSTOM_GOFOOD_*.xlsx")):
+                if gf_f not in gofood_paths and outlet_safe.lower() in os.path.basename(gf_f).lower():
+                    gofood_paths.append(gf_f)
+            gofood_paths.append(os.path.join(laporan_base_dir, "gofood_baseline", date_folder, f"BASELINE_GOFOOD_{start_date}_to_{end_date}.xlsx"))
+            
+            for p in gofood_paths:
+                if os.path.exists(p) and os.path.getsize(p) > 100:
+                    try:
+                        df = pd.read_excel(p)
+                        if outlet and "BASELINE_CUSTOM" not in os.path.basename(p):
+                            o_lower = [str(o).strip().lower() for o in (outlet if isinstance(outlet, (list, tuple)) else [outlet])]
+                            df = df[df['Merchant'].astype(str).str.strip().str.lower().isin(o_lower)]
+                        if not df.empty:
+                            omzet_cols = [c for c in df.columns if c.startswith("Omzet Bulan ke-") or c == "Rata-rata Omzet"]
+                            order_cols = [c for c in df.columns if c.startswith("Order Bulan ke-") or c == "Rata-rata Order"]
+                            tot_omzet = df[omzet_cols].apply(pd.to_numeric, errors="coerce").fillna(0).sum().sum() if omzet_cols else 0
+                            tot_order = df[order_cols].apply(pd.to_numeric, errors="coerce").fillna(0).sum().sum() if order_cols else 0
+                            if tot_omzet > 0 or tot_order > 0:
+                                return True
+                    except Exception:
+                        pass
+            return False
+
+    except Exception as e:
+        print(f"  [WARN] Gagal memeriksa ketersediaan file baseline {platform_name}: {e}")
+        return False
+    return False
+
+
 # ── Runners ────────────────────────────────────────────────────────────
 
 def run_grab(start_date: str, end_date: str, user_filter: str = None, outlet_filter: str = None, branch_filter: str = None):
@@ -1320,6 +1457,7 @@ Examples:
     parser.add_argument("--bd", type=str, default=None, help="Filter specific BD name (Shopee Baseline)")
     parser.add_argument("--headless", type=str, choices=["true", "false", "1", "0", "yes", "no"], default=None, help="Set headless mode (true/false)")
     parser.add_argument("--no-sheet", action="store_true", help="Nonaktifkan pengiriman data ke Google Sheets (GoFood)")
+    parser.add_argument("--clear-cache", "--force-scrape", action="store_true", help="Paksa scrape ulang data meskipun file baseline sudah ada")
 
     args = parser.parse_args()
 
@@ -1405,12 +1543,22 @@ Examples:
     results = {}
     start_time = datetime.now()
 
+    is_rerun = os.environ.get("OFD_IS_RERUN", "0") in ("1", "true", "yes")
+    force_scrape = getattr(args, "clear_cache", False) or os.environ.get("OFD_FORCE_SCRAPE", "0") in ("1", "true", "yes")
+
     if "grab" in platform or platform == "all":
         o_str = "|".join(outlet) if outlet else None
         b_str = "|".join(branch) if branch else None
         name_key = "Grab"
         if task_choice == "1":
-            results[name_key] = run_grab_baseline(start_date, end_date, user_filter=args.user, outlet_filter=o_str, branch_filter=b_str)
+            # For Task 1 (Baseline): check if valid baseline data already exists (unless force_scrape or explicitly re-running grab)
+            is_target_rerun = is_rerun and ("grab" in platform or platform == "all")
+            if not force_scrape and not is_target_rerun and _is_valid_baseline_available("grab", outlet, branch, None, start_date, end_date):
+                print(f"\n{GREEN}{BOLD}▶ GRAB BASELINE PIPELINE{RESET}")
+                print(f"  {GREEN}⚡ [CACHE HIT] Data Grab baseline untuk '{o_str or 'Semua Outlet'}' sudah tersedia dan valid ({start_date} s/d {end_date}). Melewati proses scraping Grab.{RESET}")
+                results[name_key] = True
+            else:
+                results[name_key] = run_grab_baseline(start_date, end_date, user_filter=args.user, outlet_filter=o_str, branch_filter=b_str)
         elif task_choice == "3":
             results[name_key] = run_grab_vb(start_date, end_date, user_filter=args.user, outlet_filter=o_str, branch_filter=b_str)
         else:
@@ -1425,7 +1573,13 @@ Examples:
             m_str = "|".join(shopee_merchant) if shopee_merchant else None
             name_key = "Shopee"
             if task_choice == "1":
-                results[name_key] = run_shopee_baseline(start_date, end_date, merchant_filter=m_str, bd_filter=args.bd or bd or selected_bd)
+                is_target_rerun = is_rerun and ("shopee" in platform or platform == "all")
+                if not force_scrape and not is_target_rerun and _is_valid_baseline_available("shopee", outlet, branch, shopee_merchant, start_date, end_date):
+                    print(f"\n{MAGENTA}{BOLD}▶ SHOPEE BASELINE PIPELINE{RESET}")
+                    print(f"  {GREEN}⚡ [CACHE HIT] Data Shopee baseline untuk '{m_str or o_str or 'Semua Merchant'}' sudah tersedia dan valid ({start_date} s/d {end_date}). Melewati proses scraping Shopee.{RESET}")
+                    results[name_key] = True
+                else:
+                    results[name_key] = run_shopee_baseline(start_date, end_date, merchant_filter=m_str, bd_filter=args.bd or bd or selected_bd)
             elif task_choice == "2":
                 results[name_key] = run_shopee(start_date, end_date, merchant_filter=m_str)
 
@@ -1435,7 +1589,16 @@ Examples:
         for o in outlets_to_run:
             for b in branches_to_run:
                 name_key = f"GoFood_{o}_{b}" if o and b else (f"GoFood_{o}" if o else "GoFood")
-                results[name_key] = run_gofood(start_date, end_date, outlet_filter=o, branch_filter=b, task_choice=task_choice, no_sheet=no_sheet)
+                if task_choice == "1":
+                    is_target_rerun = is_rerun and ("gofood" in platform or "go" in platform or platform == "all")
+                    if not force_scrape and not is_target_rerun and _is_valid_baseline_available("gofood", [o] if o else outlet, [b] if b else branch, None, start_date, end_date):
+                        print(f"\n{YELLOW}{BOLD}▶ GOFOOD AUTO LOGIN & SCRAPE PIPELINE{RESET}")
+                        print(f"  {GREEN}⚡ [CACHE HIT] Data GoFood baseline untuk '{o or 'Semua Outlet'}' sudah tersedia dan valid ({start_date} s/d {end_date}). Melewati proses scraping GoFood.{RESET}")
+                        results[name_key] = True
+                    else:
+                        results[name_key] = run_gofood(start_date, end_date, outlet_filter=o, branch_filter=b, task_choice=task_choice, no_sheet=no_sheet)
+                else:
+                    results[name_key] = run_gofood(start_date, end_date, outlet_filter=o, branch_filter=b, task_choice=task_choice, no_sheet=no_sheet)
 
     # ── Summary ──
     elapsed = datetime.now() - start_time
