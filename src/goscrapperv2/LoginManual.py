@@ -309,8 +309,13 @@ def login_outlet(outlet_info, proxy_config=None):
                     if otp_endpoint:
                         try:
                             print("   🤖 Menunggu field OTP muncul...")
-                            otp_input_selector = 'input[autocomplete="one-time-code"], input[aria-label*="digit" i], div[class*="otp" i] input, input[name*="otp" i], input[maxlength="1"]'
-                            page.locator(otp_input_selector).first.wait_for(state="visible", timeout=15000)
+                            otp_input_selector = '#auth-otp-input, input[name="otp"]:not(#vendor-search-handler), input[autocomplete="one-time-code"]:not(#vendor-search-handler), input[aria-label*="digit" i]:not(#vendor-search-handler), input[maxlength="1"]:not(#vendor-search-handler)'
+                            start_w = time.time()
+                            while time.time() - start_w < 15:
+                                all_otp = page.locator(otp_input_selector).all()
+                                if any(f.is_visible() for f in all_otp):
+                                    break
+                                time.sleep(1)
                             time.sleep(2)
                             
                             print("   🤖 Mengambil OTP terbaru dari endpoint...")
@@ -325,12 +330,22 @@ def login_outlet(outlet_info, proxy_config=None):
                                 
                             if otp_code:
                                 print(f"   🤖 OTP didapat: {otp_code}. Memasukkan OTP...")
-                                otp_fields = page.locator(otp_input_selector).all()
-                                if len(otp_fields) > 0:
+                                raw_otp = page.locator(otp_input_selector).all()
+                                otp_fields = [f for f in raw_otp if f.is_visible()]
+                                if len(otp_fields) == 1:
                                     otp_fields[0].focus()
-                                    time.sleep(0.5)
-                                    otp_fields[0].type(otp_code, delay=300)
+                                    time.sleep(0.3)
+                                    otp_fields[0].fill(otp_code)
+                                    time.sleep(0.3)
                                     print("   ✅ OTP berhasil diisi otomatis.")
+                                elif len(otp_fields) > 1:
+                                    for idx, digit in enumerate(otp_code[:len(otp_fields)]):
+                                        otp_fields[idx].focus()
+                                        otp_fields[idx].fill(digit)
+                                        time.sleep(0.1)
+                                    print("   ✅ OTP multi-field berhasil diisi otomatis.")
+                                else:
+                                    print("   ⚠️ Tidak ada field OTP yang tampak untuk diisi.")
                                     
                                     # Coba klik tombol submit/konfirmasi/masuk OTP
                                     time.sleep(1)

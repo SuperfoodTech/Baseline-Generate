@@ -53,7 +53,15 @@ console = Console(theme=custom_theme)
 START_TIME_TOTAL = time.time()
 
 # Master credential Google Sheet — source of truth for ALL scrapers
-SHEET_PUBLISHED_URL = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=0"
+DEFAULT_SHEET_PUBLISHED_URL = (
+    "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4"
+    "/pub?output=csv"
+)
+DEFAULT_CSV_URL_BASELINE = (
+    "https://docs.google.com/spreadsheets/d/e/2PACX-1vTprbPPf_J5gAVL3PYeHbbdl5ZXQvb17HY2lJGPI2xg13Ly3AGT8eYHLYmU_m1NdtkBVg-qUGv1BoEE"
+    "/pub?gid=71044642&single=true&output=csv"
+)
+SHEET_PUBLISHED_URL = os.getenv("CSV_URL_MAIN", os.getenv("SHEET_PUBLISHED_URL", DEFAULT_SHEET_PUBLISHED_URL))
 
 
 def to_csv_url(url):
@@ -93,7 +101,7 @@ def fetch_gofood_accounts_from_sheet(task="2"):
     """
     url = SHEET_PUBLISHED_URL
     if task == "1":
-        url = "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=71044642"
+        url = os.getenv("CSV_URL_BASELINE", DEFAULT_CSV_URL_BASELINE)
     
     url += f"&t={int(time.time())}"
 
@@ -584,6 +592,25 @@ def login_outlet_gofood_flow(outlet_info):
             proxy=proxy_config
         )
 
+        # Suntikkan skrip stealth agar mode headless tidak terdeteksi sebagai bot oleh sistem auth Gojek
+        context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            window.chrome = {
+                runtime: {},
+                loadTimes: function() {},
+                csi: function() {},
+                app: {}
+            };
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5]
+            });
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['id-ID', 'id', 'en-US', 'en']
+            });
+        """)
+
         import random
         
         access_token = None
@@ -622,11 +649,29 @@ def login_outlet_gofood_flow(outlet_info):
                 action_type = "getOtpEmail" if current_email else "getOtp"
                 otp_snapshot_awal = ""
 
+                # Tutup cookie banner jika ada agar tidak menutupi elemen
+                try:
+                    cookie_btn = page.locator('button:has-text("Terima Semua Cookie"), button#onetrust-accept-btn-handler').first
+                    if cookie_btn.count() > 0 and cookie_btn.is_visible():
+                        cookie_btn.click()
+                        time.sleep(0.3)
+                except Exception:
+                    pass
+
                 # --- STEP 4: Ketik email ---
                 if current_email:
                     try:
+                        # Jika halaman terbuka di mode Nomor HP, klik "Masuk dengan email"
+                        try:
+                            btn_switch_email = page.locator('button:has-text("Masuk dengan email"), a:has-text("Masuk dengan email")').first
+                            if btn_switch_email.count() > 0 and btn_switch_email.is_visible():
+                                btn_switch_email.click()
+                                time.sleep(1)
+                        except Exception:
+                            pass
+
                         email_input = page.wait_for_selector(
-                            'input[type="email"], input[name="email"], input[placeholder*="email" i], input[placeholder*="Email" i], input[type="text"]',
+                            'input[type="email"], input[name="email"], input[placeholder*="email" i], input[placeholder*="Email" i]',
                             timeout=15000
                         )
                         if email_input:
@@ -634,42 +679,51 @@ def login_outlet_gofood_flow(outlet_info):
                             email_input.fill(current_email)
                             time.sleep(0.3)
 
-                            submit_btn = page.locator('button:has-text("Lanjut"), button:has-text("Submit"), button:has-text("Masuk"), button[type="submit"]')
-                            if submit_btn.count() > 0:
-                                submit_btn.first.click()
+                            submit_btn = page.locator('button:has-text("Lanjut"), button:has-text("Submit"), button:has-text("Masuk"), button[type="submit"]').first
+                            if submit_btn.count() > 0 and submit_btn.is_visible() and submit_btn.is_enabled():
+                                submit_btn.click()
                             else:
                                 email_input.press("Enter")
-                            time.sleep(1.5)
+                            time.sleep(1.0)
 
-                            # --- Pre-snapshot OTP sebelum tombol OTP diklik ---
-                            if otp_endpoint:
-                                try:
-                                    otp_snapshot_awal = ambil_otp_dari_endpoint(otp_endpoint, action=action_type, label_email=label_email_cfg)
-                                    console.print(f"   [info]📸 Snapshot OTP awal: '{otp_snapshot_awal or '(kosong)'}' (sebelum OTP dikirim)[/info]")
-                                except Exception:
-                                    otp_snapshot_awal = ""
-
-                            # Jika ada halaman pilihan login (password/OTP)
+                            # Tunggu tombol "Masuk dengan OTP" muncul di layar pilihan login (password/OTP)
                             try:
                                 btn_otp = page.locator('button:has-text("Masuk dengan OTP"), a:has-text("Masuk dengan OTP")').first
-                                if btn_otp.count() > 0 and btn_otp.is_visible():
-                                    btn_otp.click()
-                                    console.print("   [info]✅ Tombol 'Masuk dengan OTP' diklik. OTP sedang dikirim...[/info]")
-                                    time.sleep(2)
+                                btn_otp.wait_for(state="visible", timeout=6000)
+                                time.sleep(0.5)
+
+                                # Snapshot OTP diambil TEPAT SEBELUM request OTP dikirim agar tidak mengambil OTP usang!
+                                if otp_endpoint:
+                                    try:
+                                        otp_snapshot_awal = ambil_otp_dari_endpoint(otp_endpoint, action=action_type, label_email=label_email_cfg)
+                                        console.print(f"   [info]📸 Snapshot OTP awal: '{otp_snapshot_awal or '(kosong)'}' (sebelum OTP dikirim)[/info]")
+                                    except Exception:
+                                        otp_snapshot_awal = ""
+
+                                btn_otp.click()
+                                console.print("   [info]✅ Tombol 'Masuk dengan OTP' diklik. OTP sedang dikirim...[/info]")
+                                time.sleep(2)
                             except Exception:
-                                pass
+                                # Jika langsung masuk ke halaman OTP (tanpa opsi password)
+                                if otp_endpoint and not otp_snapshot_awal:
+                                    try:
+                                        otp_snapshot_awal = ambil_otp_dari_endpoint(otp_endpoint, action=action_type, label_email=label_email_cfg)
+                                        console.print(f"   [info]📸 Snapshot OTP awal: '{otp_snapshot_awal or '(kosong)'}' (sebelum OTP dikirim)[/info]")
+                                    except Exception:
+                                        otp_snapshot_awal = ""
 
                             # --- STEP 5: Automated OTP Polling & Fill ---
                             if otp_endpoint:
                                 # 1. Tunggu field OTP muncul — Jika timeout/error, berarti akun kena banned 15 menit
                                 try:
                                     console.print("   [info]🤖 Menunggu field OTP muncul...[/info]")
-                                    otp_input_selector = 'input[autocomplete="one-time-code"], input[aria-label*="digit" i], div[class*="otp" i] input:not([type="checkbox"]):not([type="radio"]), input[name*="otp" i]:not([type="checkbox"]):not([type="radio"]), input[maxlength="1"]:not([type="checkbox"]):not([type="radio"])'
+                                    otp_input_selector = '#auth-otp-input, input[name="otp"]:not(#vendor-search-handler), input[autocomplete="one-time-code"]:not(#vendor-search-handler), input[aria-label*="digit" i]:not(#vendor-search-handler), input[maxlength="1"]:not(#vendor-search-handler):not([type="checkbox"]):not([type="radio"])'
                                     
                                     otp_appeared = False
                                     start_wait_otp = time.time()
-                                    while time.time() - start_wait_otp < 15:
-                                        if page.locator(otp_input_selector).count() > 0 and page.locator(otp_input_selector).first.is_visible():
+                                    while time.time() - start_wait_otp < 20:
+                                        all_otp = page.locator(otp_input_selector).all()
+                                        if any(f.is_visible() for f in all_otp):
                                             otp_appeared = True
                                             break
                                         
@@ -714,28 +768,56 @@ def login_outlet_gofood_flow(outlet_info):
                                             
                                         if otp_code:
                                             console.print(f"   [info]🤖 OTP didapat: {otp_code}. Memasukkan OTP...[/info]")
-                                            otp_fields = page.locator(otp_input_selector).all()
-                                            if len(otp_fields) > 0:
+                                            raw_otp = page.locator(otp_input_selector).all()
+                                            otp_fields = [f for f in raw_otp if f.is_visible()]
+                                            if len(otp_fields) == 1:
                                                 otp_fields[0].focus()
                                                 time.sleep(0.2)
-                                                otp_fields[0].type(otp_code, delay=50)
+                                                otp_fields[0].fill(otp_code)
+                                                time.sleep(0.3)
                                                 console.print("   [success]✅ OTP berhasil diisi otomatis.[/success]")
+                                            elif len(otp_fields) > 1:
+                                                console.print(f"   [info]🤖 Mengisi {len(otp_fields)} digit OTP ke masing-masing field...[/info]")
+                                                for idx, digit in enumerate(otp_code[:len(otp_fields)]):
+                                                    otp_fields[idx].focus()
+                                                    otp_fields[idx].fill(digit)
+                                                    time.sleep(0.1)
+                                                console.print("   [success]✅ OTP multi-field berhasil diisi otomatis.[/success]")
+                                            else:
+                                                console.print("   [warning]⚠️ Tidak ada field OTP yang tampak (visible) untuk diisi.[/warning]")
                                                 
-                                                # Coba klik tombol submit/konfirmasi/masuk OTP
-                                                time.sleep(1)
-                                                submit_otp_btn = page.locator('button:has-text("Masuk"), button:has-text("Konfirmasi"), button:has-text("Verifikasi"), button:has-text("Lanjut"), button[type="submit"]')
-                                                clicked = False
+                                            # Coba klik tombol submit/konfirmasi/masuk OTP
+                                            time.sleep(1.0)
+                                            clicked = False
+                                            # 1. Prioritas ID eksplisit tombol submit OTP Gojek (#verify-otp-button)
+                                            specific_submit = page.locator('#verify-otp-button, button[name="verify-otp-button"]').first
+                                            if specific_submit.count() > 0 and specific_submit.is_visible():
+                                                for _ in range(15):
+                                                    if specific_submit.is_enabled():
+                                                        console.print("   [info]🤖 Mengklik tombol submit OTP: 'Masuk'[/info]")
+                                                        specific_submit.click()
+                                                        clicked = True
+                                                        break
+                                                    time.sleep(0.2)
+
+                                            # 2. Fallback tombol submit jika ID berbeda (hindari tombol "Masuk dengan password")
+                                            if not clicked:
+                                                submit_otp_btn = page.locator('button[type="submit"]:has-text("Masuk"), button:has-text("Konfirmasi"), button:has-text("Verifikasi")')
                                                 for i in range(submit_otp_btn.count()):
                                                     btn = submit_otp_btn.nth(i)
+                                                    btn_text = btn.text_content().strip().lower()
+                                                    if "password" in btn_text:
+                                                        continue
                                                     if btn.is_visible() and btn.is_enabled():
                                                         console.print(f"   [info]🤖 Mengklik tombol OTP: '{btn.text_content().strip()}'[/info]")
                                                         btn.click()
                                                         clicked = True
                                                         break
-                                                if not clicked:
-                                                    console.print("   [info]🤖 Mengirim Enter sebagai fallback...[/info]")
-                                                    page.keyboard.press("Enter")
-                                                time.sleep(2)
+
+                                            if not clicked:
+                                                console.print("   [info]🤖 Mengirim Enter sebagai fallback...[/info]")
+                                                page.keyboard.press("Enter")
+                                            time.sleep(2)
                                         else:
                                             console.print("   [warning]⚠️ Gagal mendapatkan OTP dalam 15 detik (atau format tidak valid).[/warning]")
                                             if email_idx == len(emails_to_try) - 1 and attempt >= max_login_attempts - 1:
@@ -785,7 +867,7 @@ def login_outlet_gofood_flow(outlet_info):
                             pass
                         continue
 
-                # --- Tunggu access_token muncul di cookies (max 15 detik) ---
+                # --- Tunggu access_token muncul di cookies / storage (max 10 detik) ---
                 attempt_token = None
                 start_time = time.time()
                 try:
@@ -796,11 +878,21 @@ def login_outlet_gofood_flow(outlet_info):
                                 send_discord_error("GoFood", nama, "SYSTEM_ERROR", "Proses login terganggu karena browser tertutup secara tiba-tiba atau kehilangan koneksi di tengah jalan.", phone)
                             break
 
+                        # 1. Cek cookies browser
                         cookies = context.cookies()
                         for cookie in cookies:
-                            if cookie['name'] == 'access_token':
+                            if cookie.get('name') == 'access_token' and cookie.get('value'):
                                 attempt_token = cookie['value']
                                 break
+
+                        # 2. Cek localStorage & sessionStorage jika belum ada di cookies
+                        if not attempt_token:
+                            try:
+                                ls_token = page.evaluate("() => localStorage.getItem('access_token') || sessionStorage.getItem('access_token')")
+                                if ls_token and len(str(ls_token)) > 20:
+                                    attempt_token = ls_token
+                            except Exception:
+                                pass
 
                         if attempt_token:
                             access_token = attempt_token
@@ -833,21 +925,54 @@ def login_outlet_gofood_flow(outlet_info):
                         except Exception:
                             pass
 
+                        # Deteksi layar pemilihan outlet / onboarding akun baru
+                        try:
+                            if "/choose-outlet" in page.url or "/outlet" in page.url:
+                                outlet_pick = page.locator('button:has-text("Pilih"), div[role="button"]:has-text("Pilih")').first
+                                if outlet_pick.count() > 0 and outlet_pick.is_visible() and outlet_pick.is_enabled():
+                                    console.print("   [info]👉 Terdeteksi halaman pemilihan outlet. Memilih outlet...[/info]")
+                                    outlet_pick.click()
+                                    time.sleep(2)
+                        except Exception:
+                            pass
+
+                        # Deteksi eksplisit jika URL sudah berhasil masuk ke /dashboard atau /analytics
+                        try:
+                            if any(route in page.url for route in ("/dashboard", "/analytics", "/order", "/reports")):
+                                if not attempt_token:
+                                    for c in context.cookies():
+                                        if c.get('name') in ('access_token', 'token', 'session_token') and c.get('value'):
+                                            attempt_token = c['value']
+                                            break
+                                    if not attempt_token:
+                                        ls_t = page.evaluate("() => localStorage.getItem('access_token') || sessionStorage.getItem('access_token')")
+                                        if ls_t and len(str(ls_t)) > 20:
+                                            attempt_token = ls_t
+                                if attempt_token:
+                                    console.print(f"   [success]🎉 Browser berhasil berpindah ke dashboard ({page.url}) dan token berhasil ditangkap![/success]")
+                                    access_token = attempt_token
+                                    break
+                        except Exception:
+                            pass
+
+                        # Deteksi modal persetujuan / popup "Saya Mengerti"
+                        try:
+                            modal_btn = page.locator('button:has-text("Saya Mengerti"), button:has-text("Mengerti"), button:has-text("Setuju")').first
+                            if modal_btn.count() > 0 and modal_btn.is_visible() and modal_btn.is_enabled():
+                                modal_btn.click()
+                                time.sleep(1)
+                        except Exception:
+                            pass
+
                         time.sleep(1.0)
 
-                        if time.time() - start_time > 15:
-                            # Fallback URL Check: Jika setelah 15 detik masih stuck di URL login, anggap butuh retry/verifikasi
+                        if time.time() - start_time > 10:
+                            console.print("[warning]⚠️ Timeout 10 detik menunggu access_token / perpindahan ke dashboard.[/warning]")
                             try:
-                                if "/auth/login" in page.url:
-                                    console.print("   [warning]⚠️ (Fallback) Timeout 15 detik: URL masih stuck di halaman login. Mempercepat percobaan ulang...[/warning]")
-                                    # Menambah kompensasi karena bisa jadi ini peringatan verifikasi yang terlewat dari deteksi teks
-                                    max_login_attempts = 3
-                                    break
+                                page.screenshot(path="login_timeout_debug.png")
+                                console.print("   [info]📸 Screenshot debug disimpan di 'login_timeout_debug.png'.[/info]")
                             except Exception:
                                 pass
-
-                        if time.time() - start_time > 25:
-                            console.print("[warning]⚠️ Timeout 25 detik menunggu access_token.[/warning]")
                             break
 
                 except KeyboardInterrupt:

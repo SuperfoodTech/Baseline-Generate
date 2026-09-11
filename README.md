@@ -46,9 +46,6 @@ automation-report-V1/
 │       └── 📁 Modals/
 │           └── modal.js            # Logika form wizard & date picker
 │
-├── 📁 shopee-session-monitor/      # Session Warmer (Shopee Anti-Logout)
-│   └── .env.example                # Template konfigurasi warmer ← SALIN INI
-│
 ├── 📁 docs/                        # Dokumentasi teknis
 │   ├── database_erd.md             # ERD & penjelasan arsitektur database
 │   └── mitigation_proposal_local_trigger.md
@@ -192,10 +189,7 @@ Sistem ini memiliki **3 file `.env`** yang harus disiapkan. Salin dari template 
 # 1. Bot Discord
 cp discord-bot-form/.env.example discord-bot-form/.env
 
-# 2. Session Warmer Shopee
-cp shopee-session-monitor/.env.example shopee-session-monitor/.env
-
-# 3. GoFood Token Sesi (di-generate otomatis saat login pertama)
+# 2. GoFood Token Sesi (di-generate otomatis saat login pertama)
 # File ini TIDAK perlu dibuat manual. Cukup pastikan folder ada:
 mkdir -p src/goscrapperv2
 ```
@@ -220,19 +214,6 @@ mkdir -p src/goscrapperv2
 | `TZ` | — | Timezone container | `Asia/Jakarta` |
 
 > 💡 **Cara mendapatkan Discord token & ID:** Buka [discord.com/developers/applications](https://discord.com/developers/applications) → pilih aplikasi → **Bot** (untuk token) dan **General Information** (untuk Client ID).
-
----
-
-#### 📁 `shopee-session-monitor/.env` — Shopee Session Warmer
-
-| Variabel | Wajib | Deskripsi | Default |
-|---|---|---|---|
-| `HEADLESS` | ✅ | `true` di server, `false` untuk lokal (lihat browser) | `true` |
-| `ACCOUNTS` | ✅ | Daftar username akun ShopeeFood yang di-warm, dipisah koma | `auto7303,auto7304_,...` |
-| `LOOP_DELAY_SECONDS` | — | Jeda antar siklus penuh (detik) | `1800` (30 menit) |
-| `ACCOUNT_DELAY_SECONDS` | — | Jeda antar pemrosesan tiap akun (detik) | `15` |
-| `DISCORD_WEBHOOK_URL` | — | Webhook Discord untuk notifikasi status warmer | _(kosong = nonaktif)_ |
-| `UPTIME_KUMA_PUSH_URL` | — | URL push monitor Uptime Kuma untuk health check | _(kosong = nonaktif)_ |
 
 ---
 

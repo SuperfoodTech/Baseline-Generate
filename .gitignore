@@ -53,6 +53,7 @@ backups/
 scratch/
 
 src/config.json
+src/data/
 
 # ── Reports & Output (generated files) ─────────────────────────────────────
 laporan/
@@ -87,7 +88,6 @@ node_modules/
 
 # ── GoFood / Temp Files ────────────────────────────────────────────────────
 src/gofood-automation/
-/cli.py
 
 
 # ── Chrome Profiles ────────────────────────────────────────────────────────
