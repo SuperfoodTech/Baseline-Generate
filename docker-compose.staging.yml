@@ -16,7 +16,6 @@ services:
       - ./data:/app/data
       - ./src:/app/src
       - /app/src/.venv
-      - ./shopee-session-monitor:/app/shopee-session-monitor
       - ./discord-bot-form:/app/discord-bot-form
       - /app/discord-bot-form/node_modules
       - /var/run/docker.sock:/var/run/docker.sock
