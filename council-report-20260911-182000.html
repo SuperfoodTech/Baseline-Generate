@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM Council Report: Perbaikan Otomasi Login GoFood Akun Baru</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --primary: #2563eb;
+      --success: #16a34a;
+      --warning: #d97706;
+      --danger: #dc2626;
+      --code-bg: #0f172a;
+      --code-text: #f8fafc;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2rem 1rem;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    header {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0.25rem 0.6rem;
+      border-radius: 9999px;
+      background: #eff6ff;
+      color: var(--primary);
+      margin-bottom: 0.75rem;
+    }
+    h1 { font-size: 1.75rem; font-weight: 800; color: #0f172a; margin-bottom: 0.5rem; }
+    .meta { font-size: 0.875rem; color: var(--text-muted); }
+    
+    .verdict-card {
+      background: #ffffff;
+      border: 2px solid var(--primary);
+      border-radius: 12px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.1);
+    }
+    .verdict-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1.25rem;
+    }
+    .section-block {
+      margin-bottom: 1.5rem;
+    }
+    .section-block h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .section-block p, .section-block ul {
+      color: #334155;
+      font-size: 0.95rem;
+    }
+    ul { padding-left: 1.25rem; margin-top: 0.35rem; }
+    li { margin-bottom: 0.35rem; }
+
+    .action-banner {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-left: 5px solid var(--success);
+      padding: 1.25rem;
+      border-radius: 8px;
+      margin-top: 1.5rem;
+    }
+    .action-banner h4 {
+      color: #15803d;
+      font-size: 1.05rem;
+      font-weight: 800;
+      margin-bottom: 0.25rem;
+    }
+
+    .alignment-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.75rem;
+      margin: 1.5rem 0;
+    }
+    .alignment-pill {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      padding: 0.75rem;
+      border-radius: 8px;
+      text-align: center;
+    }
+    .alignment-pill .name { font-size: 0.8rem; font-weight: 700; color: var(--text-muted); }
+    .alignment-pill .stance { font-size: 0.85rem; font-weight: 600; margin-top: 0.2rem; }
+    .pill-risk { border-color: #fca5a5; background: #fff5f5; color: var(--danger); }
+    .pill-logic { border-color: #93c5fd; background: #f0f7ff; color: var(--primary); }
+    .pill-scale { border-color: #d8b4fe; background: #faf5ff; color: #7e22ce; }
+    .pill-user { border-color: #fde047; background: #fefce8; color: #854d0e; }
+    .pill-exec { border-color: #86efac; background: #f0fdf4; color: var(--success); }
+
+    details {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      overflow: hidden;
+      transition: all 0.2s ease;
+    }
+    summary {
+      padding: 1rem 1.25rem;
+      font-weight: 700;
+      cursor: pointer;
+      user-select: none;
+      background: #ffffff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    summary:hover { background: #f8fafc; }
+    .details-content {
+      padding: 1.25rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.95rem;
+      color: #334155;
+      background: #fafafa;
+    }
+    pre {
+      background: var(--code-bg);
+      color: var(--code-text);
+      padding: 1rem;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 0.85rem;
+      margin: 0.75rem 0;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.85em;
+      background: #e2e8f0;
+      padding: 0.15rem 0.35rem;
+      border-radius: 4px;
+    }
+    pre code { background: transparent; padding: 0; }
+    footer {
+      text-align: center;
+      margin-top: 3rem;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="badge">LLM Council Report</div>
+    <h1>Investigasi & Solusi Login GoFood Akun Baru</h1>
+    <div class="meta">
+      <strong>Kasus:</strong> Stuck di Halaman Login Pasca-OTP & Timeout 15s • 
+      <strong>Target:</strong> <code>src/goscrapperv2/gofood.py</code> • 
+      <strong>Akun Uji:</strong> <code>bakmirose2@byfoodmaster.com</code>
+    </div>
+  </header>
+
+  <div class="verdict-card">
+    <div class="verdict-title">
+      <span>🏛️</span> KONSENSUS & VERDIK DEWAN
+    </div>
+
+    <div class="section-block">
+      <h3>🔍 Di Mana Dewan Sepakat (Akar Masalah Terbukti)</h3>
+      <ul>
+        <li><strong>Benturan Selector OneTrust (Ghost Input):</strong> Selector <code>div[class*="otp" i] input</code> mencocokkan panel cookie OneTrust (<code>div.otPcPanel</code>) yang memuat input pencarian tersembunyi <code>#vendor-search-handler</code>. Akibatnya Playwright mengetikkan OTP ke elemen invisible ini, sementara field OTP asli <code>#auth-otp-input</code> tetap kosong!</li>
+        <li><strong>Tombol Masuk Tidak Aktif / Form Tidak Terkirim:</strong> Karena input OTP asli tidak terisi, state React Gojek tidak pernah mengaktifkan submit OTP.</li>
+        <li><strong>Pembunuhan Sesi Terlalu Cepat (15s Fallback):</strong> Blok <code>if time.time() - start_time > 15 and "/auth/login" in page.url: break</code> secara prematur mematikan halaman login padahal URL login SPA memang bertahan beberapa detik saat token handshake dilakukan di server 1 vCPU.</li>
+      </ul>
+    </div>
+
+    <div class="alignment-grid">
+      <div class="alignment-pill pill-risk">
+        <div class="name">Contrarian</div>
+        <div class="stance">Bongkar Silent Failure OneTrust</div>
+      </div>
+      <div class="alignment-pill pill-logic">
+        <div class="name">First Principles</div>
+        <div class="stance">Targetkan #auth-otp-input & State React</div>
+      </div>
+      <div class="alignment-pill pill-scale">
+        <div class="name">Expansionist</div>
+        <div class="stance">Multi-storage Token & Screenshot</div>
+      </div>
+      <div class="alignment-pill pill-user">
+        <div class="name">Outsider</div>
+        <div class="stance">Tiru Tindakan Mata & Tangan Manusia</div>
+      </div>
+      <div class="alignment-pill pill-exec">
+        <div class="name">Executor</div>
+        <div class="stance">Bedah Kode Baris 675, 725, 846</div>
+      </div>
+    </div>
+
+    <div class="section-block">
+      <h3>🛡️ Blind Spot yang Berhasil Ditangkap</h3>
+      <p>Pesan log <code>✅ OTP berhasil diisi otomatis</code> selama ini adalah <em>false-positive</em>. Playwright berhasil mengetik tanpa error karena elemen <code>vendor-search-handler</code> ada di DOM, tetapi input tersebut berada di dalam modal cookie yang tidak terlihat pengguna.</p>
+    </div>
+
+    <div class="action-banner">
+      <h4>🎯 The One Thing to Do First:</h4>
+      <p>Perbaiki selector OTP menjadi <code>input#auth-otp-input, input[name="otp"]:not(#vendor-search-handler)</code> dengan filter <code>is_visible()</code>, gunakan <code>.fill()</code>, dan hapus cutoff 15 detik di <code>src/goscrapperv2/gofood.py</code>.</p>
+    </div>
+  </div>
+
+  <h2 style="font-size: 1.3rem; margin-bottom: 1rem;">Detail Perspektif Penasihat</h2>
+
+  <details>
+    <summary><span>1. The Contrarian</span> <span style="font-size:0.8rem; color:var(--danger)">Risiko & Silent Ghost Failure</span></summary>
+    <div class="details-content">
+      <p>Log mencatat sukses mengisi OTP padahal angka dimasukkan ke elemen OneTrust yang tersembunyi. Fallback 15 detik di SPA membunuh sesi yang sedang berjalan. Jangan berasumsi alur Gojek berubah sebelum menghilangkan kegagalan internal selector ini.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary><span>2. The First Principles Thinker</span> <span style="font-size:0.8rem; color:var(--primary)">Anatomi Interaksi DOM</span></summary>
+    <div class="details-content">
+      <p>Gunakan ID eksplisit <code>#auth-otp-input</code>. Terapkan <code>fill()</code> untuk memicu event React secara andal, dan tunggu sampai tombol submit 'Masuk' benar-benar berstatus <code>enabled</code> sebelum diklik.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary><span>3. The Expansionist</span> <span style="font-size:0.8rem; color:#7e22ce">Ketahanan Jangka Panjang & Observability</span></summary>
+    <div class="details-content">
+      <p>Selain membaca cookies, periksa <code>localStorage['access_token']</code>. Tambahkan penyimpanan otomatis screenshot dan dump HTML ketika terjadi timeout agar developer tidak buta arah saat debug di VPS.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary><span>4. The Outsider</span> <span style="font-size:0.8rem; color:#854d0e">Mengapa Manual Bisa, Bot Gagal?</span></summary>
+    <div class="details-content">
+      <p>Manusia hanya melihat dan mengetik di elemen yang tampak (visible) di layar. Bot harus meniru hal yang sama dengan menyaring elemen visible dan tidak membatalkan proses hanya karena loading di detik ke-15.</p>
+    </div>
+  </details>
+
+  <details>
+    <summary><span>5. The Executor</span> <span style="font-size:0.8rem; color:var(--success)">Langkah Konkret Perbaikan</span></summary>
+    <div class="details-content">
+      <p>Bongkar selector baris 675, pastikan pengisian baris 725 hanya pada input yang visible, hapus break baris 849-854, naikkan batas tunggu token ke 45 detik, dan uji dengan <code>bakmirose2@byfoodmaster.com</code>.</p>
+    </div>
+  </details>
+
+  <footer>
+    Laporan dieksekusi secara otomatis oleh Antigravity AI Engine • Metodologi Karpathy LLM Council
+  </footer>
+</div>
+</body>
+</html>
+
