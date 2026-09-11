@@ -21,6 +21,39 @@ from datetime import datetime, timedelta
 import urllib3.util.connection as urllib3_cn
 urllib3_cn.HAS_IPV6 = False
 
+# ── Load environment variables from .env ──────────────────────────────
+_cli_dir = os.path.dirname(os.path.abspath(__file__))
+for _p in [
+    os.path.join(_cli_dir, ".env"),
+    os.path.join(_cli_dir, "baseline", ".env"),
+    os.path.join(os.path.dirname(_cli_dir), ".env")
+]:
+    if os.path.isfile(_p):
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(_p)
+        except ImportError:
+            try:
+                with open(_p, "r", encoding="utf-8") as _f:
+                    for _line in _f:
+                        _line = _line.strip()
+                        if _line and not _line.startswith("#") and "=" in _line:
+                            _k, _v = _line.split("=", 1)
+                            _k, _v = _k.strip(), _v.strip().strip("'").strip('"')
+                            if _k not in os.environ:
+                                os.environ[_k] = _v
+            except Exception:
+                pass
+
+DEFAULT_CSV_URL_MAIN = (
+    "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3tLKBNXDqRgBw0mNhKZFxgvKx-JoiTDzm_s5Ix1cm7O6HCv4IvExOLR2HSRVaXSsx82V348mcr9X4"
+    "/pub?output=csv"
+)
+DEFAULT_CSV_URL_BASELINE = (
+    "https://docs.google.com/spreadsheets/d/e/2PACX-1vTprbPPf_J5gAVL3PYeHbbdl5ZXQvb17HY2lJGPI2xg13Ly3AGT8eYHLYmU_m1NdtkBVg-qUGv1BoEE"
+    "/pub?gid=71044642&single=true&output=csv"
+)
+
 def normalize_date_string(date_str: str) -> str:
     """
     Parses a date string in various formats (DD-MM-YYYY, YYYY-MM-DD, etc.)
@@ -166,10 +199,12 @@ def _resolve_output_dir(platform_name: str, start_date: str, end_date: str) -> s
     Build an absolute output path under:
       task-weekly/src/laporan/{platform}/{start_date}_to_{end_date}
     """
-    if os.name == "nt":
-        base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "laporan")
+    default_base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "laporan")
+    ext_base = "/mnt/volume_web_scraping/baseline"
+    if os.path.exists(ext_base) and os.path.isdir(ext_base) and os.access(ext_base, os.W_OK):
+        base = ext_base
     else:
-        base = "/mnt/volume_web_scraping/baseline"
+        base = default_base
     out = os.path.join(base, platform_name, f"{start_date}_to_{end_date}")
     os.makedirs(out, exist_ok=True)
     return out
@@ -190,16 +225,10 @@ def _resolve_shopee_merchant(outlet_name: str, branch_name: str = None, task_cho
 
     base = os.path.dirname(os.path.abspath(__file__))
     if task_choice == "1":
-        GSHEETS_URL = (
-            "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk"
-            "/export?format=csv&gid=71044642"
-        )
+        GSHEETS_URL = os.getenv("CSV_URL_BASELINE", DEFAULT_CSV_URL_BASELINE)
         cache_path = os.path.join(base, "baseline", "shopee", "data", "master_merchants_cache.csv")
     else:
-        GSHEETS_URL = (
-            "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0"
-            "/export?format=csv&gid=0"
-        )
+        GSHEETS_URL = os.getenv("CSV_URL_MAIN", DEFAULT_CSV_URL_MAIN)
         cache_path = os.path.join(base, "shopee-omzet-automation", "data", "master_merchants_cache.csv")
 
     def _clean(name: str) -> str:
@@ -876,17 +905,41 @@ def interactive_mode():
     import io
 
     # 1. Download Master Merchants sheet to get unique BDs
-    print(f"  {CYAN}[INFO] Mengunduh daftar merchant untuk BD filter dari Google Sheets...{RESET}")
-    CSV_URL_MAIN = "https://docs.google.com/spreadsheets/d/14eCb8DAEXhmbYj9MFj2KzC7AhkulbCbSNPltN2m-go0/export?format=csv&gid=0"
-    CSV_URL_BASELINE = "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=71044642"
-    
-    try:
-        resp = requests.get(CSV_URL_MAIN, timeout=30)
-        resp.raise_for_status()
-        df_main = pd.read_csv(io.StringIO(resp.text))
-    except Exception as e:
-        print(f"  {RED}[ERROR] Gagal mengunduh Google Sheets: {e}{RESET}")
-        sys.exit(1)
+    import time
+    CSV_URL_MAIN = os.getenv("CSV_URL_MAIN", DEFAULT_CSV_URL_MAIN)
+    CSV_URL_BASELINE = os.getenv("CSV_URL_BASELINE", DEFAULT_CSV_URL_BASELINE)
+
+    cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shopee-omzet-automation", "data")
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_main_path = os.path.join(cache_dir, "master_merchants_cache.csv")
+
+    df_main = None
+    if os.path.exists(cache_main_path):
+        cache_age_hours = (time.time() - os.path.getmtime(cache_main_path)) / 3600.0
+        if cache_age_hours < 4.0:
+            try:
+                df_main = pd.read_csv(cache_main_path)
+                print(f"  {GREEN}[INFO] Memuat daftar merchant dari cache lokal (usia: {cache_age_hours:.1f} jam){RESET}")
+            except Exception:
+                df_main = None
+
+    if df_main is None:
+        print(f"  {CYAN}[INFO] Mengunduh daftar merchant untuk BD filter dari Google Sheets...{RESET}")
+        try:
+            resp = requests.get(CSV_URL_MAIN, timeout=60)
+            resp.raise_for_status()
+            df_main = pd.read_csv(io.StringIO(resp.text))
+            df_main.to_csv(cache_main_path, index=False)
+        except Exception as e:
+            if os.path.exists(cache_main_path):
+                print(f"  {YELLOW}⚠️ Gagal mengunduh live ({e}), menggunakan cache lokal yang ada.{RESET}")
+                df_main = pd.read_csv(cache_main_path)
+            else:
+                print(f"  {RED}[ERROR] Gagal mengunduh Google Sheets: {e}{RESET}")
+                sys.exit(1)
+
+    if "Nama Outlet" not in df_main.columns and "Outlet" in df_main.columns:
+        df_main["Nama Outlet"] = df_main["Outlet"]
 
     # 2. Select BD first
     bds = sorted([str(x).strip() for x in df_main["BD"].dropna().unique() if str(x).strip()])
@@ -929,14 +982,34 @@ def interactive_mode():
 
     if task_choice == "1":
         print(f"\n  {GREEN}[INFO] Mengaktifkan Mode Baseline.{RESET}")
-        print(f"\n  {CYAN}[INFO] Mengunduh daftar outlet terbaru dari Google Sheets...{RESET}")
-        try:
-            resp = requests.get(CSV_URL_BASELINE, timeout=30)
-            resp.raise_for_status()
-            df = pd.read_csv(io.StringIO(resp.text))
-        except Exception as e:
-            print(f"  {RED}[ERROR] Gagal mengunduh Google Sheets: {e}{RESET}")
-            sys.exit(1)
+        cache_bl_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "baseline", "shopee", "data")
+        os.makedirs(cache_bl_dir, exist_ok=True)
+        cache_bl_path = os.path.join(cache_bl_dir, "master_merchants_cache.csv")
+
+        df = None
+        if os.path.exists(cache_bl_path):
+            cache_age_hours = (time.time() - os.path.getmtime(cache_bl_path)) / 3600.0
+            if cache_age_hours < 4.0:
+                try:
+                    df = pd.read_csv(cache_bl_path)
+                    print(f"  {GREEN}[INFO] Memuat daftar baseline dari cache lokal (usia: {cache_age_hours:.1f} jam){RESET}")
+                except Exception:
+                    df = None
+
+        if df is None:
+            print(f"\n  {CYAN}[INFO] Mengunduh daftar outlet terbaru dari Google Sheets...{RESET}")
+            try:
+                resp = requests.get(CSV_URL_BASELINE, timeout=60)
+                resp.raise_for_status()
+                df = pd.read_csv(io.StringIO(resp.text))
+                df.to_csv(cache_bl_path, index=False)
+            except Exception as e:
+                if os.path.exists(cache_bl_path):
+                    print(f"  {YELLOW}⚠️ Gagal mengunduh live ({e}), menggunakan cache lokal yang ada.{RESET}")
+                    df = pd.read_csv(cache_bl_path)
+                else:
+                    print(f"  {RED}[ERROR] Gagal mengunduh Google Sheets: {e}{RESET}")
+                    sys.exit(1)
             
         df_live = df.copy()
         if selected_bd:
@@ -1643,10 +1716,11 @@ Examples:
 
     date_folder = f"{start_date}_to_{end_date}"
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    if os.name == "nt":
-        laporan_base_dir = os.path.join(base_dir, "laporan")
+    ext_base = "/mnt/volume_web_scraping/baseline"
+    if os.path.exists(ext_base) and os.path.isdir(ext_base) and os.access(ext_base, os.W_OK):
+        laporan_base_dir = ext_base
     else:
-        laporan_base_dir = "/mnt/volume_web_scraping/baseline"
+        laporan_base_dir = os.path.join(base_dir, "laporan")
     
     # ── Merge Baseline Outputs ──
     if task_choice == "1":
@@ -1866,8 +1940,8 @@ Examples:
                         print(f"  {YELLOW}⚠️ URL Webhook belum di-hardcode di cli.py.{RESET}")
                         print(f"  {DIM}Silakan deploy apps_script_pdf.js dan masukkan URL-nya ke variabel primary_webhook_url di cli.py{RESET}")
                     else:
-                        # 1. Fetch Owner dari Baseline sheet (gid=0)
-                        CSV_URL = "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=71044642"
+                        # 1. Fetch Owner dari Baseline sheet
+                        CSV_URL = os.getenv("CSV_URL_BASELINE", DEFAULT_CSV_URL_BASELINE)
                         owner_name = "-"
                         outlet_val = outlet[0] if isinstance(outlet, (list, tuple)) and len(outlet) > 0 else outlet
                         try:

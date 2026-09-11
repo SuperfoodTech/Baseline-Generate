@@ -210,7 +210,10 @@ def get_live_merchants(app_name="ShopeeFood", max_age_hours=24, merchant_filter=
     import os
     from datetime import datetime
     
-    url = "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=71044642"
+    url = os.getenv(
+        "CSV_URL_BASELINE",
+        "https://docs.google.com/spreadsheets/d/e/2PACX-1vTprbPPf_J5gAVL3PYeHbbdl5ZXQvb17HY2lJGPI2xg13Ly3AGT8eYHLYmU_m1NdtkBVg-qUGv1BoEE/pub?gid=71044642&single=true&output=csv"
+    )
     cache_path = "data/master_merchants_cache.csv"
     os.makedirs("data", exist_ok=True)
     
@@ -330,7 +333,10 @@ def get_shopee_baseline_credentials(merchant_name, max_age_hours=24, bd_filter=N
     cache_creds = "data/shopee_credentials_cache.csv"
     os.makedirs("data", exist_ok=True)
     
-    url_merchants = "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=71044642"
+    url_merchants = os.getenv(
+        "CSV_URL_BASELINE",
+        "https://docs.google.com/spreadsheets/d/e/2PACX-1vTprbPPf_J5gAVL3PYeHbbdl5ZXQvb17HY2lJGPI2xg13Ly3AGT8eYHLYmU_m1NdtkBVg-qUGv1BoEE/pub?gid=71044642&single=true&output=csv"
+    )
     url_creds = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYSUnKOqk29LCktTxdb0wPLbWMbRaWRP3eC_UA4AwYod1FW6zDMhtLMC5ghIvot2B8upCDfBsn-TCP/pub?gid=565510790&single=true&output=csv"
     
     def check_and_download(url, cache_path):

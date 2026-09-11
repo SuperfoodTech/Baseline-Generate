@@ -152,15 +152,20 @@ def robust_read_csv(path_or_url, expected_cols=None, **kwargs):
             log.error(f"Fallback robust parsing failed: {fallback_err}")
             raise parse_err
 
-CSV_URL = "https://docs.google.com/spreadsheets/d/1KGuFkD1vAfSVay-GssS5vXKJbOKD4ngi9LVxjmfGkbk/export?format=csv&gid=71044642"
+DEFAULT_CSV_URL = (
+    "https://docs.google.com/spreadsheets/d/e/2PACX-1vTprbPPf_J5gAVL3PYeHbbdl5ZXQvb17HY2lJGPI2xg13Ly3AGT8eYHLYmU_m1NdtkBVg-qUGv1BoEE"
+    "/pub?gid=71044642&single=true&output=csv"
+)
+CSV_URL = os.getenv("CSV_URL_BASELINE", DEFAULT_CSV_URL)
 
 async def run_all(date_start: str = None, date_end: str = None, output_dir: str = None, user_filter: str = None, outlet_filter: str = None, branch_filter: str = None):
     # Reload env just in case
     load_dotenv(override=True)
+    target_url = os.getenv("CSV_URL_BASELINE", CSV_URL)
     
     log.info(f"Fetching merchant list from spreadsheet...")
     try:
-        df = robust_read_csv(CSV_URL, expected_cols=9)
+        df = robust_read_csv(target_url, expected_cols=9)
         
         # Filter for GrabFood
         grab_df = df[df["aplikasi"].str.contains("grab", na=False, case=False)]
